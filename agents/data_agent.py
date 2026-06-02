@@ -35,30 +35,3 @@ class DataAgent:
                 df = yf.download(
                     self.ticker,
                     period=period,
-                    interval=interval,
-                    progress=False,
-                    auto_adjust=True
-                )
-                if df.empty:
-                    continue
-                df = self._add_indicators(df)
-                df.dropna(inplace=True)
-                data[tf] = df
-                print(f"[DATA] {self.symbol} {tf}: {len(df)} candles")
-            except Exception as e:
-                print(f"[DATA] {self.symbol} {tf} error: {e}")
-        return data
-
-        def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        try:
-            high  = df["High"].squeeze()
-            low   = df["Low"].squeeze()
-            close = df["Close"].squeeze()
-            df["ADX_14"]  = ta_lib.trend.adx(high, low, close, window=14)
-            df["EMA_20"]  = ta_lib.trend.ema_indicator(close, window=20)
-            df["EMA_50"]  = ta_lib.trend.ema_indicator(close, window=50)
-            df["ATRr_14"] = ta_lib.volatility.average_true_range(high, low, close, window=14)
-        except Exception as e:
-            print(f"[DATA] Indicator error: {e}")
-        return df
-
