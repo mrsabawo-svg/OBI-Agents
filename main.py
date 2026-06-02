@@ -1,0 +1,76 @@
+"""
+OBI Intelligence v4.0 — Main Pipeline
+Orchestrates all agents in sequence for every symbol.
+"""
+import os
+from agents.data_agent        import DataAgent
+from agents.htf_agent         import HTFAgent
+from agents.mtf_agent         import MTFAgent
+from agents.ltf_agent         import LTFAgent
+from agents.session_agent     import SessionAgent
+from agents.bias_agent        import BiasAgent
+from agents.zone_agent        import ZoneAgent
+from agents.trigger_agent     import TriggerAgent
+from agents.intelligence_agent import IntelligenceAgent
+from core.utils               import sast_str
+
+SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "BTCUSD", "ETHUSD"]
+ALL_TF  = ["4h", "1h", "15m", "5m"]
+
+def run(symbol: str):
+    print(f"\n{'═'*45}")
+    print(f"  OBI v4.0 — {symbol} — {sast_str()}")
+    print(f"{'═'*45}")
+
+    try:
+        # 1. Data
+        data = DataAgent(symbol).fetch(ALL_TF)
+        if not data:
+            print(f"[MAIN] {symbol}: no data — skipping"); return
+
+        # 2. Session gate — skip if not tradeable
+        session = SessionAgent(symbol).analyse()
+        if not session["tradeable"]:
+            print(f"[MAIN] {symbol}: session blocked — {session['reason']}"); return
+
+        # 3. HTF macro bias
+        htf = HTFAgent(symbol).analyse(data)
+
+        # 4. MTF structure confirmation
+        mtf = MTFAgent(symbol).analyse(data, htf)
+
+        # 5. Bias gate — minimum 3 confluence
+        bias = BiasAgent(symbol).evaluate(htf, mtf, session)
+        if not bias["approved"]:
+            print(f"[MAIN] {symbol}: bias blocked — {bias['reason']}"); return
+
+        # 6. Zone analysis
+        zone = ZoneAgent(symbol).analyse(data, bias)
+
+        # 7. LTF precise entry
+        ltf = LTFAgent(symbol).analyse(data, mtf)
+
+        # 8. Trigger gate — final entry decision
+        trigger = TriggerAgent(symbol).evaluate(ltf, zone, bias)
+        if not trigger["fire"]:
+            print(f"[MAIN] {symbol}: no trigger — {trigger['reason']}"); return
+
+        # 9. Intelligence — Groq + Claude verdict + Telegram
+        payload = {
+            "symbol":  symbol,
+            "htf":     htf,
+            "mtf":     mtf,
+            "bias":    bias,
+            "zone":    zone,
+            "ltf":     ltf,
+            "trigger": trigger,
+            "session": session,
+        }
+        IntelligenceAgent(symbol).verdict(payload)
+
+    except Exception as e:
+        print(f"[MAIN] {symbol} pipeline error: {e}")
+
+if __name__ == "__main__":
+    for symbol in SYMBOLS:
+        run(symbol)
