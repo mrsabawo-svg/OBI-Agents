@@ -4,7 +4,7 @@ Fetches OHLCV data across all timeframes for a symbol.
 """
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+import ta as ta_lib
 
 SYMBOL_MAP = {
     "XAUUSD": "GC=F",
@@ -41,13 +41,20 @@ class DataAgent:
                 )
                 if df.empty:
                     continue
-                df.ta.adx(append=True)
-                df.ta.ema(length=20, append=True)
-                df.ta.ema(length=50, append=True)
-                df.ta.atr(append=True)
+                df = self._add_indicators(df)
                 df.dropna(inplace=True)
                 data[tf] = df
                 print(f"[DATA] {self.symbol} {tf}: {len(df)} candles")
             except Exception as e:
                 print(f"[DATA] {self.symbol} {tf} error: {e}")
         return data
+
+    def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        try:
+            df["ADX_14"]  = ta_lib.trend.adx(df["High"], df["Low"], df["Close"], window=14)
+            df["EMA_20"]  = ta_lib.trend.ema_indicator(df["Close"], window=20)
+            df["EMA_50"]  = ta_lib.trend.ema_indicator(df["Close"], window=50)
+            df["ATRr_14"] = ta_lib.volatility.average_true_range(df["High"], df["Low"], df["Close"], window=14)
+        except Exception as e:
+            print(f"[DATA] Indicator error: {e}")
+        return df
