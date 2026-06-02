@@ -9,8 +9,13 @@ class HTFAgent:
         self.symbol = symbol
 
     def analyse(self, market_data: dict) -> dict:
-        df = market_data.get("4h") or market_data.get("1h")
-        if df is None or len(df) < 10:
+        df = None
+        if "4h" in market_data and not market_data["4h"].empty:
+            df = market_data["4h"]
+        elif "1h" in market_data and not market_data["1h"].empty:
+            df = market_data["1h"]
+
+        if df is None or len(df) < 5:
             return self._default()
 
         try:
@@ -21,19 +26,15 @@ class HTFAgent:
             ema20_col = [c for c in df.columns if "EMA_20" in str(c)]
             ema50_col = [c for c in df.columns if "EMA_50" in str(c)]
 
-            if ema20_col and ema50_col:
-                ema20 = df[ema20_col[0]].squeeze().values.flatten()
-                ema50 = df[ema50_col[0]].squeeze().values.flatten()
-            else:
-                ema20 = close
-                ema50 = close
+            ema20 = df[ema20_col[0]].squeeze().values.flatten() if ema20_col else close
+            ema50 = df[ema50_col[0]].squeeze().values.flatten() if ema50_col else close
 
             price_vs_ema20 = bool(close[-1] > ema20[-1])
             price_vs_ema50 = bool(close[-1] > ema50[-1])
             ema_stack      = bool(ema20[-1] > ema50[-1])
 
-            highs = high[-10:]
-            lows  = low[-10:]
+            highs = high[-min(10, len(high)):]
+            lows  = low[-min(10, len(low)):]
             hh = bool(highs[-1] > highs[0])
             hl = bool(lows[-1]  > lows[0])
             lh = bool(highs[-1] < highs[0])
