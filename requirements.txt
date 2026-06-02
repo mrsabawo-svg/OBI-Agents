@@ -1,0 +1,14 @@
+groq
+anthropic
+yfinance
+pandas
+pandas-ta
+numpy
+hmmlearn
+arch
+scikit-learn
+xgboost
+httpx
+python-telegram-bot==20.7
+pytz
+requests
