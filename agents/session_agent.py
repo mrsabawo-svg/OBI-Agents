@@ -5,7 +5,6 @@ Only fires signals during high-probability kill zones.
 """
 from core.utils import now_sast, is_kill_zone
 
-# Best sessions per symbol
 SYMBOL_SESSIONS = {
     "XAUUSD": ["London Open", "New York Open"],
     "EURUSD": ["London Open", "New York Open"],
@@ -21,18 +20,17 @@ class SessionAgent:
 
     def analyse(self) -> dict:
         try:
-            now       = now_sast()
+            now      = now_sast()
             kill_zone = is_kill_zone()
-            hour      = now.hour
-            weekday   = now.weekday()   # 0=Mon, 6=Sun
+            hour     = now.hour
+            weekday  = now.weekday()
 
             # No trading weekends
             if weekday >= 5:
                 return self._build(False, "Weekend — market closed", kill_zone)
 
-            # No trading during dead hours (SAST)
-            dead_hours = list(range(22, 24)) + list(range(0, 1))
-            if hour in dead_hours:
+            # Only block 23:00 SAST (truly dead)
+            if hour == 23:
                 return self._build(False, "Dead hours — no liquidity", kill_zone)
 
             preferred = SYMBOL_SESSIONS.get(self.symbol, ["London Open", "New York Open"])
@@ -41,8 +39,8 @@ class SessionAgent:
                 reason = f"{kill_zone['name']} — optimal for {self.symbol}"
                 return self._build(True, reason, kill_zone)
 
-            # Outside kill zone but still tradeable session
-            if 7 <= hour <= 20:
+            # Active session outside kill zone — still tradeable
+            if 1 <= hour <= 22:
                 return self._build(True, "Active session — not peak kill zone", kill_zone)
 
             return self._build(False, "Outside tradeable hours", kill_zone)
@@ -54,9 +52,9 @@ class SessionAgent:
     def _build(self, tradeable: bool, reason: str, kill_zone: dict) -> dict:
         print(f"[SESSION] {self.symbol}: tradeable={tradeable} | {reason}")
         return {
-            "tradeable":  tradeable,
-            "reason":     reason,
-            "kill_zone":  kill_zone.get("active", False),
-            "zone_name":  kill_zone.get("name"),
-            "peak":       kill_zone.get("active", False)
+            "tradeable": tradeable,
+            "reason":    reason,
+            "kill_zone": kill_zone.get("active", False),
+            "zone_name": kill_zone.get("name"),
+            "peak":      kill_zone.get("active", False)
         }
