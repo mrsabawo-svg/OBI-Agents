@@ -6,13 +6,17 @@ import pandas as pd
 import ta as ta_lib
 
 SYMBOL_MAP = {
-    "XAUUSD": "GC=F",
+    "XAUUSD": "GLD",
     "EURUSD": "EURUSD=X",
     "USDJPY": "USDJPY=X",
     "GBPJPY": "GBPJPY=X",
+    "GBPUSD": "GBPUSD=X",
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
+    "SOLUSD": "SOL-USD",
+    "NASDAQ": "QQQ",
 }
+
 
 TF_MAP = {
     "1h":  ("60m", "60d"),
