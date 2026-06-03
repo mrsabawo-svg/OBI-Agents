@@ -20,7 +20,8 @@ class TriggerAgent:
             if not ltf_valid:
                 return self._blocked("LTF trigger not confirmed")
             if not zone_aligned:
-                return self._blocked("Price not in correct zone for direction")
+    print(f"[TRIGGER] {self.symbol}: zone not aligned but proceeding with caution")
+
             if rr < 1.5:
                 return self._blocked(f"RR too low ({rr} < 1.5)")
             if direction == "NEUTRAL":
