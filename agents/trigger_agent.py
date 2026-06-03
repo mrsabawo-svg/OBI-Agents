@@ -18,8 +18,9 @@ class TriggerAgent:
             if not ltf_valid:
                 return self._blocked("LTF trigger not confirmed")
 
-            if rr < 1.5:
-                return self._blocked("RR too low " + str(rr))
+            if rr < 1.2:
+    return self._blocked("RR too low " + str(rr))
+
 
             if direction == "NEUTRAL":
                 return self._blocked("No directional bias")
