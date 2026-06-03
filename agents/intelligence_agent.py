@@ -1,6 +1,5 @@
 """
 OBI Agents — Intelligence Agent
-Groq + Claude verdict + Telegram delivery.
 """
 import os
 import json
@@ -8,25 +7,23 @@ import requests
 from core.utils import sast_str
 from core.memory import load as load_memory, save as save_memory
 
-GROQ_API_KEY     = os.environ.get("GROQ_API_KEY")
+GROQ_API_KEY      = os.environ.get("GROQ_API_KEY")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-GIST_ID          = os.environ.get("GIST_ID")
-GITHUB_TOKEN     = os.environ.get("GITHUB_TOKEN")
+TELEGRAM_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID  = os.environ.get("TELEGRAM_CHAT_ID")
+GIST_ID           = os.environ.get("GIST_ID")
+GITHUB_TOKEN      = os.environ.get("GITHUB_TOKEN")
 
 class IntelligenceAgent:
     def __init__(self, symbol: str):
         self.symbol = symbol
 
     def verdict(self, payload: dict) -> dict:
-        print("[INTEL] " + self.symbol + ": starting verdict")
+        print("[INTEL] " + self.symbol + ": starting")
         memory   = load_memory()
         accuracy = memory.get(self.symbol, {}).get("accuracy", "No history yet")
-
         groq_verdict   = self._ask_groq(payload, accuracy)
         claude_verdict = self._ask_claude(payload, groq_verdict)
-
         result = {
             "symbol":         self.symbol,
             "timestamp":      sast_str(),
@@ -42,42 +39,21 @@ class IntelligenceAgent:
             "groq_verdict":   groq_verdict,
             "claude_verdict": claude_verdict,
         }
-
         self._update_memory(memory, result)
         self._push_to_gist(result)
         self._send_telegram(result)
         return result
 
     def _ask_groq(self, payload: dict, accuracy: str) -> str:
-        print("[INTEL] " + self.symbol + ": calling Groq")
+        print("[INTEL] calling Groq")
         try:
-            prompt = (
-                "You are a professional trading analyst. "
-                "Review this signal and respond with: "
-                "1. VERDICT: TAKE IT / LEAVE IT / WAIT "
-                "2. CONFIDENCE: 1-10 "
-                "3. STRENGTHS: bullet points "
-                "4. CONCERNS: bullet points "
-                "5. WATCH: one thing after entry. "
-                "Max 150 words. "
-                "Signal: " + json.dumps(payload)
-            )
+            prompt = "You are a professional trading analyst. Review this signal and respond with: 1. VERDICT: TAKE IT / LEAVE IT / WAIT 2. CONFIDENCE: 1-10 3. STRENGTHS 4. CONCERNS 5. WATCH. Max 150 words. Signal: " + json.dumps(payload)
             r = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": str(ANTHROPIC_API_KEY),
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
-                json={
-                    "model": "claude-haiku-4-5-20251001",
-                    "max_tokens": 300,
-                    "messages": [{"role": "user", "content": prompt}]
-                },
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": "Bearer " + str(GROQ_API_KEY), "Content-Type": "application/json"},
+                json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": prompt}], "max_tokens": 300},
                 timeout=30
-)
-print("[INTEL] Claude raw response: " + str(r.text)[:300])
-
+            )
             print("[INTEL] Groq status: " + str(r.status_code))
             return r.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
@@ -85,33 +61,18 @@ print("[INTEL] Claude raw response: " + str(r.text)[:300])
             return "Groq unavailable"
 
     def _ask_claude(self, payload: dict, groq_verdict: str) -> str:
-        print("[INTEL] " + self.symbol + ": calling Claude")
+        print("[INTEL] calling Claude")
         try:
-            prompt = (
-                "You are a senior trading analyst. "
-                "Groq said: " + groq_verdict + ". "
-                "Add your qualitative insight. "
-                "Format: VERDICT / CONFIDENCE / LIKES / CONCERNS / WATCH. "
-                "Max 100 words. "
-                "Signal: " + json.dumps(payload)
-            )
+            prompt = "You are a senior trading analyst. Groq said: " + groq_verdict + ". Add qualitative insight. Format: VERDICT / CONFIDENCE / LIKES / CONCERNS / WATCH. Max 100 words. Signal: " + json.dumps(payload)
             r = requests.post(
                 "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": str(ANTHROPIC_API_KEY),
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "claude-sonnet-4-5",
-
-                    "max_tokens": 300,
-                    "messages": [{"role": "user", "content": prompt}]
-                },
+                headers={"x-api-key": str(ANTHROPIC_API_KEY), "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 300, "messages": [{"role": "user", "content": prompt}]},
                 timeout=30
             )
             print("[INTEL] Claude status: " + str(r.status_code))
-            return r.json()["content"][0]["text"].strip()
+            data = r.json()
+            return data["content"][0]["text"].strip()
         except Exception as e:
             print("[INTEL] Claude error: " + str(e))
             return "Claude unavailable"
@@ -136,23 +97,24 @@ print("[INTEL] Claude raw response: " + str(r.text)[:300])
                 json={"files": {"obi_signal.json": {"content": json.dumps(result, indent=2)}}},
                 timeout=15
             )
-            print("[INTEL] Gist push: " + str(r.status_code))
+            print("[INTEL] Gist: " + str(r.status_code))
         except Exception as e:
             print("[INTEL] Gist error: " + str(e))
 
     def _send_telegram(self, r: dict):
-        print("[INTEL] " + self.symbol + ": sending Telegram")
+        print("[INTEL] sending Telegram")
         try:
             tags = " + ".join(r.get("tags", [])) or "—"
-            gv   = str(r.get("groq_verdict", ""))[:300]
-            cv   = str(r.get("claude_verdict", ""))[:300]
-
-            msg = (
+            gv   = str(r.get("groq_verdict", ""))[:400]
+            cv   = str(r.get("claude_verdict", ""))[:400]
+            msg  = (
                 "OBI SIGNAL - " + r["symbol"] + "\n"
                 "Grade: " + str(r["grade"]) + " | " + str(r["direction"]) + "\n"
-                "Entry: " + str(r["entry"]) + "\n"
+                "Entry: " + str(round(r["entry"], 5)) + "\n"
                 "SL: " + str(r["sl"]) + "\n"
-                "TP1: " + str(r["tp1"]) + " TP2: " + str(r["tp2"]) + " TP3: " + str(r["tp3"]) + "\n"
+                "TP1: " + str(r["tp1"]) + "\n"
+                "TP2: " + str(r["tp2"]) + "\n"
+                "TP3: " + str(r["tp3"]) + "\n"
                 "RR: " + str(r["rr"]) + " | Tags: " + tags + "\n"
                 "------------------------------\n"
                 "GROQ:\n" + gv + "\n"
@@ -161,16 +123,11 @@ print("[INTEL] Claude raw response: " + str(r.text)[:300])
                 "------------------------------\n"
                 + str(r["timestamp"])
             )
-
             resp = requests.post(
                 "https://api.telegram.org/bot" + str(TELEGRAM_TOKEN) + "/sendMessage",
-                json={
-                    "chat_id": str(TELEGRAM_CHAT_ID),
-                    "text": msg
-                },
+                json={"chat_id": str(TELEGRAM_CHAT_ID), "text": msg},
                 timeout=15
             )
-            print("[INTEL] Telegram status: " + str(resp.status_code))
-            print("[INTEL] Telegram response: " + str(resp.text)[:200])
+            print("[INTEL] Telegram: " + str(resp.status_code))
         except Exception as e:
             print("[INTEL] Telegram error: " + str(e))
