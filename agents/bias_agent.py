@@ -46,4 +46,5 @@ class BiasAgent:
 
             grade = "A" if score >= 5 else "B" if score >= 4 else "C" if score >= 3 else "D"
 
-            print(f"[BIAS] {self.symbol}: {direction} | Grade
+            print("[BIAS] " + self.symbol + ": " + direction + " | Grade=" + grade + " | Factors=" + str(score) + "/6")
+
