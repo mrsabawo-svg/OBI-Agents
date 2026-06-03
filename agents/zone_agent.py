@@ -68,8 +68,9 @@ class ZoneAgent:
 
                 # TP targets from HTF structure
                 # Bull: target recent HTF highs above current price
-                htf_highs_above = [float(h) for h in high_htf if float(h) > current_price]
-                htf_lows_below  = [float(l) for l in low_htf  if float(l) < current_price]
+                htf_highs_above = [float(h) for h in high_htf[-100:] if float(h) > current_price + (current_price * 0.002)]
+                htf_lows_below  = [float(l) for l in low_htf[-100:]  if float(l) < current_price - (current_price * 0.002)]
+
 
                 if htf_highs_above:
                     htf_tp_bull = sorted(htf_highs_above)[len(htf_highs_above)//2]
