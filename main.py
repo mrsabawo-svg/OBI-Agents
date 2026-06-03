@@ -49,7 +49,8 @@ def run(symbol: str):
         zone = ZoneAgent(symbol).analyse(data, bias)
 
         # 7. LTF entry
-        ltf = LTFAgent(symbol).analyse(data, mtf)
+        ltf = LTFAgent(symbol).analyse(data, mtf, zone)
+
 
         # 8. Trigger gate
         trigger = TriggerAgent(symbol).evaluate(ltf, zone, bias)
