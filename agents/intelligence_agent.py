@@ -1,31 +1,30 @@
 """
 OBI Agents — Intelligence Agent
-The brain that reads all agent outputs and produces
-a final verdict using Groq (LLaMA 3.3 70B) + Claude.
+Groq + Claude verdict + Telegram delivery.
 """
-import os, json, requests
+import os
+import json
+import requests
 from core.utils import sast_str
 from core.memory import load as load_memory, save as save_memory
 
-GROQ_API_KEY      = os.environ.get("GROQ_API_KEY")
+GROQ_API_KEY     = os.environ.get("GROQ_API_KEY")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-TELEGRAM_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID  = os.environ.get("TELEGRAM_CHAT_ID")
-GIST_ID           = os.environ.get("GIST_ID")
-GITHUB_TOKEN      = os.environ.get("GITHUB_TOKEN")
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+GIST_ID          = os.environ.get("GIST_ID")
+GITHUB_TOKEN     = os.environ.get("GITHUB_TOKEN")
 
 class IntelligenceAgent:
     def __init__(self, symbol: str):
         self.symbol = symbol
 
     def verdict(self, payload: dict) -> dict:
+        print("[INTEL] " + self.symbol + ": starting verdict")
         memory   = load_memory()
         accuracy = memory.get(self.symbol, {}).get("accuracy", "No history yet")
 
-        # ── Groq: systematic reasoning ─────────────────────
-        groq_verdict = self._ask_groq(payload, accuracy)
-
-        # ── Claude: qualitative second opinion ─────────────
+        groq_verdict   = self._ask_groq(payload, accuracy)
         claude_verdict = self._ask_claude(payload, groq_verdict)
 
         result = {
@@ -49,122 +48,125 @@ class IntelligenceAgent:
         self._send_telegram(result)
         return result
 
-    # ── Groq ───────────────────────────────────────────────
-
     def _ask_groq(self, payload: dict, accuracy: str) -> str:
+        print("[INTEL] " + self.symbol + ": calling Groq")
         try:
-            prompt = f"""You are a professional forex and crypto trading analyst.
-Review this multi-agent trading signal and give a systematic verdict.
-
-SIGNAL PAYLOAD:
-{json.dumps(payload, indent=2)}
-
-HISTORICAL ACCURACY FOR {self.symbol}: {accuracy}
-
-Respond with:
-1. VERDICT: TAKE IT / LEAVE IT / WAIT
-2. CONFIDENCE: 1-10
-3. STRENGTHS: (bullet points)
-4. CONCERNS: (bullet points)
-5. WATCH: one thing to monitor after entry
-
-Be concise. Maximum 200 words."""
-
+            prompt = (
+                "You are a professional trading analyst. "
+                "Review this signal and respond with: "
+                "1. VERDICT: TAKE IT / LEAVE IT / WAIT "
+                "2. CONFIDENCE: 1-10 "
+                "3. STRENGTHS: bullet points "
+                "4. CONCERNS: bullet points "
+                "5. WATCH: one thing after entry. "
+                "Max 150 words. "
+                "Signal: " + json.dumps(payload)
+            )
             r = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {GROQ_API_KEY}",
-                         "Content-Type": "application/json"},
-                json={"model": "llama-3.3-70b-versatile",
-                      "messages": [{"role": "user", "content": prompt}],
-                      "max_tokens": 300}
+                headers={
+                    "Authorization": "Bearer " + str(GROQ_API_KEY),
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 300
+                },
+                timeout=30
             )
+            print("[INTEL] Groq status: " + str(r.status_code))
             return r.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            return f"Groq error: {e}"
-
-    # ── Claude ─────────────────────────────────────────────
+            print("[INTEL] Groq error: " + str(e))
+            return "Groq unavailable"
 
     def _ask_claude(self, payload: dict, groq_verdict: str) -> str:
+        print("[INTEL] " + self.symbol + ": calling Claude")
         try:
-            prompt = f"""You are a senior trading analyst reviewing an AI-generated signal.
-The systematic agents have already analysed this. Groq's verdict was:
-
-{groq_verdict}
-
-Full signal:
-{json.dumps(payload, indent=2)}
-
-Add qualitative insight the agents may have missed.
-Give your verdict in this exact format:
-VERDICT: TAKE IT / LEAVE IT / WAIT
-CONFIDENCE: X/10
-LIKES: (2-3 bullets)
-CONCERNS: (1-2 bullets)
-WATCH: one post-entry thing
-Maximum 150 words."""
-
+            prompt = (
+                "You are a senior trading analyst. "
+                "Groq said: " + groq_verdict + ". "
+                "Add your qualitative insight. "
+                "Format: VERDICT / CONFIDENCE / LIKES / CONCERNS / WATCH. "
+                "Max 100 words. "
+                "Signal: " + json.dumps(payload)
+            )
             r = requests.post(
                 "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": ANTHROPIC_API_KEY,
-                         "anthropic-version": "2023-06-01",
-                         "Content-Type": "application/json"},
-                json={"model": "claude-sonnet-4-20250514",
-                      "max_tokens": 300,
-                      "messages": [{"role": "user", "content": prompt}]}
+                headers={
+                    "x-api-key": str(ANTHROPIC_API_KEY),
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 300,
+                    "messages": [{"role": "user", "content": prompt}]
+                },
+                timeout=30
             )
+            print("[INTEL] Claude status: " + str(r.status_code))
             return r.json()["content"][0]["text"].strip()
         except Exception as e:
-            return f"Claude error: {e}"
-
-    # ── Memory ─────────────────────────────────────────────
+            print("[INTEL] Claude error: " + str(e))
+            return "Claude unavailable"
 
     def _update_memory(self, memory: dict, result: dict):
-        if self.symbol not in memory:
-            memory[self.symbol] = {"signals": 0, "accuracy": "No history yet"}
-        memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
-        memory[self.symbol]["last_signal"] = result.get("timestamp")
-        memory[self.symbol]["last_direction"] = result.get("direction")
-        save_memory(memory)
-
-    # ── Gist ───────────────────────────────────────────────
+        try:
+            if self.symbol not in memory:
+                memory[self.symbol] = {"signals": 0}
+            memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
+            memory[self.symbol]["last_signal"]    = result.get("timestamp")
+            memory[self.symbol]["last_direction"] = result.get("direction")
+            save_memory(memory)
+            print("[INTEL] Memory updated")
+        except Exception as e:
+            print("[INTEL] Memory error: " + str(e))
 
     def _push_to_gist(self, result: dict):
         try:
-            requests.patch(
-                f"https://api.github.com/gists/{GIST_ID}",
-                headers={"Authorization": f"token {GITHUB_TOKEN}"},
-                json={"files": {"obi_signal.json": {"content": json.dumps(result, indent=2)}}}
+            r = requests.patch(
+                "https://api.github.com/gists/" + str(GIST_ID),
+                headers={"Authorization": "token " + str(GITHUB_TOKEN)},
+                json={"files": {"obi_signal.json": {"content": json.dumps(result, indent=2)}}},
+                timeout=15
             )
+            print("[INTEL] Gist push: " + str(r.status_code))
         except Exception as e:
-            print(f"[INTEL] Gist push failed: {e}")
-
-    # ── Telegram ───────────────────────────────────────────
+            print("[INTEL] Gist error: " + str(e))
 
     def _send_telegram(self, r: dict):
+        print("[INTEL] " + self.symbol + ": sending Telegram")
         try:
-            gv = r.get("groq_verdict", "")
-            cv = r.get("claude_verdict", "")
             tags = " + ".join(r.get("tags", [])) or "—"
+            gv   = str(r.get("groq_verdict", ""))[:300]
+            cv   = str(r.get("claude_verdict", ""))[:300]
 
             msg = (
-                f"🤖 *OBI SIGNAL — {r['symbol']}*\n"
-                f"Grade: `{r['grade']}`  |  {r['direction']}\n"
-                f"Entry: `{r['entry']}`\n"
-                f"SL: `{r['sl']}`\n"
-                f"TP1: `{r['tp1']}`  TP2: `{r['tp2']}`  TP3: `{r['tp3']}`\n"
-                f"RR: `{r['rr']}`  |  Tags: {tags}\n"
-                f"{'─'*30}\n"
-                f"🦙 *GROQ VERDICT*\n{gv}\n"
-                f"{'─'*30}\n"
-                f"🧠 *CLAUDE VERDICT*\n{cv}\n"
-                f"{'─'*30}\n"
-                f"🕐 {r['timestamp']}"
+                "OBI SIGNAL - " + r["symbol"] + "\n"
+                "Grade: " + str(r["grade"]) + " | " + str(r["direction"]) + "\n"
+                "Entry: " + str(r["entry"]) + "\n"
+                "SL: " + str(r["sl"]) + "\n"
+                "TP1: " + str(r["tp1"]) + " TP2: " + str(r["tp2"]) + " TP3: " + str(r["tp3"]) + "\n"
+                "RR: " + str(r["rr"]) + " | Tags: " + tags + "\n"
+                "------------------------------\n"
+                "GROQ:\n" + gv + "\n"
+                "------------------------------\n"
+                "CLAUDE:\n" + cv + "\n"
+                "------------------------------\n"
+                + str(r["timestamp"])
             )
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                json={"chat_id": TELEGRAM_CHAT_ID,
-                      "text": msg,
-                      "parse_mode": "Markdown"}
+
+            resp = requests.post(
+                "https://api.telegram.org/bot" + str(TELEGRAM_TOKEN) + "/sendMessage",
+                json={
+                    "chat_id": str(TELEGRAM_CHAT_ID),
+                    "text": msg
+                },
+                timeout=15
             )
+            print("[INTEL] Telegram status: " + str(resp.status_code))
+            print("[INTEL] Telegram response: " + str(resp.text)[:200])
         except Exception as e:
-            print(f"[INTEL] Telegram failed: {e}")
+            print("[INTEL] Telegram error: " + str(e))
