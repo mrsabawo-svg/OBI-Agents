@@ -63,18 +63,21 @@ class IntelligenceAgent:
                 "Signal: " + json.dumps(payload)
             )
             r = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
+                "https://api.anthropic.com/v1/messages",
                 headers={
-                    "Authorization": "Bearer " + str(GROQ_API_KEY),
-                    "Content-Type": "application/json"
+                    "x-api-key": str(ANTHROPIC_API_KEY),
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
                 },
                 json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 300
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 300,
+                    "messages": [{"role": "user", "content": prompt}]
                 },
                 timeout=30
-            )
+)
+print("[INTEL] Claude raw response: " + str(r.text)[:300])
+
             print("[INTEL] Groq status: " + str(r.status_code))
             return r.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
