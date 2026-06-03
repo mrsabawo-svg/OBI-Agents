@@ -7,12 +7,11 @@ import requests
 from core.utils import sast_str
 from core.memory import load as load_memory, save as save_memory
 
-GROQ_API_KEY      = os.environ.get("GROQ_API_KEY")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-TELEGRAM_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID  = os.environ.get("TELEGRAM_CHAT_ID")
-GIST_ID           = os.environ.get("GIST_ID")
-GITHUB_TOKEN      = os.environ.get("GITHUB_TOKEN")
+GROQ_API_KEY     = os.environ.get("GROQ_API_KEY")
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+GIST_ID          = os.environ.get("GIST_ID")
+GITHUB_TOKEN     = os.environ.get("GITHUB_TOKEN")
 
 class IntelligenceAgent:
     def __init__(self, symbol: str):
@@ -23,64 +22,54 @@ class IntelligenceAgent:
         memory   = load_memory()
         accuracy = memory.get(self.symbol, {}).get("accuracy", "No history yet")
         groq_verdict   = self._ask_groq(payload, accuracy)
-        claude_verdict = self._ask_claude(payload, groq_verdict)
+        devil_verdict  = self._ask_devil(payload, groq_verdict)
         result = {
-            "symbol":         self.symbol,
-            "timestamp":      sast_str(),
-            "direction":      payload["trigger"].get("direction"),
-            "grade":          payload["trigger"].get("grade"),
-            "entry":          payload["trigger"].get("entry"),
-            "sl":             payload["trigger"].get("sl"),
-            "tp1":            payload["trigger"].get("tp1"),
-            "tp2":            payload["trigger"].get("tp2"),
-            "tp3":            payload["trigger"].get("tp3"),
-            "rr":             payload["trigger"].get("rr"),
-            "tags":           payload["trigger"].get("tags", []),
-            "groq_verdict":   groq_verdict,
-            "claude_verdict": claude_verdict,
+            "symbol":        self.symbol,
+            "timestamp":     sast_str(),
+            "direction":     payload["trigger"].get("direction"),
+            "grade":         payload["trigger"].get("grade"),
+            "entry":         payload["trigger"].get("entry"),
+            "sl":            payload["trigger"].get("sl"),
+            "tp1":           payload["trigger"].get("tp1"),
+            "tp2":           payload["trigger"].get("tp2"),
+            "tp3":           payload["trigger"].get("tp3"),
+            "rr":            payload["trigger"].get("rr"),
+            "tags":          payload["trigger"].get("tags", []),
+            "groq_verdict":  groq_verdict,
+            "devil_verdict": devil_verdict,
         }
         self._update_memory(memory, result)
         self._push_to_gist(result)
         self._send_telegram(result)
         return result
 
+    def _groq_call(self, prompt: str) -> str:
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": "Bearer " + str(GROQ_API_KEY), "Content-Type": "application/json"},
+            json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": prompt}], "max_tokens": 250},
+            timeout=30
+        )
+        print("[INTEL] Groq status: " + str(r.status_code))
+        return r.json()["choices"][0]["message"]["content"].strip()
+
     def _ask_groq(self, payload: dict, accuracy: str) -> str:
-        print("[INTEL] calling Groq")
+        print("[INTEL] calling Groq analyst")
         try:
             prompt = "You are a professional trading analyst. Review this signal and respond with: 1. VERDICT: TAKE IT / LEAVE IT / WAIT 2. CONFIDENCE: 1-10 3. STRENGTHS 4. CONCERNS 5. WATCH. Max 150 words. Signal: " + json.dumps(payload)
-            r = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": "Bearer " + str(GROQ_API_KEY), "Content-Type": "application/json"},
-                json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": prompt}], "max_tokens": 300},
-                timeout=30
-            )
-            print("[INTEL] Groq status: " + str(r.status_code))
-            return r.json()["choices"][0]["message"]["content"].strip()
+            return self._groq_call(prompt)
         except Exception as e:
             print("[INTEL] Groq error: " + str(e))
             return "Groq unavailable"
 
-    def _ask_claude(self, payload: dict, groq_verdict: str) -> str:
-        print("[INTEL] calling second opinion")
+    def _ask_devil(self, payload: dict, groq_verdict: str) -> str:
+        print("[INTEL] calling devil advocate")
         try:
-            prompt = "You are a risk-focused trading analyst. Another analyst said: " + groq_verdict + ". Play devil's advocate. What could go wrong with this trade? Format: SECOND OPINION / RISK SCORE 1-10 / RED FLAGS / ALTERNATIVE VIEW. Max 100 words. Signal: " + json.dumps(payload)
-            r = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": "Bearer " + str(GROQ_API_KEY), "Content-Type": "application/json"},
-                json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": prompt}], "max_tokens": 200},
-                timeout=30
-        )
-        return r.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print("[INTEL] Second opinion error: " + str(e))
-        return "Second opinion unavailable"
-
-            print("[INTEL] Claude status: " + str(r.status_code))
-            data = r.json()
-            return data["content"][0]["text"].strip()
+            prompt = "You are a risk-focused trading analyst. Another analyst said: " + groq_verdict + ". Play devil advocate. What could go wrong? Format: SECOND OPINION / RISK SCORE 1-10 / RED FLAGS / ALTERNATIVE VIEW. Max 100 words. Signal: " + json.dumps(payload)
+            return self._groq_call(prompt)
         except Exception as e:
-            print("[INTEL] Claude error: " + str(e))
-            return "Claude unavailable"
+            print("[INTEL] Devil error: " + str(e))
+            return "Devil advocate unavailable"
 
     def _update_memory(self, memory: dict, result: dict):
         try:
@@ -109,22 +98,22 @@ class IntelligenceAgent:
     def _send_telegram(self, r: dict):
         print("[INTEL] sending Telegram")
         try:
-            tags = " + ".join(r.get("tags", [])) or "—"
+            tags = " + ".join(r.get("tags", [])) or "none"
             gv   = str(r.get("groq_verdict", ""))[:400]
-            cv   = str(r.get("claude_verdict", ""))[:400]
+            dv   = str(r.get("devil_verdict", ""))[:400]
             msg  = (
                 "OBI SIGNAL - " + r["symbol"] + "\n"
                 "Grade: " + str(r["grade"]) + " | " + str(r["direction"]) + "\n"
-                "Entry: " + str(round(r["entry"], 5)) + "\n"
+                "Entry: " + str(round(float(r["entry"]), 5)) + "\n"
                 "SL: " + str(r["sl"]) + "\n"
                 "TP1: " + str(r["tp1"]) + "\n"
                 "TP2: " + str(r["tp2"]) + "\n"
                 "TP3: " + str(r["tp3"]) + "\n"
                 "RR: " + str(r["rr"]) + " | Tags: " + tags + "\n"
                 "------------------------------\n"
-                "GROQ:\n" + gv + "\n"
+                "GROQ ANALYST:\n" + gv + "\n"
                 "------------------------------\n"
-                "CLAUDE:\n" + cv + "\n"
+                "DEVILS ADVOCATE:\n" + dv + "\n"
                 "------------------------------\n"
                 + str(r["timestamp"])
             )
