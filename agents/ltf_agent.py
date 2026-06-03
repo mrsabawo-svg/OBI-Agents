@@ -76,7 +76,8 @@ class LTFAgent:
                 "rr":        rr,
                 "atr":       atr,
                 "direction": direction,
-                "valid":     bool(trigger and confluence >= 2)
+                "valid": bool(trigger and confluence >= 1)
+
             }
 
         except Exception as e:
