@@ -1,14 +1,13 @@
-name: OBI Agents Pipeline
+name: OBI v4 Live Scanner
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0/5 * * * *"
   workflow_dispatch:
 
 jobs:
-  run-agents:
+  scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v3
 
@@ -17,16 +16,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Cache dependencies
+      - name: Cache pip
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
 
-      - name: Install dependencies
+      - name: Install
         run: pip install -r requirements.txt
 
-      - name: Run OBI Agents
+      - name: Run
         env:
           GROQ_API_KEY:        ${{ secrets.GROQ_API_KEY }}
           ANTHROPIC_API_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
