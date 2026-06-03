@@ -61,15 +61,20 @@ class IntelligenceAgent:
             return "Groq unavailable"
 
     def _ask_claude(self, payload: dict, groq_verdict: str) -> str:
-        print("[INTEL] calling Claude")
+        print("[INTEL] calling second opinion")
         try:
-            prompt = "You are a senior trading analyst. Groq said: " + groq_verdict + ". Add qualitative insight. Format: VERDICT / CONFIDENCE / LIKES / CONCERNS / WATCH. Max 100 words. Signal: " + json.dumps(payload)
+            prompt = "You are a risk-focused trading analyst. Another analyst said: " + groq_verdict + ". Play devil's advocate. What could go wrong with this trade? Format: SECOND OPINION / RISK SCORE 1-10 / RED FLAGS / ALTERNATIVE VIEW. Max 100 words. Signal: " + json.dumps(payload)
             r = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={"x-api-key": str(ANTHROPIC_API_KEY), "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 300, "messages": [{"role": "user", "content": prompt}]},
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": "Bearer " + str(GROQ_API_KEY), "Content-Type": "application/json"},
+                json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": prompt}], "max_tokens": 200},
                 timeout=30
-            )
+        )
+        return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print("[INTEL] Second opinion error: " + str(e))
+        return "Second opinion unavailable"
+
             print("[INTEL] Claude status: " + str(r.status_code))
             data = r.json()
             return data["content"][0]["text"].strip()
