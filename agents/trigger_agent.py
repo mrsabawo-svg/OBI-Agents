@@ -19,8 +19,7 @@ class TriggerAgent:
                 return self._blocked("LTF trigger not confirmed")
 
             if rr < 1.2:
-    return self._blocked("RR too low " + str(rr))
-
+                return self._blocked("RR too low " + str(rr))
 
             if direction == "NEUTRAL":
                 return self._blocked("No directional bias")
@@ -28,7 +27,7 @@ class TriggerAgent:
             if not zone_aligned:
                 print("[TRIGGER] " + self.symbol + ": zone not aligned but proceeding")
 
-            if score >= 5 and rr >= 3:
+            if confluence >= 5 and rr >= 3:
                 grade = "A+"
             elif confluence >= 4 and rr >= 2:
                 grade = "A"
@@ -38,11 +37,16 @@ class TriggerAgent:
                 grade = "C"
 
             tags = []
-            if ltf.get("fvg"):      tags.append("FVG")
-            if ltf.get("momentum"): tags.append("Momentum")
-            if zone.get("ob_bull") or zone.get("ob_bear"): tags.append("OB")
-            if zone.get("in_discount") and direction == "BUY":  tags.append("Discount")
-            if zone.get("in_premium")  and direction == "SELL": tags.append("Premium")
+            if ltf.get("fvg"):
+                tags.append("FVG")
+            if ltf.get("momentum"):
+                tags.append("Momentum")
+            if zone.get("ob_bull") or zone.get("ob_bear"):
+                tags.append("OB")
+            if zone.get("in_discount") and direction == "BUY":
+                tags.append("Discount")
+            if zone.get("in_premium") and direction == "SELL":
+                tags.append("Premium")
 
             print("[TRIGGER] " + self.symbol + ": FIRE " + direction + " Grade=" + grade + " RR=" + str(rr))
             return {
