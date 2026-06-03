@@ -12,7 +12,8 @@ from agents.trigger_agent      import TriggerAgent
 from agents.intelligence_agent import IntelligenceAgent
 from core.utils                import sast_str
 
-SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "BTCUSD", "ETHUSD"]
+SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
+
 ALL_TF  = ["4h", "1h", "15m", "5m"]
 
 def run(symbol: str):
