@@ -123,5 +123,7 @@ class IntelligenceAgent:
                 timeout=15
             )
             print("[INTEL] Telegram: " + str(resp.status_code))
+            print("[INTEL] Chat ID used: " + str(TELEGRAM_CHAT_ID))
+
         except Exception as e:
             print("[INTEL] Telegram error: " + str(e))
