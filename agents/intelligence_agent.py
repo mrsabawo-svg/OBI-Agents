@@ -72,16 +72,26 @@ class IntelligenceAgent:
             return "Devil advocate unavailable"
 
     def _update_memory(self, memory: dict, result: dict):
-        try:
-            if self.symbol not in memory:
-                memory[self.symbol] = {"signals": 0}
-            memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
-            memory[self.symbol]["last_signal"]    = result.get("timestamp")
-            memory[self.symbol]["last_direction"] = result.get("direction")
-            save_memory(memory)
-            print("[INTEL] Memory updated")
-        except Exception as e:
-            print("[INTEL] Memory error: " + str(e))
+    try:
+        if self.symbol not in memory:
+            memory[self.symbol] = {"signals": 0, "wins": 0, "losses": 0}
+        memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
+        memory[self.symbol]["last_signal"]    = result.get("timestamp")
+        memory[self.symbol]["last_direction"] = result.get("direction")
+        memory[self.symbol]["last_signal_data"] = {
+            "direction": result.get("direction"),
+            "entry":     result.get("entry"),
+            "sl":        result.get("sl"),
+            "tp1":       result.get("tp1"),
+            "tp2":       result.get("tp2"),
+            "tp3":       result.get("tp3"),
+            "timestamp": result.get("timestamp")
+        }
+        save_memory(memory)
+        print("[INTEL] Memory updated")
+    except Exception as e:
+        print("[INTEL] Memory error: " + str(e))
+
 
     def _push_to_gist(self, result: dict):
         try:
