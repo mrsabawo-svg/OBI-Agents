@@ -5,6 +5,8 @@ from agents.data_agent         import DataAgent
 from agents.htf_agent          import HTFAgent
 from agents.mtf_agent          import MTFAgent
 from agents.ltf_agent          import LTFAgent
+from agents.news_agent import NewsAgent
+
 from agents.session_agent      import SessionAgent
 from agents.bias_agent         import BiasAgent
 from agents.zone_agent         import ZoneAgent
@@ -22,8 +24,15 @@ def run(symbol: str):
     print(f"{'═'*45}")
 
     try:
+        # News gate
+        news = NewsAgent().is_safe()
+        if not news["safe"]:
+            print("[MAIN] " + symbol + ": NEWS BLOCK — " + news["reason"])
+            return
+
         # 1. Data
         data = DataAgent(symbol).fetch(ALL_TF)
+
         if len(data) == 0:
             print(f"[MAIN] {symbol}: no data — skipping")
             return
