@@ -25,9 +25,11 @@ class SessionAgent:
             hour     = now.hour
             weekday  = now.weekday()
 
-            # No trading weekends
-            if weekday >= 5:
+            # Crypto trades 24/7 — never block on weekends
+            CRYPTO_SYMBOLS = ["BTCUSD", "ETHUSD", "SOLUSD"]
+            if weekday >= 5 and self.symbol not in CRYPTO_SYMBOLS:
                 return self._build(False, "Weekend — market closed", kill_zone)
+
 
             # Only block 23:00 SAST (truly dead)
             if hour == 23:
