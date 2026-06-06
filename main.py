@@ -6,7 +6,7 @@ from agents.htf_agent          import HTFAgent
 from agents.mtf_agent          import MTFAgent
 from agents.ltf_agent          import LTFAgent
 from agents.news_agent import NewsAgent
-
+from agents.tracker_agent import check_outcome
 from agents.session_agent      import SessionAgent
 from agents.bias_agent         import BiasAgent
 from agents.zone_agent         import ZoneAgent
