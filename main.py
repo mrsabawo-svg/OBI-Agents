@@ -36,6 +36,9 @@ def run(symbol: str):
         if len(data) == 0:
             print(f"[MAIN] {symbol}: no data — skipping")
             return
+        # Check previous signal outcome
+                ticker = DataAgent(symbol).ticker
+                check_outcome(symbol, ticker)
 
         # 2. Session gate
         session = SessionAgent(symbol).analyse()
