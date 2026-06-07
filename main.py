@@ -18,59 +18,44 @@ SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD",
 ALL_TF  = ["4h", "1h", "15m", "5m"]
 
 def run(symbol: str, news: dict = None):
-
     print("=" * 45)
     print("  OBI v4.0 - " + symbol + " - " + sast_str())
     print("=" * 45)
 
     try:
-        # News gate
-                if news and not news["safe"]:
-
+        if news and not news["safe"]:
             print("[MAIN] " + symbol + ": NEWS BLOCK - " + news["reason"])
             return
 
-        # 1. Data
         data = DataAgent(symbol).fetch(ALL_TF)
         if len(data) == 0:
             print("[MAIN] " + symbol + ": no data - skipping")
             return
 
-        # Check previous signal outcome
         ticker = DataAgent(symbol).ticker
         check_outcome(symbol, ticker)
 
-        # 2. Session gate
         session = SessionAgent(symbol).analyse()
         if not session["tradeable"]:
             print("[MAIN] " + symbol + ": session blocked - " + session["reason"])
             return
 
-        # 3. HTF macro bias
         htf = HTFAgent(symbol).analyse(data)
-
-        # 4. MTF structure
         mtf = MTFAgent(symbol).analyse(data, htf)
 
-        # 5. Bias gate
         bias = BiasAgent(symbol).evaluate(htf, mtf, session)
         if not bias["approved"]:
             print("[MAIN] " + symbol + ": bias blocked - " + bias["reason"])
             return
 
-        # 6. Zone analysis
-        zone = ZoneAgent(symbol).analyse(data, bias)
-
-        # 7. LTF entry
-        ltf = LTFAgent(symbol).analyse(data, mtf, zone)
-
-        # 8. Trigger gate
+        zone    = ZoneAgent(symbol).analyse(data, bias)
+        ltf     = LTFAgent(symbol).analyse(data, mtf, zone)
         trigger = TriggerAgent(symbol).evaluate(ltf, zone, bias)
+
         if not trigger["fire"]:
             print("[MAIN] " + symbol + ": no trigger - " + trigger["reason"])
             return
 
-        # 9. Intelligence verdict
         payload = {
             "symbol":  symbol,
             "htf":     htf,
@@ -85,11 +70,10 @@ def run(symbol: str, news: dict = None):
 
     except Exception as e:
         import traceback
-        print("[MAIN] " + symbol + " pipeline error: " + str(e))
+        print("[MAIN] " + symbol + " error: " + str(e))
         print(traceback.format_exc())
 
 if __name__ == "__main__":
     news = NewsAgent().is_safe()
     for symbol in SYMBOLS:
         run(symbol, news)
-
