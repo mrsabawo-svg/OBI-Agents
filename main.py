@@ -12,13 +12,14 @@ from agents.bias_agent         import BiasAgent
 from agents.zone_agent         import ZoneAgent
 from agents.trigger_agent      import TriggerAgent
 from agents.regime_agent       import RegimeAgent
+from agents.health_agent       import HealthAgent
 from agents.intelligence_agent import IntelligenceAgent
 from core.utils                import sast_str
 
 SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
 ALL_TF  = ["4h", "1h", "15m", "5m"]
 
-def run(symbol: str, news: dict = None):
+def run(symbol: str, news: dict = None) -> dict:
     print("=" * 45)
     print("  OBI v4.0 - " + symbol + " - " + sast_str())
     print("=" * 45)
@@ -26,12 +27,12 @@ def run(symbol: str, news: dict = None):
     try:
         if news and not news["safe"]:
             print("[MAIN] " + symbol + ": NEWS BLOCK - " + news["reason"])
-            return
+            return {"blocked": "news"}
 
         data = DataAgent(symbol).fetch(ALL_TF)
         if len(data) == 0:
             print("[MAIN] " + symbol + ": no data - skipping")
-            return
+            return {"data_empty": True}
 
         ticker = DataAgent(symbol).ticker
         check_outcome(symbol, ticker)
@@ -39,7 +40,7 @@ def run(symbol: str, news: dict = None):
         session = SessionAgent(symbol).analyse()
         if not session["tradeable"]:
             print("[MAIN] " + symbol + ": session blocked - " + session["reason"])
-            return
+            return {"blocked": "session"}
 
         htf    = HTFAgent(symbol).analyse(data)
         regime = RegimeAgent(symbol).detect(data)
@@ -48,7 +49,7 @@ def run(symbol: str, news: dict = None):
 
         if not bias["approved"]:
             print("[MAIN] " + symbol + ": bias blocked - " + bias["reason"])
-            return
+            return {"blocked": "bias"}
 
         zone    = ZoneAgent(symbol).analyse(data, bias)
         ltf     = LTFAgent(symbol).analyse(data, mtf, zone)
@@ -56,7 +57,7 @@ def run(symbol: str, news: dict = None):
 
         if not trigger["fire"]:
             print("[MAIN] " + symbol + ": no trigger - " + trigger["reason"])
-            return
+            return {"blocked": "trigger"}
 
         payload = {
             "symbol":  symbol,
@@ -70,13 +71,19 @@ def run(symbol: str, news: dict = None):
             "session": session,
         }
         IntelligenceAgent(symbol).verdict(payload)
+        return {"fired": True}
 
     except Exception as e:
         import traceback
         print("[MAIN] " + symbol + " error: " + str(e))
         print(traceback.format_exc())
+        return {"error": str(e)}
 
 if __name__ == "__main__":
-    news = NewsAgent().is_safe()
+    news    = NewsAgent().is_safe()
+    results = {}
+
     for symbol in SYMBOLS:
-        run(symbol, news)
+        results[symbol] = run(symbol, news)
+
+    HealthAgent().check(results)
