@@ -11,6 +11,7 @@ from agents.session_agent      import SessionAgent
 from agents.bias_agent         import BiasAgent
 from agents.zone_agent         import ZoneAgent
 from agents.trigger_agent      import TriggerAgent
+from agents.regime_agent       import RegimeAgent
 from agents.intelligence_agent import IntelligenceAgent
 from core.utils                import sast_str
 
@@ -40,10 +41,11 @@ def run(symbol: str, news: dict = None):
             print("[MAIN] " + symbol + ": session blocked - " + session["reason"])
             return
 
-        htf = HTFAgent(symbol).analyse(data)
-        mtf = MTFAgent(symbol).analyse(data, htf)
+        htf    = HTFAgent(symbol).analyse(data)
+        regime = RegimeAgent(symbol).detect(data)
+        mtf    = MTFAgent(symbol).analyse(data, htf)
+        bias   = BiasAgent(symbol).evaluate(htf, mtf, session, regime)
 
-        bias = BiasAgent(symbol).evaluate(htf, mtf, session)
         if not bias["approved"]:
             print("[MAIN] " + symbol + ": bias blocked - " + bias["reason"])
             return
@@ -59,6 +61,7 @@ def run(symbol: str, news: dict = None):
         payload = {
             "symbol":  symbol,
             "htf":     htf,
+            "regime":  regime,
             "mtf":     mtf,
             "bias":    bias,
             "zone":    zone,
