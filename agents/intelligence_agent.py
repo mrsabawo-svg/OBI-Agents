@@ -37,10 +37,11 @@ class IntelligenceAgent:
             "tags":          payload["trigger"].get("tags", []),
             "groq_verdict":  groq_verdict,
             "devil_verdict": devil_verdict,
+            "regime":        payload.get("regime", {}),
         }
         self._update_memory(memory, result)
         self._push_to_gist(result)
-        self._send_telegram(result)
+        self._send_telegram(result, payload)
         return result
 
     def _groq_call(self, prompt: str) -> str:
@@ -61,6 +62,7 @@ class IntelligenceAgent:
         except Exception as e:
             print("[INTEL] Groq error: " + str(e))
             return "Groq unavailable"
+
     def _ask_devil(self, payload: dict, groq_verdict: str) -> str:
         print("[INTEL] calling devil advocate")
         try:
@@ -69,6 +71,23 @@ class IntelligenceAgent:
         except Exception as e:
             print("[INTEL] Devil error: " + str(e))
             return "Devil advocate unavailable"
+    def _build_narrative(self, result: dict, payload: dict) -> str:
+        try:
+            regime_label = payload.get("regime", {}).get("label", "Unknown")
+            regime_conf  = payload.get("regime", {}).get("confidence", 0)
+            tags         = " + ".join(result.get("tags", [])) or "none"
+            grade        = result.get("grade", "C")
+            bias_factors = payload.get("bias", {}).get("factors", [])
+            top_factors  = ", ".join(bias_factors[:3]) if bias_factors else "none"
+            narrative = (
+                "Edge: HMM " + regime_label +
+                " (" + str(round(regime_conf * 100)) + "% conf) | " +
+                tags + " | " + top_factors
+            )
+            return narrative
+        except Exception as e:
+            print("[INTEL] Narrative error: " + str(e))
+            return "Edge: confluence confirmed"
 
     def _update_memory(self, memory: dict, result: dict):
         try:
@@ -103,13 +122,14 @@ class IntelligenceAgent:
         except Exception as e:
             print("[INTEL] Gist error: " + str(e))
 
-    def _send_telegram(self, r: dict):
+    def _send_telegram(self, r: dict, payload: dict):
         print("[INTEL] sending Telegram")
         try:
-            tags = " + ".join(r.get("tags", [])) or "none"
-            gv   = str(r.get("groq_verdict", ""))[:400]
-            dv   = str(r.get("devil_verdict", ""))[:400]
-            msg  = (
+            tags      = " + ".join(r.get("tags", [])) or "none"
+            gv        = str(r.get("groq_verdict", ""))[:400]
+            dv        = str(r.get("devil_verdict", ""))[:400]
+            narrative = self._build_narrative(r, payload)
+            msg = (
                 "OBI SIGNAL - " + r["symbol"] + "\n"
                 "Grade: " + str(r["grade"]) + " | " + str(r["direction"]) + "\n"
                 "Entry: " + str(round(float(r["entry"]), 5)) + "\n"
@@ -118,6 +138,8 @@ class IntelligenceAgent:
                 "TP2: " + str(r["tp2"]) + "\n"
                 "TP3: " + str(r["tp3"]) + "\n"
                 "RR: " + str(r["rr"]) + " | Tags: " + tags + "\n"
+                "------------------------------\n"
+                + narrative + "\n"
                 "------------------------------\n"
                 "GROQ ANALYST:\n" + gv + "\n"
                 "------------------------------\n"
