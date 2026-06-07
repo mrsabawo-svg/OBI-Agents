@@ -6,7 +6,7 @@ class BiasAgent:
     def __init__(self, symbol: str):
         self.symbol = symbol
 
-    def evaluate(self, htf: dict, mtf: dict, session: dict) -> dict:
+    def evaluate(self, htf: dict, mtf: dict, session: dict, regime: dict = None) -> dict:
         try:
             if not session.get("tradeable"):
                 return self._blocked("Session: " + str(session.get("reason")))
@@ -15,6 +15,9 @@ class BiasAgent:
             htf_conf  = htf.get("confidence", 0)
             mtf_align = mtf.get("aligned", False)
             in_kz     = session.get("kill_zone", False)
+
+            regime_label = regime.get("label", "RANGING") if regime else "RANGING"
+            regime_conf  = regime.get("confidence", 0) if regime else 0
 
             if htf_bias == "NEUTRAL":
                 return self._blocked("HTF bias is NEUTRAL — no directional edge")
@@ -25,6 +28,10 @@ class BiasAgent:
             if not mtf_align:
                 return self._blocked("MTF structure not aligned with HTF bias")
 
+            # Block signals in VOLATILE regime with low confidence
+            if regime_label == "VOLATILE" and regime_conf > 0.7:
+                return self._blocked("HMM: High volatility regime — too risky")
+
             factors = {
                 "HTF bias clear":      htf_conf >= 0.60,
                 "MTF aligned":         mtf_align,
@@ -32,6 +39,7 @@ class BiasAgent:
                 "Liquidity sweep":     mtf.get("sweep", False),
                 "Order block present": mtf.get("order_block", False),
                 "Kill zone active":    in_kz,
+                "Trending regime":     regime_label == "TRENDING" and regime_conf >= 0.6,
             }
 
             passed    = [k for k, v in factors.items() if v]
@@ -39,9 +47,11 @@ class BiasAgent:
             direction = mtf.get("direction", "NEUTRAL")
 
             if score < 2:
-                return self._blocked("Insufficient confluence (" + str(score) + "/6 factors)")
+                return self._blocked("Insufficient confluence (" + str(score) + "/7 factors)")
 
-            if score >= 5:
+            if score >= 6:
+                grade = "A+"
+            elif score >= 5:
                 grade = "A"
             elif score >= 4:
                 grade = "B"
@@ -50,14 +60,15 @@ class BiasAgent:
             else:
                 grade = "D"
 
-            print("[BIAS] " + self.symbol + ": " + direction + " Grade=" + grade + " Factors=" + str(score) + "/6")
+            print("[BIAS] " + self.symbol + ": " + direction + " Grade=" + grade + " Factors=" + str(score) + "/7 Regime=" + regime_label)
             return {
                 "approved":  True,
                 "direction": direction,
                 "grade":     grade,
                 "score":     score,
                 "factors":   passed,
-                "reason":    str(score) + "/6 confluence factors met"
+                "regime":    regime_label,
+                "reason":    str(score) + "/7 confluence factors met"
             }
 
         except Exception as e:
