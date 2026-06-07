@@ -4,7 +4,7 @@ Watches system health and alerts via Telegram if something breaks.
 """
 import os
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 from core.memory import load as load_memory, save as save_memory
 
@@ -12,9 +12,7 @@ SAST             = pytz.timezone("Africa/Johannesburg")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Thresholds
 MAX_SIGNAL_SILENCE_HOURS = 8
-MAX_RUN_SILENCE_HOURS    = 1
 
 
 class HealthAgent:
@@ -51,10 +49,14 @@ class HealthAgent:
     def _check_signal_silence(self):
         try:
             memory = load_memory()
-            now    = datetime.now(SAST)
+            if not memory:
+                return
+            now = datetime.now(SAST)
             last_signal_times = []
 
             for symbol, data in memory.items():
+                if symbol.startswith("_"):
+                    continue
                 last = data.get("last_signal")
                 if last:
                     try:
@@ -72,7 +74,7 @@ class HealthAgent:
 
             if hours_since > MAX_SIGNAL_SILENCE_HOURS:
                 self.issues.append(
-                    "No signals fired in " + str(round(hours_since, 1)) + " hours. Last signal: " + most_recent.strftime("%Y-%m-%d %H:%M SAST")
+                    "No signals fired in " + str(round(hours_since, 1)) + " hours. Last: " + most_recent.strftime("%Y-%m-%d %H:%M SAST")
                 )
         except Exception as e:
             print("[HEALTH] Signal silence check error: " + str(e))
@@ -80,14 +82,16 @@ class HealthAgent:
     def _check_memory(self):
         try:
             memory = load_memory()
-            if not memory:
-                self.issues.append("Memory Gist is empty or unreachable")
+            if memory is None:
+                self.issues.append("Memory Gist is unreachable")
         except Exception as e:
             self.issues.append("Memory check failed: " + str(e))
 
     def _update_last_healthy(self):
         try:
             memory = load_memory()
+            if memory is None:
+                memory = {}
             memory["_health"] = {
                 "last_healthy": datetime.now(SAST).strftime("%Y-%m-%d %H:%M SAST"),
                 "status": "OK"
