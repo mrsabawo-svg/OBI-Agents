@@ -61,5 +61,75 @@ class IntelligenceAgent:
         except Exception as e:
             print("[INTEL] Groq error: " + str(e))
             return "Groq unavailable"
+    def _ask_devil(self, payload: dict, groq_verdict: str) -> str:
+        print("[INTEL] calling devil advocate")
+        try:
+            prompt = "You are a risk analyst. Another analyst said: " + groq_verdict + ". Play devil advocate. Format: SECOND OPINION / RISK SCORE 1-10 / RED FLAGS / ALTERNATIVE VIEW. Max 100 words. Signal: " + json.dumps(payload)
+            return self._groq_call(prompt)
+        except Exception as e:
+            print("[INTEL] Devil error: " + str(e))
+            return "Devil advocate unavailable"
 
-    def _ask_devil(self, payload:
+    def _update_memory(self, memory: dict, result: dict):
+        try:
+            if self.symbol not in memory:
+                memory[self.symbol] = {"signals": 0, "wins": 0, "losses": 0}
+            memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
+            memory[self.symbol]["last_signal"]    = result.get("timestamp")
+            memory[self.symbol]["last_direction"] = result.get("direction")
+            memory[self.symbol]["last_signal_data"] = {
+                "direction": result.get("direction"),
+                "entry":     result.get("entry"),
+                "sl":        result.get("sl"),
+                "tp1":       result.get("tp1"),
+                "tp2":       result.get("tp2"),
+                "tp3":       result.get("tp3"),
+                "timestamp": result.get("timestamp")
+            }
+            save_memory(memory)
+            print("[INTEL] Memory updated")
+        except Exception as e:
+            print("[INTEL] Memory error: " + str(e))
+
+    def _push_to_gist(self, result: dict):
+        try:
+            r = requests.patch(
+                "https://api.github.com/gists/" + str(GIST_ID),
+                headers={"Authorization": "token " + str(GITHUB_TOKEN)},
+                json={"files": {"obi_signal.json": {"content": json.dumps(result, indent=2)}}},
+                timeout=15
+            )
+            print("[INTEL] Gist: " + str(r.status_code))
+        except Exception as e:
+            print("[INTEL] Gist error: " + str(e))
+
+    def _send_telegram(self, r: dict):
+        print("[INTEL] sending Telegram")
+        try:
+            tags = " + ".join(r.get("tags", [])) or "none"
+            gv   = str(r.get("groq_verdict", ""))[:400]
+            dv   = str(r.get("devil_verdict", ""))[:400]
+            msg  = (
+                "OBI SIGNAL - " + r["symbol"] + "\n"
+                "Grade: " + str(r["grade"]) + " | " + str(r["direction"]) + "\n"
+                "Entry: " + str(round(float(r["entry"]), 5)) + "\n"
+                "SL: " + str(r["sl"]) + "\n"
+                "TP1: " + str(r["tp1"]) + "\n"
+                "TP2: " + str(r["tp2"]) + "\n"
+                "TP3: " + str(r["tp3"]) + "\n"
+                "RR: " + str(r["rr"]) + " | Tags: " + tags + "\n"
+                "------------------------------\n"
+                "GROQ ANALYST:\n" + gv + "\n"
+                "------------------------------\n"
+                "DEVILS ADVOCATE:\n" + dv + "\n"
+                "------------------------------\n"
+                + str(r["timestamp"])
+            )
+            resp = requests.post(
+                "https://api.telegram.org/bot" + str(TELEGRAM_TOKEN) + "/sendMessage",
+                json={"chat_id": str(TELEGRAM_CHAT_ID), "text": msg},
+                timeout=15
+            )
+            print("[INTEL] Telegram: " + str(resp.status_code))
+        except Exception as e:
+            print("[INTEL] Telegram error: " + str(e))
