@@ -17,15 +17,16 @@ from core.utils                import sast_str
 SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
 ALL_TF  = ["4h", "1h", "15m", "5m"]
 
-def run(symbol: str):
+def run(symbol: str, news: dict = None):
+
     print("=" * 45)
     print("  OBI v4.0 - " + symbol + " - " + sast_str())
     print("=" * 45)
 
     try:
         # News gate
-        news = NewsAgent().is_safe()
-        if not news["safe"]:
+                if news and not news["safe"]:
+
             print("[MAIN] " + symbol + ": NEWS BLOCK - " + news["reason"])
             return
 
@@ -88,5 +89,7 @@ def run(symbol: str):
         print(traceback.format_exc())
 
 if __name__ == "__main__":
+    news = NewsAgent().is_safe()
     for symbol in SYMBOLS:
-        run(symbol)
+        run(symbol, news)
+
