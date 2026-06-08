@@ -93,10 +93,45 @@ class IntelligenceAgent:
         try:
             if self.symbol not in memory:
                 memory[self.symbol] = {"signals": 0, "wins": 0, "losses": 0}
+
             memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
             memory[self.symbol]["last_signal"]    = result.get("timestamp")
             memory[self.symbol]["last_direction"] = result.get("direction")
+
+            # Build trade record
+            from datetime import datetime
+            signal_id = self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+            trade_record = {
+                "id":        signal_id,
+                "symbol":    self.symbol,
+                "status":    "OPEN",
+                "direction": result.get("direction"),
+                "grade":     result.get("grade"),
+                "entry":     result.get("entry"),
+                "sl":        result.get("sl"),
+                "tp1":       result.get("tp1"),
+                "tp2":       result.get("tp2"),
+                "tp3":       result.get("tp3"),
+                "rr":        result.get("rr"),
+                "tags":      result.get("tags", []),
+                "regime":    result.get("regime", {}).get("label"),
+                "opened":    result.get("timestamp"),
+                "closed":    None,
+                "tp1_hit":   False,
+                "tp2_hit":   False,
+                "tp3_hit":   False,
+                "outcome":   None
+            }
+
+            # Append to archive — never delete
+            if "_archive" not in memory:
+                memory["_archive"] = []
+            memory["_archive"].append(trade_record)
+
+            # Store last signal data — never wipe
             memory[self.symbol]["last_signal_data"] = {
+                "id":        signal_id,
                 "direction": result.get("direction"),
                 "entry":     result.get("entry"),
                 "sl":        result.get("sl"),
@@ -105,22 +140,13 @@ class IntelligenceAgent:
                 "tp3":       result.get("tp3"),
                 "timestamp": result.get("timestamp")
             }
+
             save_memory(memory)
-            print("[INTEL] Memory updated")
+            print("[INTEL] Memory updated — signal archived: " + signal_id)
+
         except Exception as e:
             print("[INTEL] Memory error: " + str(e))
 
-    def _push_to_gist(self, result: dict):
-        try:
-            r = requests.patch(
-                "https://api.github.com/gists/" + str(GIST_ID),
-                headers={"Authorization": "token " + str(GITHUB_TOKEN)},
-                json={"files": {"obi_signal.json": {"content": json.dumps(result, indent=2)}}},
-                timeout=15
-            )
-            print("[INTEL] Gist: " + str(r.status_code))
-        except Exception as e:
-            print("[INTEL] Gist error: " + str(e))
 
     def _send_telegram(self, r: dict, payload: dict):
         print("[INTEL] sending Telegram")
