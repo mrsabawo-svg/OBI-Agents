@@ -76,18 +76,32 @@ class IntelligenceAgent:
             regime_label = payload.get("regime", {}).get("label", "Unknown")
             regime_conf  = payload.get("regime", {}).get("confidence", 0)
             tags         = " + ".join(result.get("tags", [])) or "none"
-            grade        = result.get("grade", "C")
             bias_factors = payload.get("bias", {}).get("factors", [])
             top_factors  = ", ".join(bias_factors[:3]) if bias_factors else "none"
+            edge         = payload.get("edge", {})
+            score        = payload.get("score", {})
+
+            sym_wr    = edge.get("symbol_wr", 0)
+            regime_wr = edge.get("regime_wr", 0)
+            low_sample = edge.get("low_sample", True)
+            sample    = edge.get("sample_size", 0)
+
+            wr_line = "LOW SAMPLE (" + str(sample) + " trades)" if low_sample else (
+                "Sym WR: " + str(sym_wr) + "% | Regime WR: " + str(regime_wr) + "%"
+            )
+
             narrative = (
-                "Edge: HMM " + regime_label +
-                " (" + str(round(regime_conf * 100)) + "% conf) | " +
-                tags + " | " + top_factors
+                "OBI Confidence: " + str(score.get("confidence", 50)) + "/100 | " +
+                "Grade: " + str(score.get("grade", "C")) + " | " +
+                "Risk: " + str(score.get("risk", "HIGH")) + "\n" +
+                "Edge: HMM " + regime_label + " (" + str(round(regime_conf * 100)) + "%) | " + tags + "\n" +
+                wr_line + "\n" +
+                "Factors: " + top_factors
             )
             return narrative
         except Exception as e:
             print("[INTEL] Narrative error: " + str(e))
-            return "Edge: confluence confirmed"
+            return "OBI Confidence: 50/100"
 
     def _update_memory(self, memory: dict, result: dict):
         try:
@@ -157,15 +171,16 @@ class IntelligenceAgent:
             narrative = self._build_narrative(r, payload)
             msg = (
                 "OBI SIGNAL - " + r["symbol"] + "\n"
-                "Grade: " + str(r["grade"]) + " | " + str(r["direction"]) + "\n"
-                "Entry: " + str(round(float(r["entry"]), 5)) + "\n"
-                "SL: " + str(r["sl"]) + "\n"
-                "TP1: " + str(r["tp1"]) + "\n"
-                "TP2: " + str(r["tp2"]) + "\n"
-                "TP3: " + str(r["tp3"]) + "\n"
-                "RR: " + str(r["rr"]) + " | Tags: " + tags + "\n"
                 "------------------------------\n"
                 + narrative + "\n"
+                "------------------------------\n"
+                "Direction: " + str(r["direction"]) + " | Tags: " + tags + "\n"
+                "Entry: " + str(round(float(r["entry"]), 5)) + "\n"
+                "SL: "    + str(r["sl"]) + "\n"
+                "TP1: "   + str(r["tp1"]) + "\n"
+                "TP2: "   + str(r["tp2"]) + "\n"
+                "TP3: "   + str(r["tp3"]) + "\n"
+                "RR: "    + str(r["rr"]) + "\n"
                 "------------------------------\n"
                 "GROQ ANALYST:\n" + gv + "\n"
                 "------------------------------\n"
