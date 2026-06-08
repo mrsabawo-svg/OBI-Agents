@@ -1,5 +1,5 @@
 """
-OBI Intelligence v4.0 — Main Pipeline
+OBI Intelligence v4.1 — Main Pipeline
 """
 from agents.data_agent         import DataAgent
 from agents.htf_agent          import HTFAgent
@@ -13,6 +13,9 @@ from agents.zone_agent         import ZoneAgent
 from agents.trigger_agent      import TriggerAgent
 from agents.regime_agent       import RegimeAgent
 from agents.health_agent       import HealthAgent
+from agents.archive_agent      import ArchiveAgent
+from agents.lifecycle_agent    import LifecycleAgent
+from agents.edge_agent         import EdgeAgent
 from agents.intelligence_agent import IntelligenceAgent
 from core.utils                import sast_str
 
@@ -21,7 +24,7 @@ ALL_TF  = ["4h", "1h", "15m", "5m"]
 
 def run(symbol: str, news: dict = None) -> dict:
     print("=" * 45)
-    print("  OBI v4.0 - " + symbol + " - " + sast_str())
+    print("  OBI v4.1 - " + symbol + " - " + sast_str())
     print("=" * 45)
 
     try:
@@ -59,6 +62,14 @@ def run(symbol: str, news: dict = None) -> dict:
             print("[MAIN] " + symbol + ": no trigger - " + trigger["reason"])
             return {"blocked": "trigger"}
 
+        # Edge analysis
+        edge = EdgeAgent().analyse(
+            symbol,
+            trigger.get("grade", "C"),
+            regime.get("label", "RANGING"),
+            bias.get("factors", [])
+        )
+
         payload = {
             "symbol":  symbol,
             "htf":     htf,
@@ -69,8 +80,14 @@ def run(symbol: str, news: dict = None) -> dict:
             "ltf":     ltf,
             "trigger": trigger,
             "session": session,
+            "edge":    edge,
         }
+
         IntelligenceAgent(symbol).verdict(payload)
+
+        # Archive the signal
+        ArchiveAgent().log(payload)
+
         return {"fired": True}
 
     except Exception as e:
@@ -80,9 +97,12 @@ def run(symbol: str, news: dict = None) -> dict:
         return {"error": str(e)}
 
 if __name__ == "__main__":
-    news    = NewsAgent().is_safe()
-    results = {}
+    news = NewsAgent().is_safe()
 
+    # Check open signal outcomes first
+    LifecycleAgent().check_open_signals()
+
+    results = {}
     for symbol in SYMBOLS:
         results[symbol] = run(symbol, news)
 
