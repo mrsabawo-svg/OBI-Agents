@@ -6,6 +6,8 @@ import yfinance as yf
 import pandas as pd
 import ta as ta_lib
 
+yf.set_tz_cache_location("/tmp/yfinance_cache")
+
 SYMBOL_MAP = {
     "XAUUSD": "GLD",
     "EURUSD": "EURUSD=X",
