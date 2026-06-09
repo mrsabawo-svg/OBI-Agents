@@ -4,15 +4,17 @@ OBI Agents — Intelligence Agent
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from core.utils import sast_str
 from core.memory import load as load_memory, save as save_memory
+import pytz
 
 GROQ_API_KEY     = os.environ.get("GROQ_API_KEY")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 GIST_ID          = os.environ.get("GIST_ID")
 GITHUB_TOKEN     = os.environ.get("GITHUB_TOKEN")
+SAST             = pytz.timezone("Africa/Johannesburg")
 
 class IntelligenceAgent:
     def __init__(self, symbol: str):
@@ -20,6 +22,11 @@ class IntelligenceAgent:
 
     def verdict(self, payload: dict) -> dict:
         print("[INTEL] " + self.symbol + ": starting")
+
+        if self._is_duplicate(payload):
+            print("[INTEL] " + self.symbol + ": DUPLICATE BLOCKED")
+            return {}
+
         memory   = load_memory()
         accuracy = memory.get(self.symbol, {}).get("accuracy", "No history yet")
         groq_verdict  = self._ask_groq(payload, accuracy)
@@ -46,6 +53,27 @@ class IntelligenceAgent:
         self._push_to_gist(result)
         self._send_telegram(result, payload)
         return result
+
+    def _is_duplicate(self, payload: dict) -> bool:
+        try:
+            memory    = load_memory()
+            archive   = memory.get("_archive", [])
+            new_entry = float(payload.get("trigger", {}).get("entry", 0))
+            now       = datetime.now(SAST)
+            recent    = [t for t in archive if t.get("symbol") == self.symbol and t.get("status") == "OPEN"]
+            for t in recent:
+                try:
+                    opened = datetime.strptime(t.get("opened", "").replace(" SAST", ""), "%Y-%m-%d %H:%M")
+                    opened = SAST.localize(opened)
+                    if (now - opened).total_seconds() < 7200:
+                        if abs(float(t.get("entry", 0)) - new_entry) < 0.01:
+                            return True
+                except:
+                    continue
+            return False
+        except Exception as e:
+            print("[INTEL] Duplicate check error: " + str(e))
+            return False
 
     def _groq_call(self, prompt: str) -> str:
         r = requests.post(
