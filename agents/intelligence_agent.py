@@ -161,6 +161,19 @@ class IntelligenceAgent:
         except Exception as e:
             print("[INTEL] Memory error: " + str(e))
 
+        def _push_to_gist(self, result: dict):
+        try:
+            r = requests.patch(
+                "https://api.github.com/gists/" + str(GIST_ID),
+                headers={"Authorization": "token " + str(GITHUB_TOKEN)},
+                json={"files": {"obi_signal.json": {"content": json.dumps(result, indent=2)}}},
+                timeout=15
+            )
+            print("[INTEL] Gist: " + str(r.status_code))
+        except Exception as e:
+            print("[INTEL] Gist error: " + str(e))
+
+
     def _push_to_gist(self, result: dict):
         try:
             r = requests.patch(
