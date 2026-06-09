@@ -4,6 +4,7 @@ OBI Agents — Intelligence Agent
 import os
 import json
 import requests
+from datetime import datetime
 from core.utils import sast_str
 from core.memory import load as load_memory, save as save_memory
 
@@ -38,6 +39,8 @@ class IntelligenceAgent:
             "groq_verdict":  groq_verdict,
             "devil_verdict": devil_verdict,
             "regime":        payload.get("regime", {}),
+            "score":         payload.get("score", {}),
+            "edge":          payload.get("edge", {}),
         }
         self._update_memory(memory, result)
         self._push_to_gist(result)
@@ -71,51 +74,14 @@ class IntelligenceAgent:
         except Exception as e:
             print("[INTEL] Devil error: " + str(e))
             return "Devil advocate unavailable"
-    def _build_narrative(self, result: dict, payload: dict) -> str:
-        try:
-            regime_label = payload.get("regime", {}).get("label", "Unknown")
-            regime_conf  = payload.get("regime", {}).get("confidence", 0)
-            tags         = " + ".join(result.get("tags", [])) or "none"
-            bias_factors = payload.get("bias", {}).get("factors", [])
-            top_factors  = ", ".join(bias_factors[:3]) if bias_factors else "none"
-            edge         = payload.get("edge", {})
-            score        = payload.get("score", {})
-
-            sym_wr    = edge.get("symbol_wr", 0)
-            regime_wr = edge.get("regime_wr", 0)
-            low_sample = edge.get("low_sample", True)
-            sample    = edge.get("sample_size", 0)
-
-            wr_line = "LOW SAMPLE (" + str(sample) + " trades)" if low_sample else (
-                "Sym WR: " + str(sym_wr) + "% | Regime WR: " + str(regime_wr) + "%"
-            )
-
-            narrative = (
-                "OBI Confidence: " + str(score.get("confidence", 50)) + "/100 | " +
-                "Grade: " + str(score.get("grade", "C")) + " | " +
-                "Risk: " + str(score.get("risk", "HIGH")) + "\n" +
-                "Edge: HMM " + regime_label + " (" + str(round(regime_conf * 100)) + "%) | " + tags + "\n" +
-                wr_line + "\n" +
-                "Factors: " + top_factors
-            )
-            return narrative
-        except Exception as e:
-            print("[INTEL] Narrative error: " + str(e))
-            return "OBI Confidence: 50/100"
-
     def _update_memory(self, memory: dict, result: dict):
         try:
             if self.symbol not in memory:
                 memory[self.symbol] = {"signals": 0, "wins": 0, "losses": 0}
-
             memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
             memory[self.symbol]["last_signal"]    = result.get("timestamp")
             memory[self.symbol]["last_direction"] = result.get("direction")
-
-            # Build trade record
-            from datetime import datetime
             signal_id = self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-
             trade_record = {
                 "id":        signal_id,
                 "symbol":    self.symbol,
@@ -137,13 +103,9 @@ class IntelligenceAgent:
                 "tp3_hit":   False,
                 "outcome":   None
             }
-
-            # Append to archive — never delete
             if "_archive" not in memory:
                 memory["_archive"] = []
             memory["_archive"].append(trade_record)
-
-            # Store last signal data — never wipe
             memory[self.symbol]["last_signal_data"] = {
                 "id":        signal_id,
                 "direction": result.get("direction"),
@@ -154,25 +116,10 @@ class IntelligenceAgent:
                 "tp3":       result.get("tp3"),
                 "timestamp": result.get("timestamp")
             }
-
             save_memory(memory)
-            print("[INTEL] Memory updated — signal archived: " + signal_id)
-
+            print("[INTEL] Memory updated - signal archived: " + signal_id)
         except Exception as e:
             print("[INTEL] Memory error: " + str(e))
-
-        def _push_to_gist(self, result: dict):
-        try:
-            r = requests.patch(
-                "https://api.github.com/gists/" + str(GIST_ID),
-                headers={"Authorization": "token " + str(GITHUB_TOKEN)},
-                json={"files": {"obi_signal.json": {"content": json.dumps(result, indent=2)}}},
-                timeout=15
-            )
-            print("[INTEL] Gist: " + str(r.status_code))
-        except Exception as e:
-            print("[INTEL] Gist error: " + str(e))
-
 
     def _push_to_gist(self, result: dict):
         try:
@@ -185,6 +132,33 @@ class IntelligenceAgent:
             print("[INTEL] Gist: " + str(r.status_code))
         except Exception as e:
             print("[INTEL] Gist error: " + str(e))
+
+    def _build_narrative(self, result: dict, payload: dict) -> str:
+        try:
+            regime_label = payload.get("regime", {}).get("label", "Unknown")
+            regime_conf  = payload.get("regime", {}).get("confidence", 0)
+            tags         = " + ".join(result.get("tags", [])) or "none"
+            bias_factors = payload.get("bias", {}).get("factors", [])
+            top_factors  = ", ".join(bias_factors[:3]) if bias_factors else "none"
+            edge         = payload.get("edge", {})
+            score        = payload.get("score", {})
+            sym_wr       = edge.get("symbol_wr", 0)
+            regime_wr    = edge.get("regime_wr", 0)
+            low_sample   = edge.get("low_sample", True)
+            sample       = edge.get("sample_size", 0)
+            wr_line = "LOW SAMPLE (" + str(sample) + " trades)" if low_sample else "Sym WR: " + str(sym_wr) + "% | Regime WR: " + str(regime_wr) + "%"
+            narrative = (
+                "OBI Confidence: " + str(score.get("confidence", 50)) + "/100 | " +
+                "Grade: " + str(score.get("grade", "C")) + " | " +
+                "Risk: " + str(score.get("risk", "HIGH")) + "\n" +
+                "Edge: HMM " + regime_label + " (" + str(round(regime_conf * 100)) + "%) | " + tags + "\n" +
+                wr_line + "\n" +
+                "Factors: " + top_factors
+            )
+            return narrative
+        except Exception as e:
+            print("[INTEL] Narrative error: " + str(e))
+            return "OBI Confidence: 50/100"
 
     def _send_telegram(self, r: dict, payload: dict):
         print("[INTEL] sending Telegram")
