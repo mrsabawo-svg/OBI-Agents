@@ -1,5 +1,6 @@
 """
 OBI Agents — Data Agent
+Fetches OHLCV data across all timeframes for a symbol.
 """
 import yfinance as yf
 import pandas as pd
@@ -17,13 +18,13 @@ SYMBOL_MAP = {
     "NASDAQ": "QQQ",
 }
 
-
 TF_MAP = {
     "1h":  ("60m", "60d"),
     "4h":  ("1d",  "60d"),
     "15m": ("15m", "7d"),
     "5m":  ("5m",  "5d"),
 }
+
 class DataAgent:
     def __init__(self, symbol: str):
         self.symbol = symbol
@@ -34,15 +35,22 @@ class DataAgent:
         for tf in timeframes:
             try:
                 interval, period = TF_MAP.get(tf, ("15m", "7d"))
-                df = yf.download(self.ticker, period=period, interval=interval, progress=False, auto_adjust=True)
+                df = yf.download(
+                    self.ticker,
+                    period=period,
+                    interval=interval,
+                    progress=False,
+                    auto_adjust=True,
+                    threads=False
+                )
                 if df.empty:
                     continue
                 df = self._add_indicators(df)
                 df.dropna(inplace=True)
                 data[tf] = df
-                print(f"[DATA] {self.symbol} {tf}: {len(df)} candles")
+                print("[DATA] " + self.symbol + " " + tf + ": " + str(len(df)) + " candles")
             except Exception as e:
-                print(f"[DATA] {self.symbol} {tf} error: {e}")
+                print("[DATA] " + self.symbol + " " + tf + " error: " + str(e))
         return data
 
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -55,5 +63,5 @@ class DataAgent:
             df["EMA_50"]  = ta_lib.trend.ema_indicator(close, window=50)
             df["ATRr_14"] = ta_lib.volatility.average_true_range(high, low, close, window=14)
         except Exception as e:
-            print(f"[DATA] Indicator error: {e}")
+            print("[DATA] Indicator error: " + str(e))
         return df
