@@ -1,7 +1,6 @@
 """
 OBI Agents — Score Agent v4.2
-Combines Bias + Trigger + Regime + Edge into one OBI confidence score.
-Replaces AI-generated confidence with a computed 0-100 score.
+Unified OBI confidence score 0-100.
 """
 
 class ScoreAgent:
@@ -18,19 +17,18 @@ class ScoreAgent:
             session_score = self._session_score(session)
 
             raw = (
-                bias_score    * 0.30 +
-                trigger_score * 0.30 +
-                edge_score    * 0.25 +
-                regime_score  * 0.15
+                bias_score    * 0.28 +
+                trigger_score * 0.28 +
+                edge_score    * 0.24 +
+                regime_score  * 0.10 +
+                session_score * 0.10
             )
 
             confidence = min(100, max(0, round(raw * 100)))
 
-            # Boost for kill zone
             if session.get("kill_zone"):
                 confidence = min(100, confidence + 5)
 
-            # Penalty for low sample size
             if edge.get("low_sample"):
                 confidence = max(0, confidence - 10)
 
@@ -47,6 +45,7 @@ class ScoreAgent:
                 "trigger_score": round(trigger_score * 100),
                 "regime_score":  round(regime_score * 100),
                 "edge_score":    round(edge_score * 100),
+                "session_score": round(session_score * 100),
             }
 
         except Exception as e:
@@ -54,16 +53,12 @@ class ScoreAgent:
             return self._default()
 
     def _bias_score(self, bias: dict) -> float:
-        score     = bias.get("score", 0)
-        max_score = 7
-        return min(1.0, score / max_score)
+        return min(1.0, bias.get("score", 0) / 7)
 
     def _trigger_score(self, trigger: dict) -> float:
-        confluence = trigger.get("confluence", 0)
-        rr         = trigger.get("rr", 0)
-        conf_score = min(1.0, confluence / 5)
-        rr_score   = min(1.0, rr / 5)
-        return round((conf_score * 0.6 + rr_score * 0.4), 2)
+        conf_score = min(1.0, trigger.get("confluence", 0) / 5)
+        rr_score   = min(1.0, trigger.get("rr", 0) / 5)
+        return round(conf_score * 0.6 + rr_score * 0.4, 2)
 
     def _regime_score(self, regime: dict) -> float:
         label = regime.get("label", "RANGING")
@@ -77,7 +72,7 @@ class ScoreAgent:
         symbol_wr = edge.get("symbol_wr", 50) / 100
         grade_wr  = edge.get("grade_wr", 50)  / 100
         regime_wr = edge.get("regime_wr", 50)  / 100
-        return round((symbol_wr * 0.4 + grade_wr * 0.35 + regime_wr * 0.25), 2)
+        return round(symbol_wr * 0.4 + grade_wr * 0.35 + regime_wr * 0.25, 2)
 
     def _session_score(self, session: dict) -> float:
         if session.get("kill_zone"):
@@ -87,26 +82,18 @@ class ScoreAgent:
         return 0.0
 
     def _grade(self, confidence: int) -> str:
-        if confidence >= 85:
-            return "A+"
-        elif confidence >= 75:
-            return "A"
-        elif confidence >= 65:
-            return "B"
-        elif confidence >= 55:
-            return "C"
-        else:
-            return "D"
+        if confidence >= 85:   return "A+"
+        elif confidence >= 75: return "A"
+        elif confidence >= 65: return "B"
+        elif confidence >= 55: return "C"
+        else:                  return "D"
 
     def _risk(self, confidence: int, rr: float) -> str:
-        if confidence >= 75 and rr >= 2:
-            return "LOW"
-        elif confidence >= 60 and rr >= 1.5:
-            return "MEDIUM"
-        else:
-            return "HIGH"
+        if confidence >= 75 and rr >= 2:   return "LOW"
+        elif confidence >= 60 and rr >= 1.5: return "MEDIUM"
+        else:                               return "HIGH"
 
     def _default(self) -> dict:
         return {"confidence": 50, "grade": "C", "risk": "HIGH",
                 "bias_score": 50, "trigger_score": 50,
-                "regime_score": 50, "edge_score": 50}
+                "regime_score": 50, "edge_score": 50, "session_score": 50}
