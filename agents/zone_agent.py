@@ -26,7 +26,6 @@ class ZoneAgent:
             return self._default()
 
         try:
-            # MTF levels
             close_mtf = df_mtf["Close"].squeeze().values.flatten()
             high_mtf  = df_mtf["High"].squeeze().values.flatten()
             low_mtf   = df_mtf["Low"].squeeze().values.flatten()
@@ -34,18 +33,15 @@ class ZoneAgent:
 
             current_price = float(close_mtf[-1])
 
-            # Premium / Discount from MTF
-            swing_high = float(np.max(high_mtf[-50:]))
-            swing_low  = float(np.min(low_mtf[-50:]))
-            midpoint   = (swing_high + swing_low) / 2
+            swing_high  = float(np.max(high_mtf[-50:]))
+            swing_low   = float(np.min(low_mtf[-50:]))
+            midpoint    = (swing_high + swing_low) / 2
             in_discount = bool(current_price < midpoint)
             in_premium  = bool(current_price > midpoint)
 
-            # Nearest S/R on MTF
             resistance_1h = float(np.max(high_mtf[-20:]))
             support_1h    = float(np.min(low_mtf[-20:]))
 
-            # Order blocks
             ob_bull_price = None
             ob_bear_price = None
             for i in range(-15, -2):
@@ -54,28 +50,35 @@ class ZoneAgent:
                 if open_mtf[i] < close_mtf[i] and close_mtf[i+1] < open_mtf[i]:
                     ob_bear_price = float(open_mtf[i])
 
-            # HTF swing targets — the big moves
             htf_swing_high = swing_high
             htf_swing_low  = swing_low
             htf_tp_bull    = None
             htf_tp_bear    = None
 
-            if df_htf is not None and len(df_htf) >= 10:
-                high_htf     = df_htf["High"].squeeze().values.flatten()
-                low_htf      = df_htf["Low"].squeeze().values.flatten()
+            if df_htf is not None and len(df_htf) >= 5:
+                high_htf = df_htf["High"].squeeze().values.flatten()
+                low_htf  = df_htf["Low"].squeeze().values.flatten()
                 htf_swing_high = float(np.max(high_htf[-30:]))
                 htf_swing_low  = float(np.min(low_htf[-30:]))
 
-                # TP targets from HTF structure
-                # Bull: target recent HTF highs above current price
-                htf_highs_above = [float(h) for h in high_htf[-100:] if float(h) > current_price + (current_price * 0.002)]
-                htf_lows_below  = [float(l) for l in low_htf[-100:]  if float(l) < current_price - (current_price * 0.002)]
+                # Use 0.1% threshold instead of 0.2% for better hit rate
+                threshold = current_price * 0.001
+                htf_highs_above = [float(h) for h in high_htf if float(h) > current_price + threshold]
+                htf_lows_below  = [float(l) for l in low_htf  if float(l) < current_price - threshold]
 
+                # Fallback to 1h if 4h doesn't have enough swing levels
+                if not htf_highs_above and "1h" in market_data:
+                    high_1h = market_data["1h"]["High"].squeeze().values.flatten()
+                    htf_highs_above = [float(h) for h in high_1h[-200:] if float(h) > current_price + threshold]
+
+                if not htf_lows_below and "1h" in market_data:
+                    low_1h = market_data["1h"]["Low"].squeeze().values.flatten()
+                    htf_lows_below = [float(l) for l in low_1h[-200:] if float(l) < current_price - threshold]
 
                 if htf_highs_above:
-                    htf_tp_bull = sorted(htf_highs_above)[len(htf_highs_above)//2]
+                    htf_tp_bull = sorted(htf_highs_above)[len(htf_highs_above) // 2]
                 if htf_lows_below:
-                    htf_tp_bear = sorted(htf_lows_below, reverse=True)[len(htf_lows_below)//2]
+                    htf_tp_bear = sorted(htf_lows_below, reverse=True)[len(htf_lows_below) // 2]
 
             direction    = bias.get("direction", "NEUTRAL")
             zone_aligned = bool(
@@ -86,21 +89,21 @@ class ZoneAgent:
             print("[ZONE] " + self.symbol + ": price=" + str(round(current_price, 5)) + " aligned=" + str(zone_aligned) + " htf_tp_bull=" + str(round(htf_tp_bull, 5) if htf_tp_bull else None))
 
             return {
-                "current_price":    current_price,
-                "swing_high":       swing_high,
-                "swing_low":        swing_low,
-                "midpoint":         round(midpoint, 5),
-                "in_discount":      in_discount,
-                "in_premium":       in_premium,
-                "resistance_1h":    round(resistance_1h, 5),
-                "support_1h":       round(support_1h, 5),
-                "ob_bull":          ob_bull_price,
-                "ob_bear":          ob_bear_price,
-                "htf_swing_high":   round(htf_swing_high, 5),
-                "htf_swing_low":    round(htf_swing_low, 5),
-                "htf_tp_bull":      round(htf_tp_bull, 5) if htf_tp_bull else None,
-                "htf_tp_bear":      round(htf_tp_bear, 5) if htf_tp_bear else None,
-                "zone_aligned":     zone_aligned,
+                "current_price":      current_price,
+                "swing_high":         swing_high,
+                "swing_low":          swing_low,
+                "midpoint":           round(midpoint, 5),
+                "in_discount":        in_discount,
+                "in_premium":         in_premium,
+                "resistance_1h":      round(resistance_1h, 5),
+                "support_1h":         round(support_1h, 5),
+                "ob_bull":            ob_bull_price,
+                "ob_bear":            ob_bear_price,
+                "htf_swing_high":     round(htf_swing_high, 5),
+                "htf_swing_low":      round(htf_swing_low, 5),
+                "htf_tp_bull":        round(htf_tp_bull, 5) if htf_tp_bull else None,
+                "htf_tp_bear":        round(htf_tp_bear, 5) if htf_tp_bear else None,
+                "zone_aligned":       zone_aligned,
                 "dist_to_resistance": round(abs(resistance_1h - current_price), 5),
                 "dist_to_support":    round(abs(current_price - support_1h), 5),
             }
