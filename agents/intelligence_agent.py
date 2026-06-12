@@ -83,14 +83,7 @@ class IntelligenceAgent:
         print("[INTEL] Groq status: " + str(r.status_code))
         return r.json()["choices"][0]["message"]["content"].strip()
 
-    def _ask_groq(self, payload: dict, accuracy: str) -> str:
-        print("[INTEL] calling Groq analyst")
-        try:
-            prompt = "You are a professional trading analyst. Review this signal and respond with: 1. VERDICT: TAKE IT / LEAVE IT / WAIT 2. CONFIDENCE: 1-10 3. STRENGTHS 4. CONCERNS 5. WATCH. Max 150 words. Historical accuracy: " + str(accuracy) + " Signal: " + json.dumps(payload)
-            return self._groq_call(prompt)
-        except Exception as e:
-            print("[INTEL] Groq error: " + str(e))
-            return "Groq unavailable"
+    
 
     def _ask_devil(self, payload: dict, groq_verdict: str) -> str:
         print("[INTEL] calling devil advocate")
