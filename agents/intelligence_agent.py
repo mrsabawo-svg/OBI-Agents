@@ -83,7 +83,21 @@ class IntelligenceAgent:
         print("[INTEL] Groq status: " + str(r.status_code))
         return r.json()["choices"][0]["message"]["content"].strip()
 
-    
+    def _ask_groq(self, payload: dict, accuracy: str) -> str:
+        print("[INTEL] calling groq analyst")
+        try:
+            prompt = (
+                "You are a professional forex/crypto trading analyst. "
+                "Analyse this signal and give a concise verdict. "
+                "Format: VERDICT (TAKE / SKIP / WATCH) / CONFIDENCE 1-10 / KEY REASON / RISK NOTE. "
+                "Max 100 words. "
+                "Historical accuracy for this symbol: " + str(accuracy) + ". "
+                "Signal: " + json.dumps(payload)
+            )
+            return self._groq_call(prompt)
+        except Exception as e:
+            print("[INTEL] Groq analyst error: " + str(e))
+            return "Groq analyst unavailable"
 
     def _ask_devil(self, payload: dict, groq_verdict: str) -> str:
         print("[INTEL] calling devil advocate")
@@ -93,6 +107,7 @@ class IntelligenceAgent:
         except Exception as e:
             print("[INTEL] Devil error: " + str(e))
             return "Devil advocate unavailable"
+
     def _update_memory(self, memory: dict, result: dict, payload: dict = None):
         try:
             if self.symbol not in memory:
@@ -154,6 +169,7 @@ class IntelligenceAgent:
             print("[INTEL] Gist: " + str(r.status_code))
         except Exception as e:
             print("[INTEL] Gist error: " + str(e))
+
     def _build_narrative(self, result: dict, payload: dict) -> str:
         try:
             regime_label = payload.get("regime", {}).get("label", "Unknown")
