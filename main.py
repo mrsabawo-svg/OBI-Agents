@@ -6,6 +6,8 @@ from agents.htf_agent          import HTFAgent
 from agents.mtf_agent          import MTFAgent
 from agents.ltf_agent          import LTFAgent
 from agents.news_agent         import NewsAgent
+from agents.digest_agent import DigestAgent
+
 from agents.tracker_agent      import check_outcome
 from agents.session_agent      import SessionAgent
 from agents.bias_agent         import BiasAgent
@@ -120,8 +122,12 @@ if __name__ == "__main__":
     news = NewsAgent().is_safe()
     LifecycleAgent().check_open_signals()
 
+    # Monday morning weekly digest
+    DigestAgent().send_telegram_digest() if DigestAgent().should_run() else None
+
     results = {}
     for symbol in SYMBOLS:
         results[symbol] = run(symbol, news)
 
     HealthAgent().check(results)
+
