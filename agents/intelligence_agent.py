@@ -84,20 +84,27 @@ class IntelligenceAgent:
         return r.json()["choices"][0]["message"]["content"].strip()
 
     def _ask_groq(self, payload: dict, accuracy: str) -> str:
-        print("[INTEL] calling groq analyst")
+        print("[INTEL] calling Groq analyst")
         try:
+            from agents.exa_agent import ExaAgent
+            market_context = ExaAgent(self.symbol).get_context()
             prompt = (
-                "You are a professional forex/crypto trading analyst. "
-                "Analyse this signal and give a concise verdict. "
-                "Format: VERDICT (TAKE / SKIP / WATCH) / CONFIDENCE 1-10 / KEY REASON / RISK NOTE. "
-                "Max 100 words. "
-                "Historical accuracy for this symbol: " + str(accuracy) + ". "
+                "You are a professional forex and crypto trading analyst. "
+                "Current market context: " + market_context + " "
+                "Review this signal and respond with: "
+                "1. VERDICT: TAKE IT / LEAVE IT / WAIT "
+                "2. CONFIDENCE: 1-10 "
+                "3. STRENGTHS "
+                "4. CONCERNS "
+                "5. WATCH. "
+                "Max 150 words. "
+                "Historical accuracy: " + str(accuracy) + " "
                 "Signal: " + json.dumps(payload)
             )
             return self._groq_call(prompt)
         except Exception as e:
-            print("[INTEL] Groq analyst error: " + str(e))
-            return "Groq analyst unavailable"
+            print("[INTEL] Groq error: " + str(e))
+            return "Groq unavailable"
 
     def _ask_devil(self, payload: dict, groq_verdict: str) -> str:
         print("[INTEL] calling devil advocate")
@@ -107,7 +114,6 @@ class IntelligenceAgent:
         except Exception as e:
             print("[INTEL] Devil error: " + str(e))
             return "Devil advocate unavailable"
-
     def _update_memory(self, memory: dict, result: dict, payload: dict = None):
         try:
             if self.symbol not in memory:
@@ -169,7 +175,6 @@ class IntelligenceAgent:
             print("[INTEL] Gist: " + str(r.status_code))
         except Exception as e:
             print("[INTEL] Gist error: " + str(e))
-
     def _build_narrative(self, result: dict, payload: dict) -> str:
         try:
             regime_label = payload.get("regime", {}).get("label", "Unknown")
