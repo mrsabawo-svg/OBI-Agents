@@ -5,13 +5,18 @@ Only fires signals during high-probability kill zones.
 """
 from core.utils import now_sast, is_kill_zone
 
+CRYPTO_SYMBOLS = {"BTCUSD", "ETHUSD", "SOLUSD"}
+
 SYMBOL_SESSIONS = {
-    "XAUUSD": ["London Open", "New York Open"],
-    "EURUSD": ["London Open", "New York Open"],
-    "USDJPY": ["London Open", "New York Open", "Asian Session"],
-    "GBPJPY": ["London Open", "New York Open"],
-    "BTCUSD": ["London Open", "New York Open"],
-    "ETHUSD": ["London Open", "New York Open"],
+    "XAUUSD":  ["London Open", "New York Open"],
+    "EURUSD":  ["London Open", "New York Open"],
+    "USDJPY":  ["London Open", "New York Open", "Asian Session"],
+    "GBPJPY":  ["London Open", "New York Open"],
+    "GBPUSD":  ["London Open", "New York Open"],
+    "NASDAQ":  ["New York Open"],
+    "BTCUSD":  ["London Open", "New York Open", "Asian Session"],
+    "ETHUSD":  ["London Open", "New York Open", "Asian Session"],
+    "SOLUSD":  ["London Open", "New York Open", "Asian Session"],
 }
 
 class SessionAgent:
@@ -20,19 +25,17 @@ class SessionAgent:
 
     def analyse(self) -> dict:
         try:
-            now      = now_sast()
+            now       = now_sast()
             kill_zone = is_kill_zone()
-            hour     = now.hour
-            weekday  = now.weekday()
+            hour      = now.hour
+            weekday   = now.weekday()
 
-            # Crypto trades 24/7 — never block on weekends
-            CRYPTO_SYMBOLS = ["BTCUSD", "ETHUSD", "SOLUSD"]
+            # Weekends: crypto trades 24/7, forex/indices closed
             if weekday >= 5 and self.symbol not in CRYPTO_SYMBOLS:
                 return self._build(False, "Weekend — market closed", kill_zone)
 
-
-            # Only block 23:00 SAST (truly dead)
-            if hour == 23:
+            # Dead hours block: only applies to non-crypto
+            if hour == 23 and self.symbol not in CRYPTO_SYMBOLS:
                 return self._build(False, "Dead hours — no liquidity", kill_zone)
 
             preferred = SYMBOL_SESSIONS.get(self.symbol, ["London Open", "New York Open"])
@@ -41,7 +44,11 @@ class SessionAgent:
                 reason = f"{kill_zone['name']} — optimal for {self.symbol}"
                 return self._build(True, reason, kill_zone)
 
-            # Active session outside kill zone — still tradeable
+            # Crypto: always tradeable outside weekends
+            if self.symbol in CRYPTO_SYMBOLS:
+                return self._build(True, "Crypto — 24/7 tradeable", kill_zone)
+
+            # Forex/indices: tradeable during active hours
             if 1 <= hour <= 22:
                 return self._build(True, "Active session — not peak kill zone", kill_zone)
 
