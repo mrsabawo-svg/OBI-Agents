@@ -18,8 +18,9 @@ BOT_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID", "")
 BYBIT_KEY      = os.environ.get("BYBIT_API_KEY", "")
 BYBIT_SECRET   = os.environ.get("BYBIT_API_SECRET", "")
-BYBIT_BASE     = "https://api.bybit.com"          # live
-# BYBIT_BASE   = "https://api-testnet.bybit.com"  # testnet — swap to test
+# BYBIT_BASE = "https://api.bybit.com"          # live
+BYBIT_BASE   = "https://api-testnet.bybit.com"  # testnet — swap to test
+
 
 CRYPTO_SYMBOLS = {"BTCUSD", "ETHUSD", "SOLUSD"}
 
