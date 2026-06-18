@@ -1,5 +1,6 @@
 """
 OBI Intelligence v4.2 — Main Pipeline
+Orchestrated by ChiefAgent.
 """
 from agents.data_agent         import DataAgent
 from agents.htf_agent          import HTFAgent
@@ -20,19 +21,20 @@ from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
+from agents.chief_agent        import ChiefAgent, Task
 from core.utils                import sast_str
 from core.memory               import load as load_memory
 from datetime                  import datetime
 import pytz
 
-SAST    = pytz.timezone("Africa/Johannesburg")
-SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
-ALL_TF  = ["4h", "1h", "15m", "5m"]
+SAST   = pytz.timezone("Africa/Johannesburg")
+ALL_TF = ["4h", "1h", "15m", "5m"]
+
 
 def is_on_cooldown(symbol: str) -> bool:
     try:
-        mem   = load_memory() or {}
-        last  = mem.get(symbol, {}).get("last_signal", "")
+        mem  = load_memory() or {}
+        last = mem.get(symbol, {}).get("last_signal", "")
         if not last:
             return False
         now   = datetime.now(SAST)
@@ -46,6 +48,7 @@ def is_on_cooldown(symbol: str) -> bool:
     except Exception as e:
         print("[MAIN] Cooldown check error: " + str(e))
         return False
+
 
 def run(symbol: str, news: dict = None) -> dict:
     print("=" * 45)
@@ -109,17 +112,16 @@ def run(symbol: str, news: dict = None) -> dict:
 
         IntelligenceAgent(symbol).verdict(payload)
         ArchiveAgent().log(payload)
-
-        # ── Execution layer — crypto only, assisted mode ──────────────────
         ExecutionAgent(symbol).propose(payload)
 
-        return {"fired": True}
+        return {"fired": True, "confidence": score.get("confidence", 0)}
 
     except Exception as e:
         import traceback
         print("[MAIN] " + symbol + " error: " + str(e))
         print(traceback.format_exc())
         return {"error": str(e)}
+
 
 if __name__ == "__main__":
     news = NewsAgent().is_safe()
@@ -128,8 +130,25 @@ if __name__ == "__main__":
     # Monday morning weekly digest
     DigestAgent().send_telegram_digest() if DigestAgent().should_run() else None
 
+    # ── Chief Agent orchestration ─────────────────────────────────────────────
+    chief    = ChiefAgent()
+    decision = chief.decide(Task.FULL_SCAN)
+
+    print("\n[CHIEF] " + decision["reason"])
+    print("[CHIEF] Scan order: " + ", ".join(decision["symbols"]))
+
+    # Send briefing to Telegram at start of each run
+    from core.telegram import send as tg_send
+    try:
+        tg_send(chief.brief())
+    except Exception:
+        pass  # briefing is informational — don't crash pipeline if it fails
+
     results = {}
-    for symbol in SYMBOLS:
+    for symbol in decision["symbols"]:
+        if decision["priority"].get(symbol, 0) < 0:
+            print(f"[CHIEF] Skipping {symbol} — priority={decision['priority'].get(symbol)}")
+            continue
         results[symbol] = run(symbol, news)
 
     HealthAgent().check(results)
