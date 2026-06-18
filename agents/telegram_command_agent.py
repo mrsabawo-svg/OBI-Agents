@@ -67,6 +67,10 @@ def handle_help() -> str:
         "`/market` — bias summary for all symbols\n\n"
         "`/health` — system health check\n\n"
         "`/status` — last pipeline run info\n\n"
+        "`/approve <SYMBOL>` — execute pending trade\n"
+        "  e.g. `/approve BTCUSD`\n\n"
+        "`/skip <SYMBOL>` — dismiss pending trade\n"
+        "  e.g. `/skip BTCUSD`\n\n"
         "`/help` — show this menu"
     )
 
@@ -219,6 +223,20 @@ def route(text: str) -> str:
         if len(parts) < 2:
             return "Usage: `/signal <SYMBOL>` — e.g. `/signal XAUUSD`"
         return handle_signal(parts[1])
+
+    if lower.startswith("/approve"):
+        parts = text.split()
+        if len(parts) < 2:
+            return "Usage: `/approve <SYMBOL>` — e.g. `/approve BTCUSD`"
+        from agents.execution_agent import ExecutionAgent
+        return ExecutionAgent(parts[1].upper()).approve(parts[1])
+
+    if lower.startswith("/skip"):
+        parts = text.split()
+        if len(parts) < 2:
+            return "Usage: `/skip <SYMBOL>` — e.g. `/skip BTCUSD`"
+        from agents.execution_agent import ExecutionAgent
+        return ExecutionAgent(parts[1].upper()).skip(parts[1])
 
     return f"❓ Unknown command: `{text}`\nType `/help` to see available commands."
 
