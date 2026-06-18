@@ -6,8 +6,7 @@ from agents.htf_agent          import HTFAgent
 from agents.mtf_agent          import MTFAgent
 from agents.ltf_agent          import LTFAgent
 from agents.news_agent         import NewsAgent
-from agents.digest_agent import DigestAgent
-
+from agents.digest_agent       import DigestAgent
 from agents.tracker_agent      import check_outcome
 from agents.session_agent      import SessionAgent
 from agents.bias_agent         import BiasAgent
@@ -20,6 +19,7 @@ from agents.lifecycle_agent    import LifecycleAgent
 from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
+from agents.execution_agent    import ExecutionAgent
 from core.utils                import sast_str
 from core.memory               import load as load_memory
 from datetime                  import datetime
@@ -110,6 +110,9 @@ def run(symbol: str, news: dict = None) -> dict:
         IntelligenceAgent(symbol).verdict(payload)
         ArchiveAgent().log(payload)
 
+        # ── Execution layer — crypto only, assisted mode ──────────────────
+        ExecutionAgent(symbol).propose(payload)
+
         return {"fired": True}
 
     except Exception as e:
@@ -130,4 +133,3 @@ if __name__ == "__main__":
         results[symbol] = run(symbol, news)
 
     HealthAgent().check(results)
-
