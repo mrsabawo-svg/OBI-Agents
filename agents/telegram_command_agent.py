@@ -3,7 +3,6 @@ OBI TelegramCommandAgent
 Polls for incoming Telegram commands and routes them through ChiefAgent.
 """
 import os
-import json
 import requests
 from datetime import datetime
 import pytz
@@ -12,7 +11,6 @@ SAST      = pytz.timezone("Africa/Johannesburg")
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
 BASE_URL  = f"https://api.telegram.org/bot{BOT_TOKEN}"
-OFFSET_FILE = "telegram_offset.json"
 
 
 # ── Telegram helpers ──────────────────────────────────────────────────────────
@@ -43,16 +41,20 @@ def send(text: str, parse_mode: str = "Markdown") -> None:
 
 def _load_offset() -> int:
     try:
-        with open(OFFSET_FILE) as f:
-            return json.load(f).get("offset", 0)
-    except Exception:
+        from core.memory import load as load_memory
+        mem = load_memory() or {}
+        return mem.get("_telegram_offset", 0)
+    except Exception as e:
+        print(f"[CMD] offset load error: {e}")
         return 0
 
 
 def _save_offset(offset: int) -> None:
     try:
-        with open(OFFSET_FILE, "w") as f:
-            json.dump({"offset": offset}, f)
+        from core.memory import load as load_memory, save as save_memory
+        mem = load_memory() or {}
+        mem["_telegram_offset"] = offset
+        save_memory(mem)
     except Exception as e:
         print(f"[CMD] offset save error: {e}")
 
@@ -89,7 +91,6 @@ def handle_signal(symbol: str) -> str:
 
     send(f"🔍 Running pipeline for *{symbol}*…")
 
-    # Route through ChiefAgent
     chief    = ChiefAgent()
     decision = chief.decide(Task.SINGLE, symbol=symbol)
     print(f"[CMD] Chief decision: {decision['reason']}")
@@ -128,7 +129,6 @@ def handle_market() -> str:
 
     ALL_TF = ["4h", "1h", "15m", "5m"]
 
-    # Get ChiefAgent priority order
     chief    = ChiefAgent()
     decision = chief.decide(Task.MARKET_BRIEF)
     symbols  = decision["symbols"]
@@ -144,28 +144,25 @@ def handle_market() -> str:
         if priority.get(sym, 0) < 0:
             continue
         try:
-            data    = DataAgent(sym).fetch(ALL_TF)
+            data = DataAgent(sym).fetch(ALL_TF)
             if not data:
                 lines.append(f"⚠️ `{sym}` — no data")
                 continue
             session_data = SessionAgent(sym).analyse()
-            htf     = HTFAgent(sym).analyse(data)
-            regime  = RegimeAgent(sym).detect(data)
-            mtf     = MTFAgent(sym).analyse(data, htf)
-            bias    = BiasAgent(sym).evaluate(htf, mtf, session_data, regime)
+            htf    = HTFAgent(sym).analyse(data)
+            regime = RegimeAgent(sym).detect(data)
+            mtf    = MTFAgent(sym).analyse(data, htf)
+            bias   = BiasAgent(sym).evaluate(htf, mtf, session_data, regime)
 
             direction = bias.get("direction", "NEUTRAL")
-            strength  = bias.get("strength", "")
             approved  = bias.get("approved", False)
-            reg_label = regime.get("regime", "unknown")
+            reg_label = regime.get("label", "unknown")
             pri_score = priority.get(sym, 0)
 
-            icon = "🟢" if direction == "LONG" else "🔴" if direction == "SHORT" else "⚪"
+            icon = "🟢" if direction == "BUY" else "🔴" if direction == "SELL" else "⚪"
             tick = "✅" if approved else "⛔"
 
-            lines.append(
-                f"{icon} `{sym}` {direction} {strength} | {reg_label} | {tick} | p={pri_score}"
-            )
+            lines.append(f"{icon} `{sym}` {direction} | {reg_label} | {tick} | p={pri_score}")
         except Exception as e:
             lines.append(f"⚠️ `{sym}` — error: {e}")
 
@@ -203,15 +200,13 @@ def handle_health() -> str:
 
 def handle_status() -> str:
     from core.memory        import load as load_memory
-    from agents.chief_agent import ChiefAgent, Task
+    from agents.chief_agent import ChiefAgent
 
     mem   = load_memory() or {}
     now   = datetime.now(SAST)
     chief = ChiefAgent()
 
     lines = [f"*OBI Status* — {now.strftime('%d %b %Y %H:%M SAST')}\n"]
-
-    # Chief briefing summary
     lines.append(chief.brief())
     lines.append("")
 
@@ -234,13 +229,10 @@ def route(text: str) -> str:
 
     if lower == "/help":
         return handle_help()
-
     if lower == "/market":
         return handle_market()
-
     if lower == "/health":
         return handle_health()
-
     if lower == "/status":
         return handle_status()
 
