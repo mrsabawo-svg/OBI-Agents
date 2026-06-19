@@ -15,7 +15,6 @@ from agents.zone_agent         import ZoneAgent
 from agents.trigger_agent      import TriggerAgent
 from agents.regime_agent       import RegimeAgent
 from agents.health_agent       import HealthAgent
-
 from agents.lifecycle_agent    import LifecycleAgent
 from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
@@ -23,7 +22,7 @@ from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
 from agents.chief_agent        import ChiefAgent, Task
 from core.utils                import sast_str
-from core.memory               import load as load_memory
+from core.memory               import load as load_memory, save as save_memory
 from datetime                  import datetime
 import pytz
 
@@ -111,7 +110,6 @@ def run(symbol: str, news: dict = None) -> dict:
         }
 
         IntelligenceAgent(symbol).verdict(payload)
-        
         ExecutionAgent(symbol).propose(payload)
 
         return {"fired": True, "confidence": score.get("confidence", 0)}
@@ -137,25 +135,22 @@ if __name__ == "__main__":
     print("\n[CHIEF] " + decision["reason"])
     print("[CHIEF] Scan order: " + ", ".join(decision["symbols"]))
 
-    # Send briefing to Telegram only when session or top picks change
-        try:
-            from agents.telegram_command_agent import send as tg_send
-            mem            = load_memory() or {}
-            last_brief_key = mem.get("_last_brief_key", "")
-            current_key    = decision["session"] + "|" + ",".join(decision.get("top", []))
+    # Send briefing only when session or top picks change
+    try:
+        from agents.telegram_command_agent import send as tg_send
+        mem            = load_memory() or {}
+        last_brief_key = mem.get("_last_brief_key", "")
+        current_key    = decision["session"] + "|" + ",".join(decision.get("top", []))
 
-            if current_key != last_brief_key:
-                tg_send(chief.brief())
-                from core.memory import save as save_memory
-                mem["_last_brief_key"] = current_key
-                save_memory(mem)
-                print("[CHIEF] Briefing sent — session/picks changed")
-            else:
-                print("[CHIEF] Briefing skipped — no change since last brief")
-        except Exception as e:
-            print("[CHIEF] Briefing error: " + str(e))
-
-
+        if current_key != last_brief_key:
+            tg_send(chief.brief())
+            mem["_last_brief_key"] = current_key
+            save_memory(mem)
+            print("[CHIEF] Briefing sent — session/picks changed")
+        else:
+            print("[CHIEF] Briefing skipped — no change since last brief")
+    except Exception as e:
+        print("[CHIEF] Briefing error: " + str(e))
 
     results = {}
     for symbol in decision["symbols"]:
