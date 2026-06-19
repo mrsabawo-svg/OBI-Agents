@@ -1,6 +1,6 @@
 """
 OBI TelegramCommandAgent
-Polls for incoming Telegram commands and routes them to the correct agent/pipeline.
+Polls for incoming Telegram commands and routes them through ChiefAgent.
 """
 import os
 import json
@@ -12,7 +12,7 @@ SAST      = pytz.timezone("Africa/Johannesburg")
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
 BASE_URL  = f"https://api.telegram.org/bot{BOT_TOKEN}"
-OFFSET_FILE = "telegram_offset.json"   # persists between steps in the same run
+OFFSET_FILE = "telegram_offset.json"
 
 
 # ── Telegram helpers ──────────────────────────────────────────────────────────
@@ -76,17 +76,23 @@ def handle_help() -> str:
 
 
 def handle_signal(symbol: str) -> str:
-    from agents.news_agent import NewsAgent
+    from agents.news_agent  import NewsAgent
+    from agents.chief_agent import ChiefAgent, Task
     from main import run
 
     symbol = symbol.upper().strip()
-    VALID = {"XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD",
-             "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"}
+    VALID  = {"XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD",
+              "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"}
 
     if symbol not in VALID:
         return f"❌ Unknown symbol: `{symbol}`\nValid: {', '.join(sorted(VALID))}"
 
     send(f"🔍 Running pipeline for *{symbol}*…")
+
+    # Route through ChiefAgent
+    chief    = ChiefAgent()
+    decision = chief.decide(Task.SINGLE, symbol=symbol)
+    print(f"[CMD] Chief decision: {decision['reason']}")
 
     news   = NewsAgent().is_safe()
     result = run(symbol, news)
@@ -118,35 +124,47 @@ def handle_market() -> str:
     from agents.session_agent import SessionAgent
     from agents.bias_agent    import BiasAgent
     from agents.regime_agent  import RegimeAgent
+    from agents.chief_agent   import ChiefAgent, Task
 
-    SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY",
-               "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
-    ALL_TF  = ["4h", "1h", "15m", "5m"]
+    ALL_TF = ["4h", "1h", "15m", "5m"]
 
-    lines = [f"*OBI Market Summary* — {datetime.now(SAST).strftime('%H:%M SAST')}\n"]
+    # Get ChiefAgent priority order
+    chief    = ChiefAgent()
+    decision = chief.decide(Task.MARKET_BRIEF)
+    symbols  = decision["symbols"]
+    priority = decision["priority"]
+    session  = decision["session"]
 
-    for sym in SYMBOLS:
+    lines = [
+        f"*OBI Market Summary — {datetime.now(SAST).strftime('%H:%M SAST')}*",
+        f"_Session: {session}_\n"
+    ]
+
+    for sym in symbols:
+        if priority.get(sym, 0) < 0:
+            continue
         try:
             data    = DataAgent(sym).fetch(ALL_TF)
             if not data:
                 lines.append(f"⚠️ `{sym}` — no data")
                 continue
-            session = SessionAgent(sym).analyse()
+            session_data = SessionAgent(sym).analyse()
             htf     = HTFAgent(sym).analyse(data)
             regime  = RegimeAgent(sym).detect(data)
             mtf     = MTFAgent(sym).analyse(data, htf)
-            bias    = BiasAgent(sym).evaluate(htf, mtf, session, regime)
+            bias    = BiasAgent(sym).evaluate(htf, mtf, session_data, regime)
 
             direction = bias.get("direction", "NEUTRAL")
             strength  = bias.get("strength", "")
             approved  = bias.get("approved", False)
             reg_label = regime.get("regime", "unknown")
+            pri_score = priority.get(sym, 0)
 
             icon = "🟢" if direction == "LONG" else "🔴" if direction == "SHORT" else "⚪"
             tick = "✅" if approved else "⛔"
 
             lines.append(
-                f"{icon} `{sym}` {direction} {strength} | {reg_label} | {tick}"
+                f"{icon} `{sym}` {direction} {strength} | {reg_label} | {tick} | p={pri_score}"
             )
         except Exception as e:
             lines.append(f"⚠️ `{sym}` — error: {e}")
@@ -158,15 +176,16 @@ def handle_health() -> str:
     from agents.health_agent import HealthAgent
     from core.memory         import load as load_memory
 
-    mem  = load_memory() or {}
-    now  = datetime.now(SAST)
+    mem   = load_memory() or {}
+    now   = datetime.now(SAST)
     lines = [f"*OBI Health Check* — {now.strftime('%H:%M SAST')}\n"]
 
     for sym, data in mem.items():
+        if sym.startswith("_"):
+            continue
         last = data.get("last_signal", "never")
         lines.append(f"• `{sym}` last signal: {last}")
 
-    # Re-use HealthAgent text output by capturing stdout
     import io, sys
     buf = io.StringIO()
     sys.stdout = buf
@@ -183,15 +202,22 @@ def handle_health() -> str:
 
 
 def handle_status() -> str:
-    from core.memory import load as load_memory
+    from core.memory        import load as load_memory
+    from agents.chief_agent import ChiefAgent, Task
 
-    mem  = load_memory() or {}
-    now  = datetime.now(SAST)
+    mem   = load_memory() or {}
+    now   = datetime.now(SAST)
+    chief = ChiefAgent()
+
     lines = [f"*OBI Status* — {now.strftime('%d %b %Y %H:%M SAST')}\n"]
 
-    fired  = [s for s, d in mem.items() if d.get("last_signal")]
+    # Chief briefing summary
+    lines.append(chief.brief())
+    lines.append("")
+
+    fired = [s for s, d in mem.items() if not s.startswith("_") and d.get("last_signal")]
     if fired:
-        lines.append(f"Symbols with signal history: {len(fired)}/{len(mem)}\n")
+        lines.append(f"Signal history ({len(fired)} symbols):")
         for sym in fired:
             lines.append(f"• `{sym}` — {mem[sym]['last_signal']}")
     else:
@@ -203,7 +229,7 @@ def handle_status() -> str:
 # ── Router ────────────────────────────────────────────────────────────────────
 
 def route(text: str) -> str:
-    text = text.strip()
+    text  = text.strip()
     lower = text.lower()
 
     if lower == "/help":
@@ -255,11 +281,10 @@ def poll_and_process() -> None:
         update_id = update["update_id"]
         offset    = update_id + 1
 
-        msg  = update.get("message") or update.get("edited_message")
+        msg = update.get("message") or update.get("edited_message")
         if not msg:
             continue
 
-        # Only respond to your own chat
         if str(msg.get("chat", {}).get("id")) != str(CHAT_ID):
             print(f"[CMD] Ignoring message from unknown chat {msg.get('chat', {}).get('id')}")
             continue
