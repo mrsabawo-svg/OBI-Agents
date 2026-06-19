@@ -138,8 +138,8 @@ if __name__ == "__main__":
     print("[CHIEF] Scan order: " + ", ".join(decision["symbols"]))
 
     # Send briefing to Telegram at start of each run
+    from core.telegram import send as tg_send
     try:
-        from core.telegram import send as tg_send
         tg_send(chief.brief())
     except Exception:
         pass  # briefing is informational — don't crash pipeline if it fails
