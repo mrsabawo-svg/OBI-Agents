@@ -2,7 +2,7 @@
 OBI Agents — Execution Agent v1.0
 Assisted execution on Bybit (crypto).
 On confirmed signal: calculates trade plan, sends to Telegram for approval.
-On /approve: fires the order. On /skip: logs and moves on.
+On /approve: fires the order (if not expired). On /skip: logs and moves on.
 """
 import os
 import json
@@ -21,17 +21,16 @@ BYBIT_SECRET   = os.environ.get("BYBIT_API_SECRET", "")
 # BYBIT_BASE = "https://api.bybit.com"          # live
 BYBIT_BASE   = "https://api-testnet.bybit.com"  # testnet — swap to test
 
+PLAN_EXPIRY_MINUTES = 10
 
 CRYPTO_SYMBOLS = {"BTCUSD", "ETHUSD", "SOLUSD"}
 
-# Bybit uses different ticker format
 BYBIT_TICKER = {
     "BTCUSD": "BTCUSDT",
     "ETHUSD": "ETHUSDT",
     "SOLUSD": "SOLUSDT",
 }
 
-# Risk per trade as % of account balance
 RISK_PCT = {
     "LOW":    1.0,
     "MEDIUM": 0.75,
@@ -46,24 +45,9 @@ def _sign(params: dict, secret: str) -> str:
     return hmac.new(secret.encode(), sorted_params.encode(), hashlib.sha256).hexdigest()
 
 
-def _headers(params: dict) -> dict:
-    ts = str(int(time.time() * 1000))
-    params["api_key"]   = BYBIT_KEY
-    params["timestamp"] = ts
-    params["sign"]      = _sign(params, BYBIT_SECRET)
-    return {"Content-Type": "application/json"}
-
-
 def get_balance() -> float:
-    """Get USDT wallet balance."""
     try:
-        ts     = str(int(time.time() * 1000))
-        params = {
-            "api_key":   BYBIT_KEY,
-            "timestamp": ts,
-            "coin":      "USDT",
-        }
-        params["sign"] = _sign(params, BYBIT_SECRET)
+        ts = str(int(time.time() * 1000))
         r = requests.get(
             f"{BYBIT_BASE}/v5/account/wallet-balance",
             params={"accountType": "UNIFIED", "coin": "USDT"},
@@ -93,7 +77,6 @@ def get_balance() -> float:
 
 
 def get_price(ticker: str) -> float:
-    """Get current mark price."""
     try:
         r = requests.get(
             f"{BYBIT_BASE}/v5/market/tickers",
@@ -109,7 +92,6 @@ def get_price(ticker: str) -> float:
 
 def place_order(ticker: str, side: str, qty: float,
                 sl: float, tp1: float) -> dict:
-    """Place a market order with SL and TP1."""
     try:
         ts = str(int(time.time() * 1000))
         body = {
@@ -155,186 +137,3 @@ def _send(text: str) -> None:
         )
     except Exception as e:
         print(f"[EXEC] Telegram error: {e}")
-
-
-# ── Trade plan calculator ─────────────────────────────────────────────────────
-
-def _calculate_qty(balance: float, risk_pct: float,
-                   entry: float, sl: float) -> float:
-    """Position size based on account risk %."""
-    risk_amount = balance * (risk_pct / 100)
-    sl_distance = abs(entry - sl)
-    if sl_distance == 0:
-        return 0.0
-    qty = risk_amount / sl_distance
-    return round(qty, 3)
-
-
-def build_trade_plan(symbol: str, payload: dict) -> dict:
-    """Build a complete trade plan from the pipeline payload."""
-    trigger = payload.get("trigger", {})
-    score   = payload.get("score", {})
-    bias    = payload.get("bias", {})
-
-    direction = bias.get("direction", "NEUTRAL")
-    entry     = trigger.get("entry", 0.0)
-    sl        = trigger.get("sl", 0.0)
-    tp1       = trigger.get("tp1", 0.0)
-    tp2       = trigger.get("tp2", 0.0)
-    tp3       = trigger.get("tp3", 0.0)
-    rr        = trigger.get("rr", 0.0)
-
-    confidence = score.get("confidence", 50)
-    grade      = score.get("grade", "C")
-    risk_label = score.get("risk", "HIGH")
-    risk_pct   = RISK_PCT.get(risk_label, 0.5)
-
-    ticker  = BYBIT_TICKER.get(symbol, symbol)
-    balance = get_balance()
-    qty     = _calculate_qty(balance, risk_pct, entry, sl)
-
-    return {
-        "symbol":     symbol,
-        "ticker":     ticker,
-        "direction":  direction,
-        "entry":      entry,
-        "sl":         sl,
-        "tp1":        tp1,
-        "tp2":        tp2,
-        "tp3":        tp3,
-        "rr":         rr,
-        "confidence": confidence,
-        "grade":      grade,
-        "risk":       risk_label,
-        "risk_pct":   risk_pct,
-        "balance":    balance,
-        "qty":        qty,
-        "timestamp":  datetime.now(SAST).strftime("%Y-%m-%d %H:%M SAST"),
-    }
-
-
-def format_plan_message(plan: dict) -> str:
-    """Format trade plan for Telegram."""
-    arrow = "🟢 LONG" if plan["direction"] == "BUY" else "🔴 SHORT"
-    return (
-        f"*OBI TRADE PLAN — {plan['symbol']}*\n"
-        f"{'─' * 32}\n"
-        f"{arrow} | Grade: {plan['grade']} | Risk: {plan['risk']}\n"
-        f"Confidence: {plan['confidence']}%\n\n"
-        f"Entry:  `{plan['entry']}`\n"
-        f"SL:     `{plan['sl']}`\n"
-        f"TP1:    `{plan['tp1']}`\n"
-        f"TP2:    `{plan['tp2']}`\n"
-        f"TP3:    `{plan['tp3']}`\n"
-        f"RR:     `{plan['rr']}`\n\n"
-        f"Balance: `${plan['balance']:.2f} USDT`\n"
-        f"Risk:    `{plan['risk_pct']}% → ${plan['balance'] * plan['risk_pct'] / 100:.2f}`\n"
-        f"Qty:     `{plan['qty']}`\n"
-        f"{'─' * 32}\n"
-        f"Reply `/approve {plan['symbol']}` to execute\n"
-        f"Reply `/skip {plan['symbol']}` to dismiss\n"
-        f"_Expires in 10 minutes_\n"
-        f"{plan['timestamp']}"
-    )
-
-
-# ── Pending trade store (Gist-backed via memory) ──────────────────────────────
-
-def save_pending(plan: dict) -> None:
-    """Save pending trade plan to memory for approval lookup."""
-    try:
-        from core.memory import load as load_memory, save as save_memory
-        mem = load_memory() or {}
-        mem["_pending_trade"] = plan
-        save_memory(mem)
-    except Exception as e:
-        print(f"[EXEC] Save pending error: {e}")
-
-
-def load_pending() -> dict:
-    """Load pending trade plan from memory."""
-    try:
-        from core.memory import load as load_memory
-        mem = load_memory() or {}
-        return mem.get("_pending_trade", {})
-    except Exception as e:
-        print(f"[EXEC] Load pending error: {e}")
-        return {}
-
-
-def clear_pending() -> None:
-    """Clear pending trade after approval or skip."""
-    try:
-        from core.memory import load as load_memory, save as save_memory
-        mem = load_memory() or {}
-        mem.pop("_pending_trade", None)
-        save_memory(mem)
-    except Exception as e:
-        print(f"[EXEC] Clear pending error: {e}")
-
-
-# ── Main interface ────────────────────────────────────────────────────────────
-
-class ExecutionAgent:
-    def __init__(self, symbol: str):
-        self.symbol = symbol
-
-    def propose(self, payload: dict) -> None:
-        """Called after a signal fires. Builds plan and sends to Telegram."""
-        if self.symbol not in CRYPTO_SYMBOLS:
-            print(f"[EXEC] {self.symbol}: not a crypto symbol — skipping")
-            return
-
-        print(f"[EXEC] {self.symbol}: building trade plan")
-        plan = build_trade_plan(self.symbol, payload)
-
-        if plan["qty"] <= 0:
-            print(f"[EXEC] {self.symbol}: qty=0 — insufficient balance or SL too tight")
-            _send(f"⚠️ *{self.symbol}* — trade plan failed: qty=0. Check balance or SL distance.")
-            return
-
-        save_pending(plan)
-        msg = format_plan_message(plan)
-        _send(msg)
-        print(f"[EXEC] {self.symbol}: trade plan sent to Telegram")
-
-    def approve(self, symbol: str) -> str:
-        """Called when user sends /approve SYMBOL."""
-        plan = load_pending()
-        if not plan:
-            return "⚠️ No pending trade found. It may have expired."
-        if plan.get("symbol") != symbol.upper():
-            return f"⚠️ Pending trade is for *{plan.get('symbol')}*, not *{symbol}*."
-
-        _send(f"⚡ Executing *{plan['symbol']}* {plan['direction']} order…")
-
-        result = place_order(
-            ticker=plan["ticker"],
-            side=plan["direction"],
-            qty=plan["qty"],
-            sl=plan["sl"],
-            tp1=plan["tp1"],
-        )
-
-        clear_pending()
-
-        if result.get("retCode") == 0:
-            order_id = result.get("result", {}).get("orderId", "unknown")
-            return (
-                f"✅ *{plan['symbol']}* order placed\n"
-                f"Order ID: `{order_id}`\n"
-                f"Side: {plan['direction']} | Qty: {plan['qty']}\n"
-                f"SL: `{plan['sl']}` | TP1: `{plan['tp1']}`"
-            )
-        else:
-            err = result.get("retMsg", str(result))
-            return f"❌ Order failed: `{err}`"
-
-    def skip(self, symbol: str) -> str:
-        """Called when user sends /skip SYMBOL."""
-        plan = load_pending()
-        if not plan or plan.get("symbol") != symbol.upper():
-            return f"ℹ️ No pending trade for *{symbol}*."
-        clear_pending()
-        print(f"[EXEC] {symbol}: trade skipped by user")
-        return f"⏭️ *{symbol}* trade skipped and cleared."
