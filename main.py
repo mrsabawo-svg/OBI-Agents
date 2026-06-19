@@ -137,12 +137,24 @@ if __name__ == "__main__":
     print("\n[CHIEF] " + decision["reason"])
     print("[CHIEF] Scan order: " + ", ".join(decision["symbols"]))
 
-    # Send briefing to Telegram at start of each run
-    try:
-       from agents.telegram_command_agent import send as tg_send
-       tg_send(chief.brief())
-    except Exception:
-       pass
+    # Send briefing to Telegram only when session or top picks change
+        try:
+            from agents.telegram_command_agent import send as tg_send
+            mem            = load_memory() or {}
+            last_brief_key = mem.get("_last_brief_key", "")
+            current_key    = decision["session"] + "|" + ",".join(decision.get("top", []))
+
+            if current_key != last_brief_key:
+                tg_send(chief.brief())
+                from core.memory import save as save_memory
+                mem["_last_brief_key"] = current_key
+                save_memory(mem)
+                print("[CHIEF] Briefing sent — session/picks changed")
+            else:
+                print("[CHIEF] Briefing skipped — no change since last brief")
+        except Exception as e:
+            print("[CHIEF] Briefing error: " + str(e))
+
 
 
     results = {}
