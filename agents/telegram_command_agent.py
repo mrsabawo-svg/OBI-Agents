@@ -49,14 +49,16 @@ def _load_offset() -> int:
         return 0
 
 
-def _save_offset(offset: int) -> None:
+def _save_offset(offset: int) -> bool:
     try:
         from core.memory import load as load_memory, save as save_memory
         mem = load_memory() or {}
         mem["_telegram_offset"] = offset
         save_memory(mem)
+        return True
     except Exception as e:
         print(f"[CMD] offset save error: {e}")
+        return False
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
@@ -269,9 +271,17 @@ def poll_and_process() -> None:
         print("[CMD] No new messages.")
         return
 
+    print(f"[CMD] Fetched {len(updates)} update(s) starting from offset {offset}")
+
     for update in updates:
         update_id = update["update_id"]
-        offset    = update_id + 1
+        new_offset = update_id + 1
+
+        if not _save_offset(new_offset):
+            print(f"[CMD] CRITICAL: offset save failed for update_id={update_id} — aborting to avoid replay")
+            return
+
+        offset = new_offset
 
         msg = update.get("message") or update.get("edited_message")
         if not msg:
@@ -286,7 +296,8 @@ def poll_and_process() -> None:
             continue
 
         print(f"[CMD] Received: {text}")
-        response = route(text)
-        send(response)
-
-    _save_offset(offset)
+        try:
+            response = route(text)
+            send(response)
+        except Exception as e:
+            print(f"[CMD] Error handling '{text}': {e}")
