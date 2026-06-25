@@ -39,3 +39,4 @@ def save(data: dict):
         print("[MEMORY] Saved successfully")
     except Exception as e:
         print("[MEMORY] Save failed: " + str(e))
+        print(f"[MEMORY] Using Gist: {GIST_ID}")
