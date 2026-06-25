@@ -13,7 +13,7 @@ SAST         = pytz.timezone("Africa/Johannesburg")
 EXPIRY_HOURS = 48
 
 SYMBOL_MAP = {
-    "XAUUSD": "GLD",
+    "XAUUSD": "GC=F",
     "EURUSD": "EURUSD=X",
     "USDJPY": "USDJPY=X",
     "GBPJPY": "GBPJPY=X",
@@ -21,7 +21,7 @@ SYMBOL_MAP = {
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
     "SOLUSD": "SOL-USD",
-    "NASDAQ": "QQQ",
+    "NASDAQ": "NQ=F",
 }
 
 
@@ -96,17 +96,23 @@ class LifecycleAgent:
         if direction == "BUY":
             if current >= tp1 and not trade.get("tp1_hit"):
                 trade["tp1_hit"] = True
+                trade["status"]  = "CLOSED"
+                trade["outcome"] = "TP1"
+                trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if current >= tp2 and not trade.get("tp2_hit"):
+            if not trade.get("status") == "CLOSED" and current >= tp2 and not trade.get("tp2_hit"):
                 trade["tp2_hit"] = True
+                trade["status"]  = "CLOSED"
+                trade["outcome"] = "TP2"
+                trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if current >= tp3:
+            if not trade.get("status") == "CLOSED" and current >= tp3:
                 trade["tp3_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP3"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            elif current <= sl:
+            elif not trade.get("status") == "CLOSED" and current <= sl:
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "SL"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
@@ -115,17 +121,23 @@ class LifecycleAgent:
         elif direction == "SELL":
             if current <= tp1 and not trade.get("tp1_hit"):
                 trade["tp1_hit"] = True
+                trade["status"]  = "CLOSED"
+                trade["outcome"] = "TP1"
+                trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if current <= tp2 and not trade.get("tp2_hit"):
+            if not trade.get("status") == "CLOSED" and current <= tp2 and not trade.get("tp2_hit"):
                 trade["tp2_hit"] = True
+                trade["status"]  = "CLOSED"
+                trade["outcome"] = "TP2"
+                trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if current <= tp3:
+            if not trade.get("status") == "CLOSED" and current <= tp3:
                 trade["tp3_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP3"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            elif current >= sl:
+            elif not trade.get("status") == "CLOSED" and current >= sl:
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "SL"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
@@ -137,7 +149,6 @@ class LifecycleAgent:
         return changed
 
     def _print_streak(self, archive: list):
-        """Print current win/loss streak across all closed trades, most recent first."""
         closed = [t for t in archive if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"]
         if not closed:
             return
