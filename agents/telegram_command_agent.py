@@ -39,26 +39,29 @@ def send(text: str, parse_mode: str = "Markdown") -> None:
         print(f"[CMD] send error: {e}")
 
 
-def _load_offset() -> int:
+def _load_offset() -> tuple[int, int]:
     try:
         from core.memory import load as load_memory
         mem = load_memory() or {}
-        return mem.get("_telegram_offset", 0)
+        return mem.get("_telegram_offset", 0), mem.get("_last_processed_update", 0)
     except Exception as e:
         print(f"[CMD] offset load error: {e}")
-        return 0
+        return 0, 0
 
 
-def _save_offset(offset: int) -> bool:
+
+def _save_offset(offset: int, last_processed: int) -> bool:
     try:
         from core.memory import load as load_memory, save as save_memory
         mem = load_memory() or {}
         mem["_telegram_offset"] = offset
+        mem["_last_processed_update"] = last_processed
         save_memory(mem)
         return True
     except Exception as e:
         print(f"[CMD] offset save error: {e}")
         return False
+
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
@@ -264,7 +267,7 @@ def route(text: str) -> str:
 # ── Main polling loop ─────────────────────────────────────────────────────────
 
 def poll_and_process() -> None:
-    offset  = _load_offset()
+    offset, last_processed = _load_offset()
     updates = _get_updates(offset)
 
     if not updates:
@@ -275,20 +278,24 @@ def poll_and_process() -> None:
 
     for update in updates:
         update_id = update["update_id"]
-        new_offset = update_id + 1
 
-        if not _save_offset(new_offset):
-            print(f"[CMD] CRITICAL: offset save failed for update_id={update_id} — aborting to avoid replay")
+        if update_id <= last_processed:
+            print(f"[CMD] Skipping already processed update_id={update_id}")
+            continue
+
+        if not _save_offset(update_id + 1, update_id):
+            print(f"[CMD] CRITICAL: offset save failed for update_id={update_id} — aborting")
             return
 
-        offset = new_offset
+        offset = update_id + 1
+        last_processed = update_id
 
         msg = update.get("message") or update.get("edited_message")
         if not msg:
             continue
 
         if str(msg.get("chat", {}).get("id")) != str(CHAT_ID):
-            print(f"[CMD] Ignoring message from unknown chat {msg.get('chat', {}).get('id')}")
+            print(f"[CMD] Ignoring message from unknown chat")
             continue
 
         text = msg.get("text", "").strip()
@@ -301,3 +308,4 @@ def poll_and_process() -> None:
             send(response)
         except Exception as e:
             print(f"[CMD] Error handling '{text}': {e}")
+
