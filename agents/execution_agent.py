@@ -48,22 +48,26 @@ def _sign(params: dict, secret: str) -> str:
 def get_balance() -> float:
     try:
         ts = str(int(time.time() * 1000))
+        params = "accountType=UNIFIED&coin=USDT"
+        sign_str = f"{ts}{BYBIT_KEY}5000{params}"
+        sig = hmac.new(
+            BYBIT_SECRET.encode(),
+            sign_str.encode(),
+            hashlib.sha256
+        ).hexdigest()
         r = requests.get(
             f"{BYBIT_BASE}/v5/account/wallet-balance",
             params={"accountType": "UNIFIED", "coin": "USDT"},
             headers={
-                "X-BAPI-API-KEY":   BYBIT_KEY,
-                "X-BAPI-TIMESTAMP": ts,
-                "X-BAPI-SIGN":      hmac.new(
-                    BYBIT_SECRET.encode(),
-                    f"{ts}{BYBIT_KEY}5000accountType=UNIFIED&coin=USDT".encode(),
-                    hashlib.sha256
-                ).hexdigest(),
-                "X-BAPI-RECV-WINDOW": "5000",
+                "X-BAPI-API-KEY":       BYBIT_KEY,
+                "X-BAPI-TIMESTAMP":     ts,
+                "X-BAPI-SIGN":          sig,
+                "X-BAPI-RECV-WINDOW":   "5000",
             },
             timeout=10,
         )
-        data = r.json()
+        raw = r.text
+        data = json.loads(raw)
         coins = (data.get("result", {})
                      .get("list", [{}])[0]
                      .get("coin", []))
@@ -74,6 +78,7 @@ def get_balance() -> float:
     except Exception as e:
         print(f"[EXEC] Balance error: {e}")
         return 0.0
+
 
 
 def get_price(ticker: str) -> float:
