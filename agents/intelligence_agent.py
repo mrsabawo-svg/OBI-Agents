@@ -206,8 +206,10 @@ class IntelligenceAgent:
         print("[INTEL] sending Telegram")
         try:
             tags      = " + ".join(r.get("tags", [])) or "none"
-            gv = str(r.get("groq_verdict", ""))[:400].replace("*", "").replace("_", "").replace("`", "")
-            dv = str(r.get("devil_verdict", ""))[:400].replace("*", "").replace("_", "").replace("`", "")
+            import re
+            gv = re.sub(r'[*_`\[\]()]', '', str(r.get("groq_verdict", ""))[:400])
+            dv = re.sub(r'[*_`\[\]()]', '', str(r.get("devil_verdict", ""))[:400])
+
 
             narrative = self._build_narrative(r, payload)
             msg = (
