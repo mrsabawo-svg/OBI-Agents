@@ -7,7 +7,7 @@ import json
 import requests
 
 GIST_ID  = os.environ.get("GIST_ID")
-GH_TOKEN = os.environ.get("GITHUB_TOKEN")
+GH_TOKEN = os.environ.get("GIST_TOKEN")
 HEADERS  = {"Authorization": "token " + str(GH_TOKEN)}
 FILENAME = "obi_memory.json"
 
