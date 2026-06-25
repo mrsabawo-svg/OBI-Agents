@@ -13,9 +13,7 @@ GROQ_API_KEY     = os.environ.get("GROQ_API_KEY")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 GIST_TOKEN = os.environ.get("GIST_TOKEN")
-
 GIST_ID          = os.environ.get("GIST_ID")
-GITHUB_TOKEN     = os.environ.get("GITHUB_TOKEN")
 SAST             = pytz.timezone("Africa/Johannesburg")
 
 class IntelligenceAgent:
