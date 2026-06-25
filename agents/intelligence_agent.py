@@ -12,6 +12,8 @@ import pytz
 GROQ_API_KEY     = os.environ.get("GROQ_API_KEY")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+GIST_TOKEN = os.environ.get("GIST_TOKEN")
+
 GIST_ID          = os.environ.get("GIST_ID")
 GITHUB_TOKEN     = os.environ.get("GITHUB_TOKEN")
 SAST             = pytz.timezone("Africa/Johannesburg")
@@ -168,7 +170,7 @@ class IntelligenceAgent:
         try:
             r = requests.patch(
                 "https://api.github.com/gists/" + str(GIST_ID),
-                headers={"Authorization": "token " + str(GITHUB_TOKEN)},
+                headers={"Authorization": "token " + str(GIST_TOKEN)},
                 json={"files": {"obi_signal.json": {"content": json.dumps(result, indent=2)}}},
                 timeout=15
             )
@@ -206,8 +208,9 @@ class IntelligenceAgent:
         print("[INTEL] sending Telegram")
         try:
             tags      = " + ".join(r.get("tags", [])) or "none"
-            gv        = str(r.get("groq_verdict", ""))[:400]
-            dv        = str(r.get("devil_verdict", ""))[:400]
+            gv = str(r.get("groq_verdict", ""))[:400].replace("*", "").replace("_", "").replace("`", "")
+            dv = str(r.get("devil_verdict", ""))[:400].replace("*", "").replace("_", "").replace("`", "")
+
             narrative = self._build_narrative(r, payload)
             msg = (
                 "OBI SIGNAL - " + r["symbol"] + "\n"
