@@ -29,6 +29,7 @@ jobs:
           ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
           GIST_ID:            ${{ secrets.GIST_ID }}
+          GIST_TOKEN:         ${{ secrets.GIST_TOKEN }}
           MEMORY_GIST_ID:     ${{ secrets.MEMORY_GIST_ID }}
           EXA_API_KEY:        ${{ secrets.EXA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
