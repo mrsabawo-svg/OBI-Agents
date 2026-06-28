@@ -8,6 +8,8 @@ import requests
 
 GIST_ID  = os.environ.get("GIST_ID")
 GH_TOKEN = os.environ.get("GITHUB_TOKEN")
+print("[MEMORY] Token prefix: " + str(GH_TOKEN)[:8] + "... (length=" + str(len(str(GH_TOKEN))) + ")")
+
 HEADERS  = {"Authorization": "token " + str(GH_TOKEN)}
 FILENAME = "obi_memory.json"
 
