@@ -3,12 +3,12 @@ OBI Agents — Zone Agent
 Identifies key price zones and HTF swing targets.
 """
 import numpy as np
+from core.models import BiasResult
 
 class ZoneAgent:
     def __init__(self, symbol: str):
         self.symbol = symbol
 
-    from core.models import BiasResult
     def analyse(self, market_data: dict, bias: BiasResult) -> dict:
         df_htf = None
         df_mtf = None
@@ -62,12 +62,10 @@ class ZoneAgent:
                 htf_swing_high = float(np.max(high_htf[-30:]))
                 htf_swing_low  = float(np.min(low_htf[-30:]))
 
-                # Use 0.1% threshold instead of 0.2% for better hit rate
                 threshold = current_price * 0.001
                 htf_highs_above = [float(h) for h in high_htf if float(h) > current_price + threshold]
                 htf_lows_below  = [float(l) for l in low_htf  if float(l) < current_price - threshold]
 
-                # Fallback to 1h if 4h doesn't have enough swing levels
                 if not htf_highs_above and "1h" in market_data:
                     high_1h = market_data["1h"]["High"].squeeze().values.flatten()
                     htf_highs_above = [float(h) for h in high_1h[-200:] if float(h) > current_price + threshold]
@@ -81,7 +79,7 @@ class ZoneAgent:
                 if htf_lows_below:
                     htf_tp_bear = sorted(htf_lows_below, reverse=True)[len(htf_lows_below) // 2]
 
-            direction = bias.direction
+            direction    = bias.direction
             zone_aligned = bool(
                 (direction == "BUY"  and in_discount) or
                 (direction == "SELL" and in_premium)
