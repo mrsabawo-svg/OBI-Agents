@@ -8,7 +8,8 @@ class ZoneAgent:
     def __init__(self, symbol: str):
         self.symbol = symbol
 
-    def analyse(self, market_data: dict, bias: dict) -> dict:
+    from core.models import BiasResult
+    def analyse(self, market_data: dict, bias: BiasResult) -> dict:
         df_htf = None
         df_mtf = None
 
@@ -80,7 +81,7 @@ class ZoneAgent:
                 if htf_lows_below:
                     htf_tp_bear = sorted(htf_lows_below, reverse=True)[len(htf_lows_below) // 2]
 
-            direction    = bias.get("direction", "NEUTRAL")
+            direction = bias.direction
             zone_aligned = bool(
                 (direction == "BUY"  and in_discount) or
                 (direction == "SELL" and in_premium)
