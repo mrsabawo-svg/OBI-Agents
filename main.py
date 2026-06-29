@@ -78,11 +78,12 @@ def run(symbol: str, news: dict = None) -> dict:
         htf    = HTFAgent(symbol).analyse(data)
         regime = RegimeAgent(symbol).detect(data)
         mtf    = MTFAgent(symbol).analyse(data, htf)
-        bias   = BiasAgent(symbol).evaluate(htf, mtf, session, regime)
+        bias = BiasAgent(symbol).evaluate(htf, mtf, session, regime)
 
-        if not bias["approved"]:
-            print("[MAIN] " + symbol + ": bias blocked - " + bias["reason"])
+        if not bias.approved:
+            print("[MAIN] " + symbol + ": bias blocked - " + bias.reason)
             return {"blocked": "bias"}
+
 
         zone    = ZoneAgent(symbol).analyse(data, bias)
         ltf     = LTFAgent(symbol).analyse(data, mtf, zone)
