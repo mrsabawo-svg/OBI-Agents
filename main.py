@@ -78,19 +78,18 @@ def run(symbol: str, news: dict = None) -> dict:
         htf    = HTFAgent(symbol).analyse(data)
         regime = RegimeAgent(symbol).detect(data)
         mtf    = MTFAgent(symbol).analyse(data, htf)
-        bias = BiasAgent(symbol).evaluate(htf, mtf, session, regime)
+        bias   = BiasAgent(symbol).evaluate(htf, mtf, session, regime)
 
         if not bias.approved:
             print("[MAIN] " + symbol + ": bias blocked - " + bias.reason)
             return {"blocked": "bias"}
 
-
         zone    = ZoneAgent(symbol).analyse(data, bias)
         ltf     = LTFAgent(symbol).analyse(data, mtf, zone)
         trigger = TriggerAgent(symbol).evaluate(ltf, zone, bias)
 
-        if not trigger["fire"]:
-            print("[MAIN] " + symbol + ": no trigger - " + trigger["reason"])
+        if not trigger.fire:
+            print("[MAIN] " + symbol + ": no trigger - " + trigger.reason)
             return {"blocked": "trigger"}
 
         edge  = EdgeAgent(symbol).analyse(trigger, bias, regime)
@@ -113,13 +112,14 @@ def run(symbol: str, news: dict = None) -> dict:
         IntelligenceAgent(symbol).verdict(payload)
         ExecutionAgent(symbol).propose(payload)
 
-        return {"fired": True, "confidence": score.get("confidence", 0)}
+        return {"fired": True, "confidence": score.confidence}
 
     except Exception as e:
         import traceback
         print("[MAIN] " + symbol + " error: " + str(e))
         print(traceback.format_exc())
         return {"error": str(e)}
+
 
 
 if __name__ == "__main__":
