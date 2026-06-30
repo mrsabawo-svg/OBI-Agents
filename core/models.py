@@ -4,6 +4,11 @@ Replaces anonymous payload dicts with typed dataclasses.
 
 Drop this file in: core/models.py
 Then import with: from core.models import BiasResult, TriggerResult, ...
+
+Each result class includes a .get(key, default) method so existing
+code written for dict-style access (bias.get("factors", [])) keeps
+working unmodified while the codebase migrates to attribute access
+(bias.factors) over time.
 """
 
 from dataclasses import dataclass, field
@@ -23,6 +28,9 @@ class BiasResult:
     factors:   List[str]    # e.g. ["HTF bias clear", "MTF aligned"]
     regime:    str          # "TRENDING" | "RANGING" | "VOLATILE"
     reason:    str
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
 
     @staticmethod
     def blocked(reason: str) -> "BiasResult":
@@ -51,6 +59,9 @@ class TriggerResult:
     tags:       List[str]    # ["FVG", "OB", "Momentum", "Discount", "Premium"]
     reason:     str
 
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
     @staticmethod
     def blocked(reason: str) -> "TriggerResult":
         return TriggerResult(
@@ -73,6 +84,9 @@ class EdgeResult:
     overall_wr:  float   # win rate % across all closed trades
     sample_size: int
     low_sample:  bool    # True if sample_size < MIN_SAMPLE
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
 
     @staticmethod
     def default(sample_size: int = 0) -> "EdgeResult":
@@ -97,6 +111,9 @@ class ScoreResult:
     regime_score:  int
     edge_score:    int
     session_score: int
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
 
     @staticmethod
     def default() -> "ScoreResult":
