@@ -1,6 +1,6 @@
 """
-OBI Agents — Intelligence Agent"""
-OBI Agents — Intelligence Agent
+OBI Agents - Intelligence Agent"""
+OBI Agents - Intelligence Agent
 """
 import os
 import json
