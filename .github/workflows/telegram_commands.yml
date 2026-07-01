@@ -29,6 +29,8 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           JSONBIN_KEY: ${{ secrets.JSONBIN_KEY }}
           JSONBIN_BIN_ID: ${{ secrets.JSONBIN_BIN_ID }}
+          TELEGRAM_OPERATOR_ID: ${{ secrets.TELEGRAM_OPERATOR_ID }}
+
           TWELVEDATA_KEY: ${{ secrets.TWELVEDATA_KEY }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
