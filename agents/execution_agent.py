@@ -270,12 +270,14 @@ class ExecutionAgent:
 
         if plan["qty"] <= 0:
             print(f"[EXEC] {self.symbol}: qty=0 — insufficient balance or SL too tight")
-            _send(f"⚠️ *{self.symbol}* — trade plan failed: qty=0. Check balance or SL distance.")
+            _send(f"⚠️ *{self.symbol}* — trade plan failed: qty=0. Check balance or SL distance.", operator_only=True)
+
             return
 
         save_pending(plan)
         msg = format_plan_message(plan)
-        _send(msg)
+                _send(msg, operator_only=True)
+
         print(f"[EXEC] {self.symbol}: trade plan sent to Telegram")
 
     def approve(self, symbol: str) -> str:
