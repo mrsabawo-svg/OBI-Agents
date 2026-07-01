@@ -135,13 +135,15 @@ def place_order(ticker: str, side: str, qty: float,
 
 # ── Telegram helpers ──────────────────────────────────────────────────────────
 
-def _send(text: str) -> None:
+def _send(text: str, operator_only: bool = False) -> None:
     try:
+        chat = OPERATOR_ID if operator_only else CHAT_ID
         requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"},
+            json={"chat_id": chat, "text": text, "parse_mode": "Markdown"},
             timeout=10,
         )
+
     except Exception as e:
         print(f"[EXEC] Telegram error: {e}")
 # ── Trade plan calculator ─────────────────────────────────────────────────────
