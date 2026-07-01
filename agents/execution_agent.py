@@ -15,9 +15,9 @@ import pytz
 
 SAST           = pytz.timezone("Africa/Johannesburg")
 BOT_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+CHAT_ID     = os.environ.get("TELEGRAM_CHAT_ID", "")
+OPERATOR_ID = os.environ.get("TELEGRAM_OPERATOR_ID", "")
 
-CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID", "")
 BYBIT_KEY      = os.environ.get("BYBIT_API_KEY", "")
 BYBIT_SECRET   = os.environ.get("BYBIT_API_SECRET", "")
 # BYBIT_BASE = "https://api.bybit.com"          # live
