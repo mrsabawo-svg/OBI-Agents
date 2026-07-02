@@ -49,37 +49,50 @@ def _sign(params: dict, secret: str) -> str:
 
 def get_balance() -> float:
     try:
-        ts = str(int(time.time() * 1000))
-        params = "accountType=UNIFIED&coin=USDT"
-        sign_str = f"{ts}{BYBIT_KEY}5000{params}"
-        sig = hmac.new(
-            BYBIT_SECRET.encode(),
-            sign_str.encode(),
+        ts         = str(int(time.time() * 1000))
+        recv_window = "5000"
+        params     = "accountType=UNIFIED&coin=USDT"
+        sign_str   = ts + BYBIT_KEY + recv_window + params
+        signature  = hmac.new(
+            BYBIT_SECRET.encode("utf-8"),
+            sign_str.encode("utf-8"),
             hashlib.sha256
         ).hexdigest()
+
         r = requests.get(
-            f"{BYBIT_BASE}/v5/account/wallet-balance",
+            BYBIT_BASE + "/v5/account/wallet-balance",
             params={"accountType": "UNIFIED", "coin": "USDT"},
             headers={
-                "X-BAPI-API-KEY":       BYBIT_KEY,
-                "X-BAPI-TIMESTAMP":     ts,
-                "X-BAPI-SIGN":          sig,
-                "X-BAPI-RECV-WINDOW":   "5000",
+                "X-BAPI-API-KEY":     BYBIT_KEY,
+                "X-BAPI-TIMESTAMP":   ts,
+                "X-BAPI-SIGN":        signature,
+                "X-BAPI-RECV-WINDOW": recv_window,
             },
             timeout=10,
         )
-        raw = r.text
-        data = json.loads(raw)
+        print("[EXEC] Balance status: " + str(r.status_code))
+        if r.status_code != 200:
+            print("[EXEC] Balance error body: " + r.text[:300])
+            return 0.0
+
+        data = r.json()
+        if data.get("retCode") != 0:
+            print("[EXEC] Balance retCode error: " + str(data.get("retMsg")))
+            return 0.0
+
         coins = (data.get("result", {})
                      .get("list", [{}])[0]
                      .get("coin", []))
         for c in coins:
             if c.get("coin") == "USDT":
-                return float(c.get("walletBalance", 0))
+                bal = float(c.get("walletBalance", 0))
+                print("[EXEC] Balance: " + str(bal) + " USDT")
+                return bal
         return 0.0
     except Exception as e:
-        print(f"[EXEC] Balance error: {e}")
+        print("[EXEC] Balance error: " + str(e))
         return 0.0
+
 
 
 
