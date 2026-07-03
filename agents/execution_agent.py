@@ -13,6 +13,8 @@ import requests
 from datetime import datetime
 import pytz
 
+from agents.bybit_order_executor import BybitOrderExecutor, CircuitBreakerTrippedError
+
 SAST           = pytz.timezone("Africa/Johannesburg")
 BOT_TOKEN      = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID     = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -49,50 +51,37 @@ def _sign(params: dict, secret: str) -> str:
 
 def get_balance() -> float:
     try:
-        ts         = str(int(time.time() * 1000))
-        recv_window = "5000"
-        params     = "accountType=UNIFIED&coin=USDT"
-        sign_str   = ts + BYBIT_KEY + recv_window + params
-        signature  = hmac.new(
-            BYBIT_SECRET.encode("utf-8"),
-            sign_str.encode("utf-8"),
+        ts = str(int(time.time() * 1000))
+        params = "accountType=UNIFIED&coin=USDT"
+        sign_str = f"{ts}{BYBIT_KEY}5000{params}"
+        sig = hmac.new(
+            BYBIT_SECRET.encode(),
+            sign_str.encode(),
             hashlib.sha256
         ).hexdigest()
-
         r = requests.get(
-            BYBIT_BASE + "/v5/account/wallet-balance",
+            f"{BYBIT_BASE}/v5/account/wallet-balance",
             params={"accountType": "UNIFIED", "coin": "USDT"},
             headers={
-                "X-BAPI-API-KEY":     BYBIT_KEY,
-                "X-BAPI-TIMESTAMP":   ts,
-                "X-BAPI-SIGN":        signature,
-                "X-BAPI-RECV-WINDOW": recv_window,
+                "X-BAPI-API-KEY":       BYBIT_KEY,
+                "X-BAPI-TIMESTAMP":     ts,
+                "X-BAPI-SIGN":          sig,
+                "X-BAPI-RECV-WINDOW":   "5000",
             },
             timeout=10,
         )
-        print("[EXEC] Balance status: " + str(r.status_code))
-        if r.status_code != 200:
-            print("[EXEC] Balance error body: " + r.text[:300])
-            return 0.0
-
-        data = r.json()
-        if data.get("retCode") != 0:
-            print("[EXEC] Balance retCode error: " + str(data.get("retMsg")))
-            return 0.0
-
+        raw = r.text
+        data = json.loads(raw)
         coins = (data.get("result", {})
                      .get("list", [{}])[0]
                      .get("coin", []))
         for c in coins:
             if c.get("coin") == "USDT":
-                bal = float(c.get("walletBalance", 0))
-                print("[EXEC] Balance: " + str(bal) + " USDT")
-                return bal
+                return float(c.get("walletBalance", 0))
         return 0.0
     except Exception as e:
-        print("[EXEC] Balance error: " + str(e))
+        print(f"[EXEC] Balance error: {e}")
         return 0.0
-
 
 
 
@@ -110,22 +99,23 @@ def get_price(ticker: str) -> float:
         return 0.0
 
 
-def place_order(ticker: str, side: str, qty: float,
-                sl: float, tp1: float) -> dict:
-    try:
+class BybitClient:
+    """
+    Thin signed-request adapter over Bybit v5 REST, shaped to the
+    client.place_order(**kwargs) / client.get_open_orders(**kwargs)
+    interface expected by BybitOrderExecutor.
+
+    IMPORTANT: the signature must be computed over the EXACT bytes sent
+    on the wire. requests' json= kwarg re-serializes the dict and can
+    produce different spacing/key order than what was signed, which
+    silently breaks the signature. We sign body_str and send that same
+    string via data=.
+    """
+
+    def _signed_post(self, path: str, body: dict) -> dict:
         ts = str(int(time.time() * 1000))
-        body = {
-            "category":       "linear",
-            "symbol":         ticker,
-            "side":           "Buy" if side == "BUY" else "Sell",
-            "orderType":      "Market",
-            "qty":            str(round(qty, 3)),
-            "stopLoss":       str(round(sl, 2)),
-            "takeProfit":     str(round(tp1, 2)),
-            "timeInForce":    "GoodTillCancel",
-            "positionIdx":    0,
-        }
-        sign_str = f"{ts}{BYBIT_KEY}5000{json.dumps(body)}"
+        body_str = json.dumps(body)
+        sign_str = f"{ts}{BYBIT_KEY}5000{body_str}"
         sig = hmac.new(BYBIT_SECRET.encode(), sign_str.encode(), hashlib.sha256).hexdigest()
         headers = {
             "X-BAPI-API-KEY":     BYBIT_KEY,
@@ -134,16 +124,40 @@ def place_order(ticker: str, side: str, qty: float,
             "X-BAPI-RECV-WINDOW": "5000",
             "Content-Type":       "application/json",
         }
-        r = requests.post(
-            f"{BYBIT_BASE}/v5/order/create",
-            headers=headers,
-            json=body,
-            timeout=10,
-        )
+        r = requests.post(f"{BYBIT_BASE}{path}", headers=headers, data=body_str, timeout=10)
         return r.json()
-    except Exception as e:
-        print(f"[EXEC] Order error: {e}")
-        return {"error": str(e)}
+
+    def _signed_get(self, path: str, params: dict) -> dict:
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        ts = str(int(time.time() * 1000))
+        sign_str = f"{ts}{BYBIT_KEY}5000{qs}"
+        sig = hmac.new(BYBIT_SECRET.encode(), sign_str.encode(), hashlib.sha256).hexdigest()
+        headers = {
+            "X-BAPI-API-KEY":     BYBIT_KEY,
+            "X-BAPI-TIMESTAMP":   ts,
+            "X-BAPI-SIGN":        sig,
+            "X-BAPI-RECV-WINDOW": "5000",
+        }
+        r = requests.get(f"{BYBIT_BASE}{path}?{qs}", headers=headers, timeout=10)
+        return r.json()
+
+    def place_order(self, **kwargs) -> dict:
+        """
+        Accepts the order params BybitOrderExecutor builds, including its
+        internal 'orderClientId' key, and maps it to Bybit's actual field
+        name 'orderLinkId' before signing/sending.
+        """
+        body = dict(kwargs)
+        cl_id = body.pop("orderClientId", None)
+        if cl_id:
+            body["orderLinkId"] = cl_id
+        return self._signed_post("/v5/order/create", body)
+
+    def get_open_orders(self, category: str = "linear", orderClientId: str = None, **kwargs) -> dict:
+        params = {"category": category}
+        if orderClientId:
+            params["orderLinkId"] = orderClientId
+        return self._signed_get("/v5/order/realtime", params)
 
 
 # ── Telegram helpers ──────────────────────────────────────────────────────────
@@ -237,6 +251,16 @@ def format_plan_message(plan: dict) -> str:
     )
 
 
+_bybit_client = BybitClient()
+_executor = BybitOrderExecutor(
+    client=_bybit_client,
+    max_retries=3,
+    base_delay=0.5,
+    cb_threshold=5,
+    cb_window=60.0,
+)
+
+
 # ── Pending trade store (Gist-backed via memory) ──────────────────────────────
 
 def save_pending(plan: dict) -> None:
@@ -315,18 +339,28 @@ class ExecutionAgent:
 
         _send(f"⚡ Executing *{plan['symbol']}* {plan['direction']} order…")
 
-        result = place_order(
-            ticker=plan["ticker"],
-            side=plan["direction"],
-            qty=plan["qty"],
-            sl=plan["sl"],
-            tp1=plan["tp1"],
-        )
+        order_params = {
+            "category":    "linear",
+            "symbol":      plan["ticker"],
+            "side":        "Buy" if plan["direction"] == "BUY" else "Sell",
+            "orderType":   "Market",
+            "qty":         str(round(plan["qty"], 3)),
+            "stopLoss":    str(round(plan["sl"], 2)),
+            "takeProfit":  str(round(plan["tp1"], 2)),
+            "timeInForce": "GoodTillCancel",
+            "positionIdx": 0,
+        }
+
+        try:
+            result = _executor.place_order_safe(order_params)
+        except CircuitBreakerTrippedError:
+            clear_pending()
+            return "🚨 Circuit breaker OPEN — too many execution failures recently. Order NOT sent. Check Bybit connectivity/auth before retrying."
 
         clear_pending()
 
-        if result.get("retCode") == 0:
-            order_id = result.get("result", {}).get("orderId", "unknown")
+        if result["status"] == "SUCCESS":
+            order_id = result["data"].get("orderId", "unknown")
             return (
                 f"✅ *{plan['symbol']}* order placed\n"
                 f"Order ID: `{order_id}`\n"
@@ -334,7 +368,9 @@ class ExecutionAgent:
                 f"SL: `{plan['sl']}` | TP1: `{plan['tp1']}`"
             )
         else:
-            err = result.get("retMsg", str(result))
+            reason = result.get("reason", "UNKNOWN")
+            code   = result.get("code", "")
+            err    = f"{reason} (code {code})" if code else reason
             return f"❌ Order failed: `{err}`"
 
     def skip(self, symbol: str) -> str:
