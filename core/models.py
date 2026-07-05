@@ -4,11 +4,6 @@ Replaces anonymous payload dicts with typed dataclasses.
 
 Drop this file in: core/models.py
 Then import with: from core.models import BiasResult, TriggerResult, ...
-
-Each result class includes a .get(key, default) method so existing
-code written for dict-style access (bias.get("factors", [])) keeps
-working unmodified while the codebase migrates to attribute access
-(bias.factors) over time.
 """
 
 from dataclasses import dataclass, field
@@ -28,9 +23,6 @@ class BiasResult:
     factors:   List[str]    # e.g. ["HTF bias clear", "MTF aligned"]
     regime:    str          # "TRENDING" | "RANGING" | "VOLATILE"
     reason:    str
-
-    def get(self, key, default=None):
-        return getattr(self, key, default)
 
     @staticmethod
     def blocked(reason: str) -> "BiasResult":
@@ -59,9 +51,6 @@ class TriggerResult:
     tags:       List[str]    # ["FVG", "OB", "Momentum", "Discount", "Premium"]
     reason:     str
 
-    def get(self, key, default=None):
-        return getattr(self, key, default)
-
     @staticmethod
     def blocked(reason: str) -> "TriggerResult":
         return TriggerResult(
@@ -84,9 +73,6 @@ class EdgeResult:
     overall_wr:  float   # win rate % across all closed trades
     sample_size: int
     low_sample:  bool    # True if sample_size < MIN_SAMPLE
-
-    def get(self, key, default=None):
-        return getattr(self, key, default)
 
     @staticmethod
     def default(sample_size: int = 0) -> "EdgeResult":
@@ -111,9 +97,6 @@ class ScoreResult:
     regime_score:  int
     edge_score:    int
     session_score: int
-
-    def get(self, key, default=None):
-        return getattr(self, key, default)
 
     @staticmethod
     def default() -> "ScoreResult":
@@ -141,3 +124,57 @@ class SignalPayload:
     zone:    dict   # ZoneAgent output — typed later
     regime:  dict   # RegimeAgent output — typed later
     session: dict   # SessionAgent output — typed later
+
+
+# ─────────────────────────────────────────────
+# PAYLOAD SERIALIZER
+# ─────────────────────────────────────────────
+
+def _payload_to_dict(payload: dict) -> dict:
+    """Convert payload containing dataclasses to a JSON-serializable dict."""
+    trigger = payload["trigger"]
+    bias    = payload["bias"]
+    edge    = payload["edge"]
+    score   = payload["score"]
+    return {
+        "symbol":  payload.get("symbol", ""),
+        "trigger": {
+            "direction":  trigger.direction,
+            "grade":      trigger.grade,
+            "entry":      trigger.entry,
+            "sl":         trigger.sl,
+            "tp1":        trigger.tp1,
+            "tp2":        trigger.tp2,
+            "tp3":        trigger.tp3,
+            "rr":         trigger.rr,
+            "confluence": trigger.confluence,
+            "tags":       trigger.tags,
+        },
+        "bias": {
+            "direction": bias.direction,
+            "grade":     bias.grade,
+            "score":     bias.score,
+            "factors":   bias.factors,
+            "regime":    bias.regime,
+        },
+        "edge": {
+            "symbol_wr":   edge.symbol_wr,
+            "grade_wr":    edge.grade_wr,
+            "regime_wr":   edge.regime_wr,
+            "overall_wr":  edge.overall_wr,
+            "sample_size": edge.sample_size,
+            "low_sample":  edge.low_sample,
+        },
+        "score": {
+            "confidence":    score.confidence,
+            "grade":         score.grade,
+            "risk":          score.risk,
+            "bias_score":    score.bias_score,
+            "trigger_score": score.trigger_score,
+            "regime_score":  score.regime_score,
+            "edge_score":    score.edge_score,
+            "session_score": score.session_score,
+        },
+        "regime":  payload.get("regime", {}),
+        "session": payload.get("session", {}),
+    }
