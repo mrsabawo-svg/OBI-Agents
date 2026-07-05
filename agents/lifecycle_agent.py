@@ -27,15 +27,22 @@ SYMBOL_MAP = {
 
 class LifecycleAgent:
     def check_open_signals(self):
-        print("[LIFECYCLE] Checking open signals")
-        try:
-            memory  = load_memory() or {}
-            archive = memory.get("_archive", [])
-            open_trades = [t for t in archive if t.get("status") == "OPEN"]
+    print("[LIFECYCLE] Checking open signals")
+    try:
+        memory  = load_memory() or {}
+        archive = memory.get("_archive", [])
+        open_trades = [t for t in archive if t.get("status") == "OPEN"]
 
-            if not open_trades:
-                print("[LIFECYCLE] No open signals to check")
-                return
+        # ── Factor Analytics progress ─────────────────────────────
+        closed = [t for t in archive if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"]
+        print("[LIFECYCLE] Closed trades: " + str(len(closed)) + "/30 needed for Factor Analytics")
+        # ─────────────────────────────────────────────────────────
+
+        if not open_trades:
+            print("[LIFECYCLE] No open signals to check")
+            return
+        ...
+
 
             print("[LIFECYCLE] Found " + str(len(open_trades)) + " open trade(s)")
             changed = False
