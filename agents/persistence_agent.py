@@ -22,14 +22,14 @@ class PersistenceAgent:
         self._push_to_gist(result)
 
     def _update_memory(self, memory: dict, result: dict, payload: dict) -> None:
-    try:
-        if self.symbol not in memory:
-            memory[self.symbol] = {"signals": 0, "wins": 0, "losses": 0}
+        try:
+            if self.symbol not in memory:
+                memory[self.symbol] = {"signals": 0, "wins": 0, "losses": 0}
 
-        memory[self.symbol]["signals"]          = memory[self.symbol].get("signals", 0) + 1
-        memory[self.symbol]["last_signal"]      = result.get("timestamp")
-        memory[self.symbol]["last_direction"]   = result.get("direction")
-        memory[self.symbol]["last_confidence"]  = payload["score"].confidence  # ← this line
+            memory[self.symbol]["signals"]         = memory[self.symbol].get("signals", 0) + 1
+            memory[self.symbol]["last_signal"]     = result.get("timestamp")
+            memory[self.symbol]["last_direction"]  = result.get("direction")
+            memory[self.symbol]["last_confidence"] = payload["score"].confidence
 
         signal_id    = self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         trade_record = {
