@@ -1,5 +1,5 @@
 """
-OBI Agents — Lifecycle Agent
+OBI Agents - Lifecycle Agent
 Tracks open signals and checks if they hit TP1/TP2/TP3/SL/expiry.
 Updates the SAME archive that IntelligenceAgent writes to (core.memory),
 so EdgeAgent sees real outcomes and win/loss streaks become visible.
@@ -27,22 +27,19 @@ SYMBOL_MAP = {
 
 class LifecycleAgent:
     def check_open_signals(self):
-    print("[LIFECYCLE] Checking open signals")
-    try:
-        memory  = load_memory() or {}
-        archive = memory.get("_archive", [])
-        open_trades = [t for t in archive if t.get("status") == "OPEN"]
+        print("[LIFECYCLE] Checking open signals")
+        try:
+            memory  = load_memory() or {}
+            archive = memory.get("_archive", [])
+            open_trades = [t for t in archive if t.get("status") == "OPEN"]
 
-        # ── Factor Analytics progress ─────────────────────────────
-        closed = [t for t in archive if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"]
-        print("[LIFECYCLE] Closed trades: " + str(len(closed)) + "/30 needed for Factor Analytics")
-        # ─────────────────────────────────────────────────────────
+            # Factor Analytics progress
+            closed = [t for t in archive if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"]
+            print("[LIFECYCLE] Closed trades: " + str(len(closed)) + "/30 needed for Factor Analytics")
 
-        if not open_trades:
-            print("[LIFECYCLE] No open signals to check")
-            return
-        ...
-
+            if not open_trades:
+                print("[LIFECYCLE] No open signals to check")
+                return
 
             print("[LIFECYCLE] Found " + str(len(open_trades)) + " open trade(s)")
             changed = False
