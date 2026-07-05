@@ -31,52 +31,51 @@ class PersistenceAgent:
             memory[self.symbol]["last_direction"]  = result.get("direction")
             memory[self.symbol]["last_confidence"] = payload["score"].confidence
 
-        signal_id    = self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        trade_record = {
-            "id":         signal_id,
-            "symbol":     self.symbol,
-            "status":     "OPEN",
-            "direction":  result.get("direction"),
-            "grade":      result.get("grade"),
-            "entry":      result.get("entry"),
-            "sl":         result.get("sl"),
-            "tp1":        result.get("tp1"),
-            "tp2":        result.get("tp2"),
-            "tp3":        result.get("tp3"),
-            "rr":         result.get("rr"),
-            "tags":       result.get("tags", []),
-            "factors":    payload["bias"].factors,
-            "bias_grade": payload["bias"].grade,
-            "obi_score":  payload["score"].confidence,
-            "regime":     payload.get("regime", {}).get("label"),
-            "opened":     result.get("timestamp"),
-            "closed":     None,
-            "tp1_hit":    False,
-            "tp2_hit":    False,
-            "tp3_hit":    False,
-            "outcome":    None
-        }
+            signal_id    = self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            trade_record = {
+                "id":         signal_id,
+                "symbol":     self.symbol,
+                "status":     "OPEN",
+                "direction":  result.get("direction"),
+                "grade":      result.get("grade"),
+                "entry":      result.get("entry"),
+                "sl":         result.get("sl"),
+                "tp1":        result.get("tp1"),
+                "tp2":        result.get("tp2"),
+                "tp3":        result.get("tp3"),
+                "rr":         result.get("rr"),
+                "tags":       result.get("tags", []),
+                "factors":    payload["bias"].factors,
+                "bias_grade": payload["bias"].grade,
+                "obi_score":  payload["score"].confidence,
+                "regime":     payload.get("regime", {}).get("label"),
+                "opened":     result.get("timestamp"),
+                "closed":     None,
+                "tp1_hit":    False,
+                "tp2_hit":    False,
+                "tp3_hit":    False,
+                "outcome":    None
+            }
 
-        if "_archive" not in memory:
-            memory["_archive"] = []
-        memory["_archive"].append(trade_record)
+            if "_archive" not in memory:
+                memory["_archive"] = []
+            memory["_archive"].append(trade_record)
 
-        memory[self.symbol]["last_signal_data"] = {
-            "id":        signal_id,
-            "direction": result.get("direction"),
-            "entry":     result.get("entry"),
-            "sl":        result.get("sl"),
-            "tp1":       result.get("tp1"),
-            "tp2":       result.get("tp2"),
-            "tp3":       result.get("tp3"),
-            "timestamp": result.get("timestamp")
-        }
+            memory[self.symbol]["last_signal_data"] = {
+                "id":        signal_id,
+                "direction": result.get("direction"),
+                "entry":     result.get("entry"),
+                "sl":        result.get("sl"),
+                "tp1":       result.get("tp1"),
+                "tp2":       result.get("tp2"),
+                "tp3":       result.get("tp3"),
+                "timestamp": result.get("timestamp")
+            }
 
-        save_memory(memory)
-        print("[PERSIST] Memory updated - archived: " + signal_id)
-    except Exception as e:
-        print("[PERSIST] Memory error: " + str(e))
-
+            save_memory(memory)
+            print("[PERSIST] Memory updated - archived: " + signal_id)
+        except Exception as e:
+            print("[PERSIST] Memory error: " + str(e))
 
     def _push_to_gist(self, result: dict) -> None:
         try:
