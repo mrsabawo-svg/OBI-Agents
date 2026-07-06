@@ -4,6 +4,7 @@ Orchestrated by ChiefAgent.
 """
 from agents.data_agent         import DataAgent
 from agents.htf_agent          import HTFAgent
+from agents.factor_agent import FactorAgent
 from agents.mtf_agent          import MTFAgent
 from agents.ltf_agent          import LTFAgent
 from agents.news_agent         import NewsAgent
@@ -125,7 +126,7 @@ def run(symbol: str, news: dict = None) -> dict:
 if __name__ == "__main__":
     news = NewsAgent().is_safe()
     LifecycleAgent().check_open_signals()
-
+    FactorAgent().analyse()
     # Monday morning weekly digest
     DigestAgent().send_telegram_digest() if DigestAgent().should_run() else None
 
