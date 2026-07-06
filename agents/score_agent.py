@@ -1,8 +1,16 @@
 """
-OBI Agents — Score Agent v4.2
+OBI Agents - Score Agent v4.3
 Unified OBI confidence score 0-100.
+
+Recalibration changes vs v4.2:
+- RR cap lowered from 5 to 3 (RR>3 is rare, was wasting score range)
+- Regime score: RANGING raised from 0.5 to 0.7 base (most signals are ranging)
+- Low sample: single -8 penalty only (removed double-hit from 0.5 floor + -10 flat)
+- Edge floor when low sample: 0.4 instead of 0.5 (slightly more conservative)
+- Net effect: weak signals stay D, strong signals can now reach A/A+
 """
 from core.models import BiasResult, TriggerResult, EdgeResult, ScoreResult
+
 
 class ScoreAgent:
     def __init__(self, symbol: str):
@@ -27,11 +35,12 @@ class ScoreAgent:
 
             confidence = min(100, max(0, round(raw * 100)))
 
+            # Single bonuses / penalties — no double counting
             if session.get("kill_zone"):
                 confidence = min(100, confidence + 5)
 
             if edge.low_sample:
-                confidence = max(0, confidence - 10)
+                confidence = max(0, confidence - 8)
 
             grade = self._grade(confidence)
             risk  = self._risk(confidence, trigger.rr)
@@ -58,18 +67,18 @@ class ScoreAgent:
 
     def _trigger_score(self, trigger: TriggerResult) -> float:
         conf_score = min(1.0, trigger.confluence / 5)
-        rr_score   = min(1.0, trigger.rr / 5)
+        rr_score   = min(1.0, trigger.rr / 3)   # cap at RR=3, not 5
         return round(conf_score * 0.6 + rr_score * 0.4, 2)
 
     def _regime_score(self, regime: dict) -> float:
         label = regime.get("label", "RANGING")
         conf  = regime.get("confidence", 0.5)
-        base  = {"TRENDING": 1.0, "RANGING": 0.5, "VOLATILE": 0.2}.get(label, 0.5)
+        base  = {"TRENDING": 1.0, "RANGING": 0.7, "VOLATILE": 0.1}.get(label, 0.5)
         return round(base * conf, 2)
 
     def _edge_score(self, edge: EdgeResult) -> float:
         if edge.low_sample:
-            return 0.5
+            return 0.4  # conservative neutral — single penalty applied later
         return round(edge.symbol_wr * 0.4 + edge.grade_wr * 0.35 + edge.regime_wr * 0.25, 2) / 100
 
     def _session_score(self, session: dict) -> float:
@@ -88,3 +97,6 @@ class ScoreAgent:
         if confidence >= 75 and rr >= 2:     return "LOW"
         elif confidence >= 60 and rr >= 1.5: return "MEDIUM"
         else:                                return "HIGH"
+
+    def _default(self) -> ScoreResult:
+        return ScoreResult.default()
