@@ -61,14 +61,22 @@ class PersistenceAgent:
                 memory["_archive"] = []
             memory["_archive"].append(trade_record)
 
+            # Widened to include grade/rr/tags/regime/obi_score so a live,
+            # still-open signal carries the same detail the chart needs —
+            # no longer dependent on the separate (broken) obi_signal.json push.
             memory[self.symbol]["last_signal_data"] = {
                 "id":        signal_id,
                 "direction": result.get("direction"),
+                "grade":     result.get("grade"),
                 "entry":     result.get("entry"),
                 "sl":        result.get("sl"),
                 "tp1":       result.get("tp1"),
                 "tp2":       result.get("tp2"),
                 "tp3":       result.get("tp3"),
+                "rr":        result.get("rr"),
+                "tags":      result.get("tags", []),
+                "regime":    trade_record["regime"],
+                "obi_score": trade_record["obi_score"],
                 "timestamp": result.get("timestamp")
             }
 
