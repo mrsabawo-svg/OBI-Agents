@@ -1,6 +1,7 @@
 """
-OBI Agents - Signal Reviewer
-Handles: duplicate detection, Groq analysis, devil advocate, narrative building.
+OBI Agents - Signal Reviewer v4.3
+Handles: duplicate detection, Groq analysis, Skeptic second opinion, narrative.
+Renamed: Devil's Advocate -> Skeptic (blunt, single purpose, no theatre)
 """
 import os
 import json
@@ -40,12 +41,12 @@ class SignalReviewer:
             return False
 
     def review(self, payload: dict, accuracy: str) -> dict:
-        groq_verdict  = self._ask_groq(payload, accuracy)
-        devil_verdict = self._ask_devil(payload, groq_verdict)
+        groq_verdict     = self._ask_groq(payload, accuracy)
+        skeptic_verdict  = self._ask_skeptic(payload, groq_verdict)
         return {
-            "groq_verdict":  groq_verdict,
-            "devil_verdict": devil_verdict,
-            "narrative":     self.build_narrative(payload),
+            "groq_verdict":    groq_verdict,
+            "skeptic_verdict": skeptic_verdict,
+            "narrative":       self.build_narrative(payload),
         }
 
     def build_narrative(self, payload: dict) -> str:
@@ -108,16 +109,20 @@ class SignalReviewer:
             print("[REVIEWER] Groq error: " + str(e))
             return "Groq unavailable"
 
-    def _ask_devil(self, payload: dict, groq_verdict: str) -> str:
-        print("[REVIEWER] calling devil advocate")
+    def _ask_skeptic(self, payload: dict, groq_verdict: str) -> str:
+        print("[REVIEWER] calling Skeptic")
         try:
             safe_payload = _payload_to_dict(payload)
             prompt = (
-                "You are a risk analyst. Another analyst said: " + groq_verdict +
-                ". Play devil advocate. Format: SECOND OPINION / RISK SCORE 1-10 / RED FLAGS / ALTERNATIVE VIEW. "
-                "Max 100 words. Signal: " + json.dumps(safe_payload)
+                "You are a blunt risk analyst. No fluff. Another analyst said: " + groq_verdict +
+                ". Punch holes in it. Format: "
+                "VERDICT: AGREE / DISAGREE / PARTIAL | "
+                "RISK: 1-10 | "
+                "RED FLAGS: (list only real concerns, not generic ones) | "
+                "BOTTOM LINE: one sentence. "
+                "Max 80 words. Signal: " + json.dumps(safe_payload)
             )
             return self._groq_call(prompt)
         except Exception as e:
-            print("[REVIEWER] Devil error: " + str(e))
-            return "Devil advocate unavailable"
+            print("[REVIEWER] Skeptic error: " + str(e))
+            return "Skeptic unavailable"
