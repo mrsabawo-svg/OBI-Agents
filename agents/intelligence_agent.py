@@ -30,22 +30,22 @@ class IntelligenceAgent:
 
         trigger = payload["trigger"]
         result = {
-            "symbol":        self.symbol,
-            "timestamp":     sast_str(),
-            "direction":     trigger.direction,
-            "grade":         trigger.grade,
-            "entry":         trigger.entry,
-            "sl":            trigger.sl,
-            "tp1":           trigger.tp1,
-            "tp2":           trigger.tp2,
-            "tp3":           trigger.tp3,
-            "rr":            trigger.rr,
-            "tags":          trigger.tags,
-            "groq_verdict":  review["groq_verdict"],
-            "devil_verdict": review["devil_verdict"],
-            "regime":        payload.get("regime", {}),
-            "score":         payload.get("score", {}),
-            "edge":          payload.get("edge", {}),
+            "symbol":          self.symbol,
+            "timestamp":       sast_str(),
+            "direction":       trigger.direction,
+            "grade":           trigger.grade,
+            "entry":           trigger.entry,
+            "sl":              trigger.sl,
+            "tp1":             trigger.tp1,
+            "tp2":             trigger.tp2,
+            "tp3":             trigger.tp3,
+            "rr":              trigger.rr,
+            "tags":            trigger.tags,
+            "groq_verdict":    review["groq_verdict"],
+            "skeptic_verdict": review["skeptic_verdict"],
+            "regime":          payload.get("regime", {}),
+            "score":           payload.get("score", {}),
+            "edge":            payload.get("edge", {}),
         }
 
         PersistenceAgent(self.symbol).save(result, payload)
