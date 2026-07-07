@@ -18,7 +18,7 @@ class NotifierAgent:
         try:
             tags = " + ".join(result.get("tags", [])) or "none"
             gv   = str(result.get("groq_verdict", ""))[:400]
-            dv   = str(result.get("devil_verdict", ""))[:400]
+            sv   = str(result.get("skeptic_verdict", ""))[:400]
             msg = (
                 "OBI SIGNAL - " + result["symbol"] + "\n"
                 "------------------------------\n"
@@ -32,9 +32,9 @@ class NotifierAgent:
                 "TP3: "   + str(result["tp3"]) + "\n"
                 "RR: "    + str(result["rr"]) + "\n"
                 "------------------------------\n"
-                "GROQ ANALYST:\n" + gv + "\n"
+                "ANALYST:\n" + gv + "\n"
                 "------------------------------\n"
-                "DEVILS ADVOCATE:\n" + dv + "\n"
+                "SKEPTIC:\n" + sv + "\n"
                 "------------------------------\n"
                 + str(result["timestamp"])
             )
