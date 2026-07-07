@@ -1,7 +1,10 @@
 """
-OBI Agents — Bias Agent
+OBI Agents - Bias Agent v4.3
+Factor-based signal filtering added.
+Grade C signals require BOS or Kill Zone to proceed.
 """
 from core.models import BiasResult
+
 
 class BiasAgent:
     def __init__(self, symbol: str):
@@ -21,7 +24,7 @@ class BiasAgent:
             regime_conf  = regime.get("confidence", 0) if regime else 0
 
             if htf_bias == "NEUTRAL":
-                return BiasResult.blocked("HTF bias is NEUTRAL — no directional edge")
+                return BiasResult.blocked("HTF bias is NEUTRAL - no directional edge")
 
             if htf_conf < 0.50:
                 return BiasResult.blocked("HTF confidence too low")
@@ -30,7 +33,7 @@ class BiasAgent:
                 return BiasResult.blocked("MTF structure not aligned with HTF bias")
 
             if regime_label == "VOLATILE" and regime_conf > 0.7:
-                return BiasResult.blocked("HMM: High volatility regime — too risky")
+                return BiasResult.blocked("HMM: High volatility regime - too risky")
 
             factors = {
                 "HTF bias clear":      htf_conf >= 0.60,
@@ -56,7 +59,22 @@ class BiasAgent:
                 "C"  if score >= 3 else "D"
             )
 
-            print("[BIAS] " + self.symbol + ": " + direction + " Grade=" + grade + " Factors=" + str(score) + "/7 Regime=" + regime_label)
+            # ── Factor-based filter (v4.3) ─────────────────────────────────
+            # Data: Grade C + NEITHER BOS nor KZ = 21.7% WR (46 trades)
+            #       Grade C + BOS or KZ           = 38.7% WR (31 trades)
+            # Rule: Grade C requires BOS or Kill Zone to proceed
+            has_bos = "MTF BOS confirmed" in passed
+            has_kz  = "Kill zone active" in passed
+
+            if grade == "C" and not has_bos and not has_kz:
+                return BiasResult.blocked(
+                    "Grade C filtered: requires BOS or Kill Zone (data: 21.7% WR without)"
+                )
+            # ──────────────────────────────────────────────────────────────
+
+            print("[BIAS] " + self.symbol + ": " + direction + " Grade=" + grade +
+                  " Factors=" + str(score) + "/7 Regime=" + regime_label)
+
             return BiasResult(
                 approved=True,
                 direction=direction,
