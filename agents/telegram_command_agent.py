@@ -49,13 +49,7 @@ def _load_offset() -> tuple[int, int]:
         return 0, 0
 
 
-
 def _save_offset(offset: int, last_processed: int, retries: int = 2) -> bool:
-    """
-    Persist the Telegram polling offset. Retries a couple of times on
-    transient Gist write failures before giving up, since a failed save
-    here determines whether an update gets reprocessed.
-    """
     for attempt in range(1, retries + 1):
         try:
             from core.memory import load as load_memory, save as save_memory
@@ -67,7 +61,6 @@ def _save_offset(offset: int, last_processed: int, retries: int = 2) -> bool:
         except Exception as e:
             print(f"[CMD] offset save error (attempt {attempt}/{retries}): {e}")
     return False
-
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
@@ -165,8 +158,9 @@ def handle_market() -> str:
             mtf    = MTFAgent(sym).analyse(data, htf)
             bias   = BiasAgent(sym).evaluate(htf, mtf, session_data, regime)
 
-            direction = bias.get("direction", "NEUTRAL")
-            approved  = bias.get("approved", False)
+            # BiasResult is a dataclass — use attribute access
+            direction = bias.direction
+            approved  = bias.approved
             reg_label = regime.get("label", "unknown")
             pri_score = priority.get(sym, 0)
 
@@ -234,21 +228,17 @@ def handle_status() -> str:
 
 def handle_approve(symbol: str) -> str:
     from agents.execution_agent import ExecutionAgent, CRYPTO_SYMBOLS
-
     symbol = symbol.upper().strip()
     if symbol not in CRYPTO_SYMBOLS:
         return f"❌ Unknown symbol: `{symbol}`\nExecutable: {', '.join(sorted(CRYPTO_SYMBOLS))}"
-
     return ExecutionAgent(symbol).approve(symbol)
 
 
 def handle_skip(symbol: str) -> str:
     from agents.execution_agent import ExecutionAgent, CRYPTO_SYMBOLS
-
     symbol = symbol.upper().strip()
     if symbol not in CRYPTO_SYMBOLS:
         return f"❌ Unknown symbol: `{symbol}`\nExecutable: {', '.join(sorted(CRYPTO_SYMBOLS))}"
-
     return ExecutionAgent(symbol).skip(symbol)
 
 
@@ -307,21 +297,11 @@ def poll_and_process() -> None:
             print(f"[CMD] Skipping already processed update_id={update_id}")
             continue
 
-        # NOTE: offset is saved BEFORE processing so that if the command
-        # handler itself raises (e.g. a bug in an agent), the update is
-        # still marked done and won't be replayed forever. If the SAVE
-        # itself fails, we skip this update for now (log + continue) —
-        # this update will be retried on the next poll since the offset
-        # in memory wasn't advanced. Importantly this no longer aborts
-        # the rest of the batch: previously, a single failed save here
-        # caused an early `return`, silently dropping every other
-        # update queued in the same poll.
         if not _save_offset(update_id + 1, update_id):
-            print(f"[CMD] WARNING: offset save failed for update_id={update_id} — "
-                  f"will retry this update next poll, continuing with remaining updates")
+            print(f"[CMD] WARNING: offset save failed for update_id={update_id} — will retry next poll")
             continue
 
-        offset = update_id + 1
+        offset         = update_id + 1
         last_processed = update_id
 
         msg = update.get("message") or update.get("edited_message")
