@@ -1,6 +1,6 @@
 """
-OBI Agents — Archive Agent
-Logs every fired signal to Google Drive spreadsheet + Notion.
+OBI Agents - Archive Agent
+Logs every fired signal to Gist.
 Builds the historical dataset that EdgeAgent and ScoreAgent learn from.
 """
 import os
@@ -64,26 +64,58 @@ class ArchiveAgent:
         htf     = signal.get("htf", {})
         mtf     = signal.get("mtf", {})
 
+        # Support both dataclass and dict for bias
+        if hasattr(bias, "score"):
+            bias_score   = bias.score
+            bias_factors = bias.factors
+        else:
+            bias_score   = bias.get("score")
+            bias_factors = bias.get("factors", [])
+
+        # Support both dataclass and dict for trigger
+        if hasattr(trigger, "direction"):
+            direction  = trigger.direction
+            grade      = trigger.grade
+            entry      = trigger.entry
+            sl         = trigger.sl
+            tp1        = trigger.tp1
+            tp2        = trigger.tp2
+            tp3        = trigger.tp3
+            rr         = trigger.rr
+            tags       = trigger.tags
+            confluence = trigger.confluence
+        else:
+            direction  = trigger.get("direction")
+            grade      = trigger.get("grade")
+            entry      = trigger.get("entry")
+            sl         = trigger.get("sl")
+            tp1        = trigger.get("tp1")
+            tp2        = trigger.get("tp2")
+            tp3        = trigger.get("tp3")
+            rr         = trigger.get("rr")
+            tags       = trigger.get("tags", [])
+            confluence = trigger.get("confluence")
+
         return {
             "id":           signal.get("symbol", "") + "_" + datetime.now(SAST).strftime("%Y%m%d%H%M"),
             "symbol":       signal.get("symbol"),
             "timestamp":    datetime.now(SAST).strftime("%Y-%m-%d %H:%M SAST"),
-            "direction":    trigger.get("direction"),
-            "grade":        trigger.get("grade"),
-            "entry":        trigger.get("entry"),
-            "sl":           trigger.get("sl"),
-            "tp1":          trigger.get("tp1"),
-            "tp2":          trigger.get("tp2"),
-            "tp3":          trigger.get("tp3"),
-            "rr":           trigger.get("rr"),
-            "tags":         trigger.get("tags", []),
-            "confluence":   trigger.get("confluence"),
+            "direction":    direction,
+            "grade":        grade,
+            "entry":        entry,
+            "sl":           sl,
+            "tp1":          tp1,
+            "tp2":          tp2,
+            "tp3":          tp3,
+            "rr":           rr,
+            "tags":         tags,
+            "confluence":   confluence,
             "regime":       regime.get("label"),
             "regime_conf":  regime.get("confidence"),
             "htf_bias":     htf.get("bias"),
             "htf_conf":     htf.get("confidence"),
-            "bias_score":   bias.get("score"),
-            "bias_factors": bias.get("factors", []),
+            "bias_score":   bias_score,
+            "bias_factors": bias_factors,
             "bos":          mtf.get("bos"),
             "sweep":        mtf.get("sweep"),
             "ob":           mtf.get("order_block"),
