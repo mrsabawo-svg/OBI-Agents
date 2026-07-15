@@ -52,16 +52,16 @@ def run(symbol: str, news: dict = None) -> dict:
         mtf    = MTFAgent(symbol).analyse(data, htf)
         bias   = BiasAgent(symbol).evaluate(htf, mtf, session, regime)
 
-        if not bias["approved"]:
-            print("[MAIN] " + symbol + ": bias blocked - " + bias["reason"])
+        if not bias.approved:
+            print("[MAIN] " + symbol + ": bias blocked - " + bias.reason)
             return {"blocked": "bias"}
 
         zone    = ZoneAgent(symbol).analyse(data, bias)
         ltf     = LTFAgent(symbol).analyse(data, mtf, zone)
         trigger = TriggerAgent(symbol).evaluate(ltf, zone, bias)
 
-        if not trigger["fire"]:
-            print("[MAIN] " + symbol + ": no trigger - " + trigger["reason"])
+        if not trigger.fire:
+            print("[MAIN] " + symbol + ": no trigger - " + trigger.reason)
             return {"blocked": "trigger"}
 
         edge  = EdgeAgent(symbol).analyse(trigger, bias, regime)
