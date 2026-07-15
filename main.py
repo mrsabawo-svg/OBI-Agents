@@ -19,6 +19,7 @@ from agents.lifecycle_agent    import LifecycleAgent
 from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
+from agents.execution_agent    import ExecutionAgent
 from core.utils                import sast_str
 
 SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
@@ -83,6 +84,11 @@ def run(symbol: str, news: dict = None) -> dict:
 
         IntelligenceAgent(symbol).verdict(payload)
         ArchiveAgent().log(payload)
+
+        try:
+            ExecutionAgent(symbol).propose(payload)
+        except Exception as e:
+            print("[MAIN] " + symbol + ": execution propose error - " + str(e))
 
         return {"fired": True}
 
