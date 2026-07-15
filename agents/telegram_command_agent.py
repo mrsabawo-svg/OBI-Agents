@@ -343,3 +343,5 @@ def poll_and_process() -> None:
             send(response)
         except Exception as e:
             print(f"[CMD] Error handling '{text}': {e}")
+
+
