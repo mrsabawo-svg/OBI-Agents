@@ -1,11 +1,18 @@
 """
-OBI Agents — Chief Agent v1.0
+OBI Agents — Chief Agent v1.1
 Orchestrates the full pipeline with intelligent symbol prioritisation.
 Decides what to run, in what order, and why.
+
+v1.1 change: no longer imports core.memory. Chief now receives a
+SymbolContext (built once by main.py) instead of pulling load_memory()
+itself. This breaks the Chief -> Memory -> Edge -> Score -> Chief
+data-coupling cycle flagged in the architecture review — Chief is now
+a pure function of (time, weekday, context), with no network/Gist
+dependency of its own, and is trivially unit-testable.
 """
 import pytz
 from datetime import datetime
-from core.memory import load as load_memory
+from core.models import SymbolContext
 
 SAST = pytz.timezone("Africa/Johannesburg")
 
@@ -42,28 +49,19 @@ def _active_session(hour: int) -> str:
     return "Off Hours"
 
 
-def _get_recent_scores(mem: dict) -> dict:
-    """Pull last known confidence scores from memory."""
-    scores = {}
-    for sym in SYMBOLS:
-        scores[sym] = mem.get(sym, {}).get("last_confidence", 50)
-    return scores
-
-
 # ── Priority engine ───────────────────────────────────────────────────────────
 
-def _prioritise(hour: int, weekday: int, mem: dict) -> list:
+def _prioritise(hour: int, weekday: int, context: SymbolContext) -> list:
     """
     Returns SYMBOLS sorted by priority score.
     Factors:
       1. Session relevance (40pts)
-      2. Recent confidence score from memory (30pts)
+      2. Recent confidence score from context (30pts)
       3. Crypto always-on bonus (20pts)
       4. Recency penalty — symbols scanned recently score lower (10pts)
     """
     session      = _active_session(hour)
     session_syms = SESSION_PRIORITY.get(session, [])
-    recent_scores = _get_recent_scores(mem)
     now          = datetime.now(SAST)
 
     priority = {}
@@ -75,8 +73,8 @@ def _prioritise(hour: int, weekday: int, mem: dict) -> list:
             idx = session_syms.index(sym)
             score += max(40 - idx * 8, 10)   # top pick = 40, each rank -8
 
-        # 2. Recent confidence from memory
-        last_conf = recent_scores.get(sym, 50)
+        # 2. Recent confidence from context
+        last_conf = context.last_confidence.get(sym, 50)
         score += int(last_conf * 0.30)         # max 30pts at conf=100
 
         # 3. Crypto 24/7 bonus during off hours
@@ -84,7 +82,7 @@ def _prioritise(hour: int, weekday: int, mem: dict) -> list:
             score += 20
 
         # 4. Recency penalty — avoid re-scanning too soon
-        last_signal = mem.get(sym, {}).get("last_signal", "")
+        last_signal = context.last_signal.get(sym, "")
         if last_signal:
             try:
                 lt    = datetime.strptime(last_signal.replace(" SAST", ""), "%Y-%m-%d %H:%M")
@@ -118,11 +116,17 @@ class Task:
 # ── Chief Agent ───────────────────────────────────────────────────────────────
 
 class ChiefAgent:
-    def __init__(self):
+    def __init__(self, context: SymbolContext = None):
+        """
+        context: SymbolContext built once by main.py via
+                 SymbolContext.from_memory(load_memory(), SYMBOLS)
+                 If omitted, Chief falls back to neutral defaults
+                 (useful for unit tests — no memory/Gist call required).
+        """
         self.now     = datetime.now(SAST)
         self.hour    = self.now.hour
         self.weekday = self.now.weekday()
-        self.mem     = load_memory() or {}
+        self.context = context or SymbolContext()
 
     def decide(self, task_type: str, symbol: str = None) -> dict:
         """
@@ -145,7 +149,7 @@ class ChiefAgent:
             }
 
         if task_type == Task.MARKET_BRIEF:
-            ranked, session, priority = _prioritise(self.hour, self.weekday, self.mem)
+            ranked, session, priority = _prioritise(self.hour, self.weekday, self.context)
             return {
                 "task":     Task.MARKET_BRIEF,
                 "symbols":  ranked,
@@ -155,7 +159,7 @@ class ChiefAgent:
             }
 
         if task_type == Task.FULL_SCAN:
-            ranked, session, priority = _prioritise(self.hour, self.weekday, self.mem)
+            ranked, session, priority = _prioritise(self.hour, self.weekday, self.context)
 
             # Chief recommendation — top 3 symbols to focus on
             top3 = [s for s in ranked if priority.get(s, 0) > 0][:3]
