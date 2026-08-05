@@ -43,6 +43,8 @@ class ScoreAgent:
                 confidence = max(0, confidence - 8)
 
             grade = self._grade(confidence)
+            print(f"[SCORE] Components: bias={bias_score:.2f} trigger={trigger_score:.2f} edge={edge_score:.2f} regime={regime_score:.2f} session={session_score:.2f} | raw={raw:.2f} | low_sample={edge.low_sample}")
+
             risk  = self._risk(confidence, trigger.rr)
 
             print("[SCORE] " + self.symbol + ": confidence=" + str(confidence) + " grade=" + grade + " risk=" + risk)
