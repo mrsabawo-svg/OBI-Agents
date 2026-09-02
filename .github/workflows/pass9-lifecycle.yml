@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - pass-9-lifecycle-integrity
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
