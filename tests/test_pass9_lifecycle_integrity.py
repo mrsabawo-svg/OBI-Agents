@@ -46,15 +46,13 @@ def test_pass9_open_to_closed_uses_same_canonical_memory():
     with patch("agents.archive_agent.load_memory", side_effect=fake_load), \
          patch("agents.archive_agent.save_memory", side_effect=fake_save), \
          patch("agents.lifecycle_agent.load_memory", side_effect=fake_load), \
-         patch("agents.lifecycle_agent.save_memory", side_effect=fake_save):
+         patch("agents.lifecycle_agent.save_memory", side_effect=fake_save), \
+         patch("agents.edge_agent.load_memory", side_effect=fake_load):
 
         archive = ArchiveAgent()
         assert archive.log(_signal()) is True
 
         # Simulate time passing between independent runs/processes.
-        persisted["_archive"][0]["opened"] = (
-            datetime.now().strftime("%Y-%m-%d %H:%M SAST")
-        )
         persisted["_archive"][0]["opened"] = (
             datetime.now() - timedelta(hours=49)
         ).strftime("%Y-%m-%d %H:%M SAST")
@@ -79,7 +77,7 @@ def test_pass9_open_to_closed_uses_same_canonical_memory():
         edge = EdgeAgent("EURUSD")
         trigger = SimpleNamespace(grade="A", tags=["TEST"])
         result = edge.analyse(trigger, {}, {"label": "TEST"})
-        assert result.sample_size == 0 or result.sample_size == 1
+        assert result.sample_size == 0
 
         # Explicitly verify the persisted archive itself contains the terminal record.
         reloaded = fake_load()
