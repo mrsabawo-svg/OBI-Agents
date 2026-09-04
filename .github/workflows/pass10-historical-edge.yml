@@ -1,0 +1,27 @@
+name: Pass 10 Historical Edge Integrity
+
+on:
+  push:
+    branches:
+      - pass-10-historical-edge-integrity
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  historical-edge-integrity:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install pytest pandas pytz yfinance requests
+      - name: Run Pass 10 test
+        run: pytest -q tests/test_pass10_historical_edge_integrity.py
