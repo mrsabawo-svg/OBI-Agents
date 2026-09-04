@@ -6,7 +6,7 @@ from agents.archive_agent import ArchiveAgent
 from agents.edge_agent import EdgeAgent
 
 
-def _signal(i, outcome):
+def _signal(i):
     return {
         "id": f"PASS10-CONTROLLED-{i:03d}",
         "symbol": "EURUSD",
@@ -26,9 +26,6 @@ def _signal(i, outcome):
         "htf": {"bias": "BULLISH", "confidence": 100},
         "bias": {"score": 100, "factors": ["TEST"]},
         "mtf": {"bos": True, "sweep": False, "order_block": "TEST"},
-        "status": "CLOSED",
-        "outcome": outcome,
-        "closed": True,
     }
 
 
@@ -49,11 +46,16 @@ def test_pass10_historical_edge_reconstructs_from_canonical_archive():
         archive = ArchiveAgent()
         outcomes = ["TP1"] * 15 + ["SL"] * 5
         for i, outcome in enumerate(outcomes, 1):
-            assert archive.log(_signal(i, outcome)) is True
+            assert archive.log(_signal(i)) is True
+            assert archive.update_outcome(
+                f"PASS10-CONTROLLED-{i:03d}", outcome, pnl_pips=100 if outcome == "TP1" else -100
+            ) is True
 
         loaded = fake_load()
         assert len(loaded["_archive"]) == 20
         assert all(t["status"] == "CLOSED" for t in loaded["_archive"])
+        assert sum(t["outcome"] == "TP1" for t in loaded["_archive"]) == 15
+        assert sum(t["outcome"] == "SL" for t in loaded["_archive"]) == 5
 
         edge = EdgeAgent("EURUSD")
         trigger = SimpleNamespace(grade="A", tags=["PASS10", "CONTROLLED"])
