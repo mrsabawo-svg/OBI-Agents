@@ -1,0 +1,29 @@
+name: Pass 11 Production Edge Validity
+
+on:
+  push:
+    branches:
+      - pass-11-production-edge-validity
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  production-edge-validity:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      GIST_ID: ${{ secrets.GIST_ID }}
+      GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install pytest pandas pytz yfinance requests
+      - name: Run Pass 11 production archive audit
+        run: pytest -q tests/test_pass11_production_edge_validity.py -s
