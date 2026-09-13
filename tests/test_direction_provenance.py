@@ -10,14 +10,19 @@ from agents.trigger_agent import TriggerAgent
 def frame(direction: str, n: int = 40) -> pd.DataFrame:
     if direction == "BULLISH":
         close = np.arange(100.0, 100.0 + n)
+        ema20 = close - 1.0
+        ema50 = close - 2.0
     else:
         close = np.arange(200.0, 200.0 - n, -1.0)
+        ema20 = close + 1.0
+        ema50 = close + 2.0
 
     high = close + 0.5
     low = close - 0.5
     open_ = close - 0.2 if direction == "BULLISH" else close + 0.2
 
-    return pd.DataFrame({"Open": open_, "High": high, "Low": low, "Close": close})
+    return pd.DataFrame({"Open": open_, "High": high, "Low": low, "Close": close,
+                         "EMA_20": ema20, "EMA_50": ema50})
 
 
 def test_bullish_direction_propagates_htf_to_mtf_bias_trigger():
