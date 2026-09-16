@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "case_id": "REPLACE_WITH_PRODUCTION_CASE_ID",
+  "symbol": "REPLACE_WITH_SYMBOL",
+  "opened": "REPLACE_WITH_TIMESTAMP",
+  "market_data": {},
+  "agent_inputs": {
+    "htf": {},
+    "mtf": {},
+    "ltf": {},
+    "zone": {},
+    "session": {},
+    "regime": {}
+  },
+  "expected": {}
+}
