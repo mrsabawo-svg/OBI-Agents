@@ -1,0 +1,1 @@
+Production replay execution is intentionally blocked until real historical market data or captured runtime agent inputs are supplied. This file marks that boundary explicitly.
