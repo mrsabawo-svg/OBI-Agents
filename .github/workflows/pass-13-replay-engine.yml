@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - pass-13-production-direction-replay
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
