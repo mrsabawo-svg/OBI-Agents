@@ -4,6 +4,10 @@ Downloads the same Yahoo Finance instruments used by DataAgent, truncates each
 frame at the archived signal-open timestamp, then runs the real decision path:
 HTF -> MTF -> Bias -> Zone -> LTF -> Trigger.
 
+The replay keeps Yahoo's UTC index while constructing 4h candles so the
+resampling boundary matches DataAgent's production implementation. The
+historical session decision is evaluated separately in SAST.
+
 This is an investigation tool. It never mutates the production archive and it
 never treats a replay as proof of profitability.
 """
@@ -25,21 +29,22 @@ from agents.trigger_agent import TriggerAgent
 from core.utils import SAST
 
 SYMBOL_MAP = {"XAUUSD": "GLD", "NASDAQ": "QQQ"}
+UTC = pytz.UTC
 
 
-def _download(ticker: str, opened: datetime, interval: str, lookback_days: int):
-    start = opened - timedelta(days=lookback_days)
-    end = opened + timedelta(hours=1)
-    df = yf.download(ticker, start=start.astimezone(pytz.UTC), end=end.astimezone(pytz.UTC), interval=interval, progress=False, auto_adjust=True, threads=False)
+def _download(ticker: str, opened_sast: datetime, interval: str, lookback_days: int):
+    opened_utc = opened_sast.astimezone(UTC)
+    start = opened_utc - timedelta(days=lookback_days)
+    end = opened_utc + timedelta(hours=1)
+    df = yf.download(ticker, start=start, end=end, interval=interval, progress=False, auto_adjust=True, threads=False)
     if df is None or df.empty:
         return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df.index = pd.to_datetime(df.index)
     if df.index.tz is None:
-        df.index = df.index.tz_localize("UTC")
-    df.index = df.index.tz_convert(SAST)
-    return df[df.index <= opened].copy()
+        df.index = df.index.tz_localize(UTC)
+    return df[df.index <= opened_utc].copy()
 
 
 def _with_indicators(df: pd.DataFrame) -> pd.DataFrame:
