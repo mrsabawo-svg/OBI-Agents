@@ -2,18 +2,12 @@
   "schema_version": "1.0",
   "source": "user-supplied production obi_memory.json archive",
   "purpose": "Stage 2 target set for raw historical market-data replay",
-  "symbols": {
-    "NASDAQ": [
-      {"signal_id":"NASDAQ_20260830_230107","direction":"BUY","entry":716.45001,"sl":715.64898,"tp1":724.125,"outcome":"TP1","opened":"2026-08-31 01:01 SAST"},
-      {"signal_id":"NASDAQ_20260830_230107","direction":"BUY","entry":716.45001,"sl":715.64898,"tp1":724.125,"outcome":"TP1","opened":"2026-08-31 01:01 SAST"},
-      {"signal_id":"NASDAQ_20260903_180100","direction":"SELL","entry":711.0,"sl":712.5,"tp1":707.0,"outcome":"SL","opened":"2026-09-03 20:01 SAST"}
-    ],
-    "XAUUSD": [
-      {"signal_id":"XAUUSD_20260811_230056","direction":"BUY","entry":400.98001,"sl":400.529,"tp1":404.03,"outcome":"TP1","opened":"2026-08-12 01:00 SAST"},
-      {"signal_id":"XAUUSD_20260811_230056","direction":"BUY","entry":400.98001,"sl":400.529,"tp1":404.03,"outcome":"TP1","opened":"2026-08-12 01:00 SAST"},
-      {"signal_id":"XAUUSD_20260903_180100","direction":"SELL","entry":350.0,"sl":351.0,"tp1":347.0,"outcome":"SL","opened":"2026-09-03 20:01 SAST"}
-    ]
-  },
-  "status": "DRAFT_TARGETS_ONLY",
-  "note": "Placeholder target structure. The duplicate examples above are intentionally temporary and must be replaced with exact distinct archive records before execution. No replay result may be inferred from this file."
+  "status": "READY_FOR_REPLAY",
+  "targets": [
+    {"signal_id":"NASDAQ_20260831_010105","symbol":"NASDAQ","direction":"BUY","entry":716.45001,"sl":715.64898,"tp1":724.125,"outcome":"TP1","opened":"2026-08-31 03:01 SAST","regime":"TRENDING","grade":"C","bias_grade":"D","obi_score":39},
+    {"signal_id":"NASDAQ_20260820_154609","symbol":"NASDAQ","direction":"SELL","entry":710.23718,"sl":711.68737,"tp1":706.61171,"outcome":"SL","opened":"2026-08-20 17:46 SAST","regime":"RANGING","grade":"C","bias_grade":"C","obi_score":42},
+    {"signal_id":"XAUUSD_20260820_140107","symbol":"XAUUSD","direction":"BUY","entry":411.63,"sl":410.68832,"tp1":414.0,"outcome":"TP1","opened":"2026-08-20 16:01 SAST","regime":"RANGING","grade":"C","bias_grade":"C","obi_score":53},
+    {"signal_id":"XAUUSD_20260803_160104","symbol":"XAUUSD","direction":"SELL","entry":370.25,"sl":370.68874,"tp1":368.64279,"outcome":"SL","opened":"2026-08-03 18:01 SAST","regime":"TRENDING","grade":"C","bias_grade":"B","obi_score":50}
+  ],
+  "selection_note": "Four distinct production archive records: one BUY and one SELL for NASDAQ and XAUUSD. Targets are copied from the supplied archive; they are expected outcomes/metadata, not replay outputs."
 }
