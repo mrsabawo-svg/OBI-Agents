@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "source": "user-supplied production obi_memory.json archive",
+  "purpose": "Stage 2 target set for raw historical market-data replay",
+  "symbols": {
+    "NASDAQ": [
+      {"signal_id":"NASDAQ_20260830_230107","direction":"BUY","entry":716.45001,"sl":715.64898,"tp1":724.125,"outcome":"TP1","opened":"2026-08-31 01:01 SAST"},
+      {"signal_id":"NASDAQ_20260830_230107","direction":"BUY","entry":716.45001,"sl":715.64898,"tp1":724.125,"outcome":"TP1","opened":"2026-08-31 01:01 SAST"},
+      {"signal_id":"NASDAQ_20260903_180100","direction":"SELL","entry":711.0,"sl":712.5,"tp1":707.0,"outcome":"SL","opened":"2026-09-03 20:01 SAST"}
+    ],
+    "XAUUSD": [
+      {"signal_id":"XAUUSD_20260811_230056","direction":"BUY","entry":400.98001,"sl":400.529,"tp1":404.03,"outcome":"TP1","opened":"2026-08-12 01:00 SAST"},
+      {"signal_id":"XAUUSD_20260811_230056","direction":"BUY","entry":400.98001,"sl":400.529,"tp1":404.03,"outcome":"TP1","opened":"2026-08-12 01:00 SAST"},
+      {"signal_id":"XAUUSD_20260903_180100","direction":"SELL","entry":350.0,"sl":351.0,"tp1":347.0,"outcome":"SL","opened":"2026-09-03 20:01 SAST"}
+    ]
+  },
+  "status": "DRAFT_TARGETS_ONLY",
+  "note": "Placeholder target structure. The duplicate examples above are intentionally temporary and must be replaced with exact distinct archive records before execution. No replay result may be inferred from this file."
+}
