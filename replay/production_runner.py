@@ -113,7 +113,35 @@ def main():
     targets = json.loads(Path("replay/cases/production_archive_targets.json").read_text())["targets"]
     results = [run_case(target) for target in targets]
     for result in results:
-        print(json.dumps({"signal_id": result["signal_id"], "archive_direction": result["archive"]["direction"], "replay_direction_path": result["replay"]["direction_path"], "direction_match": result["comparison"]["direction_match"], "data_counts": result["data_counts"]}, sort_keys=True))
+        ltf = result["replay"]["ltf"]
+        trigger = result["replay"]["trigger"]
+        diagnostic = {
+            "signal_id": result["signal_id"],
+            "archive_direction": result["archive"]["direction"],
+            "direction_path": result["replay"]["direction_path"],
+            "direction_match": result["comparison"]["direction_match"],
+            "ltf": {
+                "valid": ltf.get("valid"),
+                "trigger": ltf.get("trigger"),
+                "fvg": ltf.get("fvg"),
+                "momentum": ltf.get("momentum"),
+                "confluence": ltf.get("confluence"),
+                "rr": ltf.get("rr"),
+                "entry": ltf.get("entry"),
+                "sl": ltf.get("sl"),
+                "tp1": ltf.get("tp1"),
+            },
+            "zone_aligned": result["replay"]["zone"].get("zone_aligned"),
+            "trigger": {
+                "fire": trigger.get("fire"),
+                "direction": trigger.get("direction"),
+                "reason": trigger.get("reason"),
+                "rr": trigger.get("rr"),
+                "grade": trigger.get("grade"),
+            },
+            "data_counts": result["data_counts"],
+        }
+        print(json.dumps(diagnostic, sort_keys=True))
     Path("replay_stage2_results.json").write_text(json.dumps(results, indent=2, default=str))
 
 
