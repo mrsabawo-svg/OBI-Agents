@@ -1,0 +1,27 @@
+name: Pass 14 LTF Trigger Provenance
+
+on:
+  push:
+    branches:
+      - pass-13-stage2-production-replay
+  workflow_dispatch:
+
+jobs:
+  ltf-trigger-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install pandas numpy pytz yfinance ta hmmlearn pytest
+      - name: Run deterministic provenance tests
+        run: python -m pytest -q tests/test_pass14_ltf_trigger_provenance.py
+      - name: Run historical replay with downstream diagnostics
+        run: python -m replay.production_runner
+      - name: Upload replay diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pass-14-ltf-trigger-provenance
+          path: replay_stage2_results.json
