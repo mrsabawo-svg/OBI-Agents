@@ -68,7 +68,10 @@ def run(symbol: str, news: dict = None) -> dict:
         edge  = EdgeAgent(symbol).analyse(trigger, bias, regime)
         score = ScoreAgent(symbol).compute(bias, trigger, regime, edge, session)
 
+        signal_id = symbol + "_" + sast_str().replace("-", "").replace(":", "").replace(" ", "_")
+
         payload = {
+            "id":      signal_id,
             "symbol":  symbol,
             "htf":     htf,
             "regime":  regime,
