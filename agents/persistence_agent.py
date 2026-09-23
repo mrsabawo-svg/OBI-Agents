@@ -1,6 +1,6 @@
 """
 OBI Agents - Persistence Agent
-Handles: memory updates, archive, gist push.
+Handles: symbol memory updates, latest signal snapshot, gist push.
 """
 import os
 import json
@@ -36,7 +36,7 @@ class PersistenceAgent:
             # ArchiveAgent is the sole writer for trade-history records.
             # PersistenceAgent owns only symbol-level summary memory and
             # the latest signal snapshot (obi_signal.json).
-            signal_id = self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            signal_id = result.get("id") or payload.get("id") or (self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S"))
 
             memory[self.symbol]["last_signal_data"] = {
                 "id":         signal_id,
