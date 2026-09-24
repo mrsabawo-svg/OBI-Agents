@@ -1,0 +1,29 @@
+name: Pass 15 Memory Concurrency Boundary Test
+
+on:
+  push:
+    branches:
+      - "pass9-archive-authority"
+    paths:
+      - ".github/workflows/obi_pipeline.yml"
+      - ".github/workflows/telegram_commands.yml"
+      - "tests/test_pass15_memory_concurrency.py"
+      - ".github/workflows/pass15_test.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/obi_pipeline.yml"
+      - ".github/workflows/telegram_commands.yml"
+      - "tests/test_pass15_memory_concurrency.py"
+      - ".github/workflows/pass15_test.yml"
+
+jobs:
+  pass15:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Run Pass 15 memory concurrency proof
+        run: python -m unittest tests/test_pass15_memory_concurrency.py
