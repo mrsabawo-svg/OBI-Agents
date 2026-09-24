@@ -2,12 +2,13 @@
 OBI Intelligence v4.2 — Main Pipeline
 Copyright © Mazvita Sabawo. All rights reserved.
 """
+import uuid
+
 from agents.data_agent         import DataAgent
 from agents.htf_agent          import HTFAgent
 from agents.mtf_agent          import MTFAgent
 from agents.ltf_agent          import LTFAgent
 from agents.news_agent         import NewsAgent
-from agents.tracker_agent      import check_outcome
 from agents.session_agent      import SessionAgent
 from agents.bias_agent         import BiasAgent
 from agents.zone_agent         import ZoneAgent
@@ -25,6 +26,18 @@ from core.utils                import sast_str
 SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
 ALL_TF  = ["4h", "1h", "15m", "5m"]
 
+
+def build_signal_id(symbol: str) -> str:
+    """
+    Build a human-readable canonical signal identity.
+
+    The timestamp identifies the generation window; the nonce prevents
+    same-symbol signals generated within the same minute from colliding.
+    """
+    stamp = sast_str().replace("-", "").replace(":", "").replace(" ", "_")
+    return symbol + "_" + stamp + "_" + uuid.uuid4().hex[:8]
+
+
 def run(symbol: str, news: dict = None) -> dict:
     print("=" * 45)
     print("  OBI v4.2 - " + symbol + " - " + sast_str())
@@ -39,9 +52,6 @@ def run(symbol: str, news: dict = None) -> dict:
         if len(data) == 0:
             print("[MAIN] " + symbol + ": no data - skipping")
             return {"data_empty": True}
-
-        ticker = DataAgent(symbol).ticker
-        check_outcome(symbol, ticker)
 
         session = SessionAgent(symbol).analyse()
         if not session["tradeable"]:
@@ -68,7 +78,7 @@ def run(symbol: str, news: dict = None) -> dict:
         edge  = EdgeAgent(symbol).analyse(trigger, bias, regime)
         score = ScoreAgent(symbol).compute(bias, trigger, regime, edge, session)
 
-        signal_id = symbol + "_" + sast_str().replace("-", "").replace(":", "").replace(" ", "_")
+        signal_id = build_signal_id(symbol)
 
         payload = {
             "id":      signal_id,
@@ -103,6 +113,7 @@ def run(symbol: str, news: dict = None) -> dict:
         print("[MAIN] " + symbol + " error: " + str(e))
         print(traceback.format_exc())
         return {"error": str(e)}
+
 
 if __name__ == "__main__":
     news = NewsAgent().is_safe()
