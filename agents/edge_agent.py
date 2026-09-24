@@ -77,9 +77,7 @@ class EdgeAgent:
 
             return EdgeResult(
                 symbol_wr=symbol_wr,
-                # Retained for compatibility only. It is NOT queried or used
-                # by EdgeAgent for the current signal's grade.
-                grade_wr=wr,
+                selected_wr=wr,
                 regime_wr=regime_wr,
                 tag_wr=tag_wr,
                 overall_wr=overall_wr,
