@@ -37,6 +37,7 @@ class PersistenceAgent:
                 print("[PERSIST] Duplicate signal ignored: " + signal_id)
                 return
 
+            memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
             memory[self.symbol]["last_signal"]     = result.get("timestamp")
             memory[self.symbol]["last_direction"]  = result.get("direction")
             memory[self.symbol]["last_confidence"] = payload["score"].confidence
