@@ -19,15 +19,11 @@ class CloseValues:
 
 
 class CloseSeries:
-    def __init__(self, high, low):
-        self.high = high
-        self.low = low
+    def __init__(self, value):
+        self.iloc = [value]
 
     def squeeze(self):
         return self
-
-    def __getitem__(self, key):
-        return self.high if key == "High" else self.low
 
 
 class FakeFrame:
@@ -39,9 +35,9 @@ class FakeFrame:
 
     def __getitem__(self, key):
         if key == "High":
-            return CloseSeries(self.high, self.low)
+            return CloseSeries(self.high)
         if key == "Low":
-            return CloseSeries(self.high, self.low)
+            return CloseSeries(self.low)
         raise AssertionError("Lifecycle requested unexpected column")
 
 
