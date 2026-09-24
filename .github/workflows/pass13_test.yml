@@ -1,0 +1,28 @@
+name: Pass 13 Architecture Boundary Test
+
+on:
+  pull_request:
+    paths:
+      - "main.py"
+      - "agents/tracker_agent.py"
+      - "agents/lifecycle_agent.py"
+      - "agents/archive_agent.py"
+      - "tests/test_pass12_orchestration.py"
+      - "tests/test_pass13_architecture.py"
+      - ".github/workflows/pass13_test.yml"
+
+jobs:
+  pass13:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Pass 13 architecture proof
+        run: |
+          python -m unittest tests/test_pass12_orchestration.py
+          python -m unittest tests/test_pass13_architecture.py
