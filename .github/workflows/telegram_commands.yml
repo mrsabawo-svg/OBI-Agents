@@ -1,5 +1,11 @@
 name: OBI Telegram Commands
 
+# All workflows that can mutate the shared Gist memory use one repository-wide
+# concurrency group so load-modify-save operations cannot overlap.
+concurrency:
+  group: obi-gist-writer
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
 
