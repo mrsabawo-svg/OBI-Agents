@@ -16,7 +16,6 @@ class Pass12OrchestrationTest(unittest.TestCase):
 
         with patch.object(main, "sast_str", return_value="2026-09-24 07:00:00"), \
              patch.object(main, "DataAgent", return_value=data_agent), \
-             patch.object(main, "check_outcome"), \
              patch.object(main, "SessionAgent", return_value=MagicMock(analyse=MagicMock(return_value=session))), \
              patch.object(main, "HTFAgent", return_value=MagicMock(analyse=MagicMock(return_value={}))), \
              patch.object(main, "RegimeAgent", return_value=MagicMock(detect=MagicMock(return_value={"label": "TRENDING"}))), \
@@ -48,6 +47,19 @@ class Pass12OrchestrationTest(unittest.TestCase):
         self.assertEqual(result, {"fired": True})
         intelligence.verdict.assert_called_once()
         archive.log.assert_called_once()
+
+    def test_signal_id_is_unique_with_same_timestamp(self):
+        with patch.object(main, "sast_str", return_value="2026-09-24 07:00:00"), \
+             patch.object(main.uuid, "uuid4", side_effect=[
+                 MagicMock(hex="aaaaaaaaaaaaaaaa"),
+                 MagicMock(hex="bbbbbbbbbbbbbbbb"),
+             ]):
+            first = main.build_signal_id("XAUUSD")
+            second = main.build_signal_id("XAUUSD")
+
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith("XAUUSD_20260924_070000_SAST_"))
+        self.assertTrue(second.startswith("XAUUSD_20260924_070000_SAST_"))
 
 
 if __name__ == "__main__":
