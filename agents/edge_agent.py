@@ -5,6 +5,7 @@ Historical edge evidence.
 Pass 10 invariant:
 - Edge lookup MUST NOT use the current signal's categorical Trigger grade.
 - Historical evidence is a prior, not a veto.
+- Edge supplies evidence to Score; it has no independent approve/reject authority.
 - Segment lookups require MIN_SAMPLE; otherwise the agent falls back
   hierarchically to broader independent feature sets and finally the
   overall base rate.
