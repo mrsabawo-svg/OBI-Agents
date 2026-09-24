@@ -1,6 +1,14 @@
 name: Pass 14 Lifecycle State Machine Test
 
 on:
+  push:
+    branches:
+      - "pass9-archive-authority"
+    paths:
+      - "agents/lifecycle_agent.py"
+      - "tests/test_pass12_lifecycle.py"
+      - "tests/test_pass14_lifecycle.py"
+      - ".github/workflows/pass14_test.yml"
   pull_request:
     paths:
       - "agents/lifecycle_agent.py"
