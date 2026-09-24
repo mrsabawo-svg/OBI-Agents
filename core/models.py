@@ -47,7 +47,7 @@ class TriggerResult:
 @dataclass
 class EdgeResult:
     symbol_wr: float
-    grade_wr: float
+    selected_wr: float
     regime_wr: float
     tag_wr: float
     overall_wr: float
@@ -60,7 +60,7 @@ class EdgeResult:
     @staticmethod
     def default(sample_size: int = 0) -> "EdgeResult":
         return EdgeResult(
-            symbol_wr=50.0, grade_wr=50.0, regime_wr=50.0,
+            symbol_wr=50.0, selected_wr=50.0, regime_wr=50.0,
             tag_wr=50.0, overall_wr=50.0,
             sample_size=sample_size, low_sample=True,
             confidence_interval=(0.0, 100.0),
@@ -138,7 +138,7 @@ def _payload_to_dict(payload: dict) -> dict:
             "score": bias.score, "factors": bias.factors, "regime": bias.regime,
         },
         "edge": {
-            "symbol_wr": edge.symbol_wr, "grade_wr": edge.grade_wr,
+            "symbol_wr": edge.symbol_wr, "selected_wr": edge.selected_wr,
             "regime_wr": edge.regime_wr, "tag_wr": edge.tag_wr,
             "overall_wr": edge.overall_wr, "sample_size": edge.sample_size,
             "low_sample": edge.low_sample,
