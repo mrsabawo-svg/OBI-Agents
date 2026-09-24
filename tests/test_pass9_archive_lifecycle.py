@@ -3,7 +3,7 @@ from unittest.mock import patch
 from datetime import datetime
 
 from agents.archive_agent import ArchiveAgent
-from agents.lifecycle_agent import LifecycleAgent
+from agents.lifecycle_agent import LifecycleAgent, SAST
 from agents.persistence_agent import PersistenceAgent
 
 
@@ -87,7 +87,7 @@ class Pass9ArchiveLifecycleTest(unittest.TestCase):
 
         # Lifecycle closes the existing record; it must not create another one.
         lifecycle = LifecycleAgent()
-        now = lifecycle.SAST.localize(datetime.strptime(
+        now = SAST.localize(datetime.strptime(
             "2026-09-24 06:30", "%Y-%m-%d %H:%M"
         ))
 
