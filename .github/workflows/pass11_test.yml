@@ -1,0 +1,26 @@
+name: Pass 11 Edge Score Boundary Test
+
+on:
+  pull_request:
+    paths:
+      - "agents/edge_agent.py"
+      - "agents/score_agent.py"
+      - "agents/intelligence_agent.py"
+      - "agents/archive_agent.py"
+      - "core/models.py"
+      - "tests/test_pass10_edge.py"
+      - ".github/workflows/pass11_test.yml"
+
+jobs:
+  pass11:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Pass 11 boundary proof
+        run: python -m unittest tests/test_pass10_edge.py
