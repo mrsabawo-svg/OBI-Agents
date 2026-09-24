@@ -26,7 +26,17 @@ class PersistenceAgent:
             if self.symbol not in memory:
                 memory[self.symbol] = {"signals": 0, "wins": 0, "losses": 0}
 
-            memory[self.symbol]["signals"]         = memory[self.symbol].get("signals", 0) + 1
+            # Persistence idempotency invariant:
+            # Reprocessing the same canonical signal must not increment
+            # symbol-level signal counters or rewrite the latest snapshot.
+            processed = memory[self.symbol].setdefault("_processed_signal_ids", [])
+            signal_id = result.get("id") or payload.get("id") or (
+                self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            )
+            if signal_id in processed:
+                print("[PERSIST] Duplicate signal ignored: " + signal_id)
+                return
+
             memory[self.symbol]["last_signal"]     = result.get("timestamp")
             memory[self.symbol]["last_direction"]  = result.get("direction")
             memory[self.symbol]["last_confidence"] = payload["score"].confidence
@@ -36,8 +46,6 @@ class PersistenceAgent:
             # ArchiveAgent is the sole writer for trade-history records.
             # PersistenceAgent owns only symbol-level summary memory and
             # the latest signal snapshot (obi_signal.json).
-            signal_id = result.get("id") or payload.get("id") or (self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S"))
-
             memory[self.symbol]["last_signal_data"] = {
                 "id":         signal_id,
                 "direction":  result.get("direction"),
@@ -54,6 +62,8 @@ class PersistenceAgent:
                 "timestamp":  result.get("timestamp")
             }
 
+            processed.append(signal_id)
+            del processed[:-100]
             save_memory(memory)
             print("[PERSIST] Memory updated - archive untouched: " + signal_id)
         except Exception as e:
