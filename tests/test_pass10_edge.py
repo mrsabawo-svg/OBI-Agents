@@ -112,6 +112,19 @@ class Pass10EdgeTest(unittest.TestCase):
 
         self.assertEqual(score_a.edge_score, score_b.edge_score)
 
+    def test_score_uses_selected_hierarchical_edge_prior(self):
+        from core.models import BiasResult, EdgeResult
+        bias = BiasResult(True, "BUY", "A", 6, ["HTF", "MTF"], "TRENDING", "test")
+        trigger = self.trigger("A+")
+        session = {"kill_zone": False, "tradeable": True}
+        low_prior = EdgeResult(80.0, 20.0, 80.0, 80.0, 80.0, 40, False, (10.0, 35.0), "E3", "BASE_RATE")
+        high_prior = EdgeResult(20.0, 80.0, 20.0, 20.0, 20.0, 40, False, (65.0, 90.0), "E3", "BASE_RATE")
+        score_low = ScoreAgent("XAUUSD").compute(bias, trigger, {"label": "TRENDING", "confidence": 1.0}, low_prior, session)
+        score_high = ScoreAgent("XAUUSD").compute(bias, trigger, {"label": "TRENDING", "confidence": 1.0}, high_prior, session)
+        self.assertEqual(score_low.edge_score, 20)
+        self.assertEqual(score_high.edge_score, 80)
+        self.assertLess(score_low.confidence, score_high.confidence)
+
 
     def test_edge_is_evidence_not_a_veto(self):
         from core.models import BiasResult, EdgeResult
