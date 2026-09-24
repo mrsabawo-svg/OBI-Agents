@@ -1,0 +1,25 @@
+name: Pass 12B End-to-End Lifecycle Test
+
+on:
+  pull_request:
+    paths:
+      - "agents/archive_agent.py"
+      - "agents/lifecycle_agent.py"
+      - "agents/persistence_agent.py"
+      - "core/models.py"
+      - "tests/test_pass12_lifecycle.py"
+      - ".github/workflows/pass12b_test.yml"
+
+jobs:
+  pass12b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Pass 12B lifecycle proof
+        run: python -m unittest tests/test_pass12_lifecycle.py
