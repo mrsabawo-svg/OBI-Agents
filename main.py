@@ -85,8 +85,11 @@ def run(symbol: str, news: dict = None) -> dict:
             "score":   score,
         }
 
-        IntelligenceAgent(symbol).verdict(payload)
-        ArchiveAgent().log(payload)
+        intelligence_result = IntelligenceAgent(symbol).verdict(payload)
+        if intelligence_result:
+            ArchiveAgent().log(payload)
+        else:
+            print("[MAIN] " + symbol + ": archive skipped - intelligence duplicate")
 
         try:
             ExecutionAgent(symbol).propose(payload)
