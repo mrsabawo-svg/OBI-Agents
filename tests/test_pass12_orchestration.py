@@ -18,7 +18,7 @@ class Pass12OrchestrationTest(unittest.TestCase):
 
         return [
             patch.object(main.DataAgent, return_value=data_agent),
-            patch.object(main.check_outcome),
+            patch.object(main, "check_outcome"),
             patch.object(main.SessionAgent, return_value=MagicMock(analyse=MagicMock(return_value=session))),
             patch.object(main.HTFAgent, return_value=MagicMock(analyse=MagicMock(return_value={}))),
             patch.object(main.RegimeAgent, return_value=MagicMock(detect=MagicMock(return_value={"label": "TRENDING"}))),
@@ -29,7 +29,7 @@ class Pass12OrchestrationTest(unittest.TestCase):
             patch.object(main.TriggerAgent, return_value=MagicMock(evaluate=MagicMock(return_value=trigger))),
             patch.object(main.EdgeAgent, return_value=MagicMock(analyse=MagicMock(return_value=edge))),
             patch.object(main.ScoreAgent, return_value=MagicMock(compute=MagicMock(return_value=score))),
-            patch.object(main.sast_str, return_value="2026-09-24 07:00:00"),
+            patch.object(main, "sast_str", return_value="2026-09-24 07:00:00"),
         ]
 
     def test_duplicate_intelligence_result_skips_archive(self):
