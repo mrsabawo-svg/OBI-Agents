@@ -43,6 +43,7 @@ class Pass15BIdempotencyTest(unittest.TestCase):
         self.assertEqual(memory["XAUUSD"]["_processed_signal_ids"], [self.payload["id"]])
         self.assertEqual(memory["XAUUSD"], first_snapshot)
         self.assertEqual(save.call_count, 1)
+        self.assertEqual(len(memory["XAUUSD"]["_processed_signal_ids"]), 1)
 
     def test_different_signal_ids_are_each_processed_once(self):
         memory = {"XAUUSD": {"signals": 0, "wins": 0, "losses": 0}}
