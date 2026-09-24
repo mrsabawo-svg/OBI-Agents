@@ -47,32 +47,9 @@ class ArchiveAgent:
             print("[ARCHIVE] Get history error: " + str(e))
             return []
 
-    def update_outcome(self, signal_id: str, outcome: str, pnl_pips: float = 0):
-        try:
-            memory = load_memory() or {}
-            archive = memory.setdefault("_archive", [])
-            found = False
-
-            for entry in archive:
-                if entry.get("id") == signal_id:
-                    entry["outcome"] = outcome
-                    entry["pnl_pips"] = pnl_pips
-                    entry["closed_at"] = datetime.now(SAST).strftime("%Y-%m-%d %H:%M SAST")
-                    entry["closed"] = entry["closed_at"]
-                    entry["status"] = "CLOSED"
-                    found = True
-                    break
-
-            if not found:
-                print("[ARCHIVE] Outcome update skipped; signal not found: " + str(signal_id))
-                return False
-
-            save_memory(memory)
-            print("[ARCHIVE] Outcome updated: " + str(signal_id) + " -> " + str(outcome))
-            return True
-        except Exception as e:
-            print("[ARCHIVE] Update error: " + str(e))
-            return False
+    # Lifecycle authority invariant:
+    # LifecycleAgent is the sole component permitted to close existing
+    # archive records. ArchiveAgent creates records; it does not close them.
 
     def _build_entry(self, signal: dict) -> dict:
         trigger = signal.get("trigger", {})
@@ -88,9 +65,13 @@ class ArchiveAgent:
             bias_score = bias.get("score")
             bias_factors = bias.get("factors", [])
 
+        score = signal.get("score", {})
+        final_grade = score.grade if hasattr(score, "grade") else score.get("grade") if isinstance(score, dict) else None
+
         if hasattr(trigger, "direction"):
             direction = trigger.direction
-            grade = trigger.grade
+            grade = final_grade or trigger.grade
+            trigger_grade = trigger.grade
             entry = trigger.entry
             sl = trigger.sl
             tp1 = trigger.tp1
@@ -101,7 +82,8 @@ class ArchiveAgent:
             confluence = trigger.confluence
         else:
             direction = trigger.get("direction")
-            grade = trigger.get("grade")
+            grade = final_grade or trigger.get("grade")
+            trigger_grade = trigger.get("grade")
             entry = trigger.get("entry")
             sl = trigger.get("sl")
             tp1 = trigger.get("tp1")
@@ -123,6 +105,7 @@ class ArchiveAgent:
             "opened": timestamp,
             "direction": direction,
             "grade": grade,
+            "trigger_grade": trigger_grade,
             "entry": entry,
             "sl": sl,
             "tp1": tp1,

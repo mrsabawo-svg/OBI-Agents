@@ -1,0 +1,29 @@
+name: Pass 9 Archive Lifecycle Test
+
+on:
+  pull_request:
+    paths:
+      - "agents/archive_agent.py"
+      - "agents/lifecycle_agent.py"
+      - "agents/persistence_agent.py"
+      - "agents/intelligence_agent.py"
+      - "main.py"
+      - "tests/**"
+      - ".github/workflows/pass9_test.yml"
+
+jobs:
+  pass9:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Pass 9 lifecycle proof
+        run: python -m unittest tests/test_pass9_archive_lifecycle.py

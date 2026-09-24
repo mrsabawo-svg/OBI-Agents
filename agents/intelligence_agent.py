@@ -30,10 +30,12 @@ class IntelligenceAgent:
 
         trigger = payload["trigger"]
         result = {
+            "id":              payload.get("id"),
             "symbol":          self.symbol,
             "timestamp":       sast_str(),
             "direction":       trigger.direction,
-            "grade":           trigger.grade,
+            "grade":           payload.get("score").grade,
+            "trigger_grade":   trigger.grade,
             "entry":           trigger.entry,
             "sl":              trigger.sl,
             "tp1":             trigger.tp1,
