@@ -124,6 +124,12 @@ class ArchiveAgent:
             "sweep": mtf.get("sweep"),
             "ob": mtf.get("order_block"),
             "outcome": "PENDING",
+            # Lifecycle milestone state is part of the canonical archive schema.
+            # Initialize all flags so records have a stable shape before any
+            # TP1/TP2/TP3 events occur.
+            "tp1_hit": False,
+            "tp2_hit": False,
+            "tp3_hit": False,
             "pnl_pips": 0,
             "status": "OPEN",
             "closed_at": None,
