@@ -49,7 +49,7 @@ class Pass12OrchestrationTest(unittest.TestCase):
         archive.log.assert_called_once()
 
     def test_signal_id_is_unique_with_same_timestamp(self):
-        with patch.object(main, "sast_str", return_value="2026-09-24 07:00:00"), \
+        with patch.object(main, "sast_str", return_value="2026-09-24 07:00:00 SAST"), \
              patch.object(main.uuid, "uuid4", side_effect=[
                  MagicMock(hex="aaaaaaaaaaaaaaaa"),
                  MagicMock(hex="bbbbbbbbbbbbbbbb"),
