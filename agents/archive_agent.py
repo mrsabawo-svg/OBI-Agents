@@ -91,6 +91,9 @@ class ArchiveAgent:
         score = signal.get("score", {})
         final_grade = score.grade if hasattr(score, "grade") else score.get("grade") if isinstance(score, dict) else None
 
+        score = signal.get("score", {})
+        final_grade = score.grade if hasattr(score, "grade") else score.get("grade") if isinstance(score, dict) else None
+
         if hasattr(trigger, "direction"):
             direction = trigger.direction
             grade = final_grade or trigger.grade
@@ -128,6 +131,7 @@ class ArchiveAgent:
             "opened": timestamp,
             "direction": direction,
             "grade": grade,
+            "trigger_grade": trigger_grade,
             "trigger_grade": trigger_grade,
             "entry": entry,
             "sl": sl,
