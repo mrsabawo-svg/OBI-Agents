@@ -88,9 +88,13 @@ class ArchiveAgent:
             bias_score = bias.get("score")
             bias_factors = bias.get("factors", [])
 
+        score = signal.get("score", {})
+        final_grade = score.grade if hasattr(score, "grade") else score.get("grade") if isinstance(score, dict) else None
+
         if hasattr(trigger, "direction"):
             direction = trigger.direction
-            grade = trigger.grade
+            grade = final_grade or trigger.grade
+            trigger_grade = trigger.grade
             entry = trigger.entry
             sl = trigger.sl
             tp1 = trigger.tp1
@@ -101,7 +105,8 @@ class ArchiveAgent:
             confluence = trigger.confluence
         else:
             direction = trigger.get("direction")
-            grade = trigger.get("grade")
+            grade = final_grade or trigger.get("grade")
+            trigger_grade = trigger.get("grade")
             entry = trigger.get("entry")
             sl = trigger.get("sl")
             tp1 = trigger.get("tp1")
@@ -123,6 +128,7 @@ class ArchiveAgent:
             "opened": timestamp,
             "direction": direction,
             "grade": grade,
+            "trigger_grade": trigger_grade,
             "entry": entry,
             "sl": sl,
             "tp1": tp1,
