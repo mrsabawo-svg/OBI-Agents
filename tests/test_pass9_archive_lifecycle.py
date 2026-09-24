@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch
+from datetime import datetime
 
 from agents.archive_agent import ArchiveAgent
 from agents.lifecycle_agent import LifecycleAgent
@@ -82,44 +83,34 @@ class Pass9ArchiveLifecycleTest(unittest.TestCase):
 
         # Lifecycle closes the existing record; it must not create another one.
         lifecycle = LifecycleAgent()
-        now = lifecycle.SAST.localize(
-            __import__("datetime").datetime.strptime(
-                "2026-09-24 06:30", "%Y-%m-%d %H:%M"
-            )
-        )
-        with patch("agents.lifecycle_agent.yf.download") as download:
-            download.return_value = type(
-                "DF",
-                (),
-                {
-                    "empty": False,
-                    "__getitem__": lambda self, key: type(
-                        "CloseSeries",
-                        (),
-                        {"squeeze": lambda self: type(
-                            "Squeezed",
-                            (),
-                            {"iloc": [-1]}
-                        )()}
-                    )()
-                },
-            )()
-            # Simpler price path: patch the internal trade checker.
-            with patch.object(
-                lifecycle,
-                "_check_trade",
-                side_effect=lambda trade, current: (
-                    trade.update(
-                        status="CLOSED",
-                        outcome="TP1",
-                        closed="2026-09-24 06:30 SAST",
-                    ) or True
-                ),
-            ):
-                memory = load()
-                changed = lifecycle._check_trade(memory["_archive"][0], now)
-                if changed:
-                    save(memory)
+        now = lifecycle.SAST.localize(datetime.strptime(
+            "2026-09-24 06:30", "%Y-%m-%d %H:%M"
+        ))
+
+        class CloseValues:
+            def __init__(self, value):
+                self.iloc = [value]
+
+        class CloseSeries:
+            def __init__(self, value):
+                self.value = value
+
+            def squeeze(self):
+                return CloseValues(self.value)
+
+        class FakeFrame:
+            empty = False
+
+            def __getitem__(self, key):
+                if key != "Close":
+                    raise AssertionError("Lifecycle requested unexpected column")
+                return CloseSeries(4010.0)
+
+        with patch("agents.lifecycle_agent.yf.download", return_value=FakeFrame()):
+            memory = load()
+            changed = lifecycle._check_trade(memory["_archive"][0], now)
+            if changed:
+                save(memory)
 
         self.assertEqual(len(store["_archive"]), 1)
         self.assertEqual(store["_archive"][0]["id"], result["id"])
