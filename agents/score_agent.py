@@ -81,7 +81,9 @@ class ScoreAgent:
     def _edge_score(self, edge: EdgeResult) -> float:
         if edge.low_sample:
             return 0.4  # conservative neutral — single penalty applied later
-        return round(edge.symbol_wr * 0.4 + edge.regime_wr * 0.35 + edge.tag_wr * 0.25, 2) / 100
+        # Use the selected hierarchical prior as the primary historical evidence.
+        # Edge remains evidence only; Score decides how much it contributes.
+        return round(edge.selected_wr, 2) / 100
 
     def _session_score(self, session: dict) -> float:
         if session.get("kill_zone"):  return 1.0
