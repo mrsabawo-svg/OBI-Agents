@@ -40,6 +40,7 @@ class Pass14OutcomeStateMachineTest(unittest.TestCase):
         self.assertTrue(trade["tp2_hit"])
         self.assertFalse(trade["tp3_hit"])
         self.assertEqual(trade["status"], "OPEN")
+        self.assertEqual(trade["outcome"], "PENDING")
 
         self.assertTrue(self.lifecycle._apply_candle(trade, 4031, 4021, self.now))
         self.assertTrue(trade["tp3_hit"])
