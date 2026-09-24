@@ -59,11 +59,15 @@ class Pass9ArchiveLifecycleTest(unittest.TestCase):
             return store
 
         def save(memory):
+            # Simulate persistence without mutating the object returned by load().
+            snapshot = dict(memory)
+            snapshot["_archive"] = list(memory.get("_archive", []))
             store.clear()
-            store.update(memory)
+            store.update(snapshot)
 
         # Persistence must update symbol memory without creating an archive record.
-        with patch("agents.persistence_agent.load_memory", side_effect=load),              patch("agents.persistence_agent.save_memory", side_effect=save):
+        with patch("agents.persistence_agent.load_memory", side_effect=load),              patch("agents.persistence_agent.save_memory", side_effect=save),              patch("agents.persistence_agent.requests.patch") as gist_patch:
+            gist_patch.return_value.status_code = 200
             PersistenceAgent("XAUUSD").save(result, payload)
 
         self.assertEqual(len(store["_archive"]), 0)
