@@ -21,6 +21,8 @@ from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
+from agents.persistence_agent  import PersistenceAgent
+from agents.notifier_agent     import NotifierAgent
 from agents.chief_agent        import ChiefAgent
 from core.models               import SymbolContext
 from core.memory               import load as load_memory
@@ -101,6 +103,11 @@ def run(symbol: str, news: dict = None) -> dict:
         intelligence_result = IntelligenceAgent(symbol).verdict(payload)
         if intelligence_result:
             ArchiveAgent().log(payload)
+            PersistenceAgent(symbol).save(intelligence_result, payload)
+            NotifierAgent(symbol).send(
+                intelligence_result,
+                intelligence_result.get("narrative", "")
+            )
         else:
             print("[MAIN] " + symbol + ": archive skipped - intelligence duplicate")
 
