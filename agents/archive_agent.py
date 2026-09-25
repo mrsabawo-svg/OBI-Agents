@@ -124,7 +124,7 @@ class ArchiveAgent:
             "bias_factors": bias_factors,
             "factors": bias_factors,
             "obi_score": (score.confidence if hasattr(score, "confidence") else score.get("confidence") if isinstance(score, dict) else None),
-            "realized_pnl_pips": 0,
+            "realized_pnl_pips": None,
             "terminal_pnl_pips": 0,
             "terminal_outcome": None,
             "milestones": [],
