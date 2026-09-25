@@ -43,3 +43,6 @@ jobs:
         run: python -m unittest tests/test_pass17_execution_identity.py
       - name: Run Pass 18 execution transaction proof
         run: python -m unittest tests/test_pass18_execution_transaction.py
+
+      - name: Run audit findings regression proof
+        run: python -m unittest tests/test_audit_findings.py
