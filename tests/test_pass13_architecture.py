@@ -39,9 +39,8 @@ class Pass13ArchitectureTest(unittest.TestCase):
 
         class FakeFrame:
             empty = False
-            def __getitem__(self, key):
-                self.assert_key = key
-                return CloseSeries()
+            def iterrows(self):
+                return [(SAST.localize(datetime.strptime("2026-09-24 06:30", "%Y-%m-%d %H:%M")), {"High": 4031.0, "Low": 4001.0})]
 
         with patch("agents.lifecycle_agent.yf.download", return_value=FakeFrame()):
             from agents.lifecycle_agent import SAST
@@ -53,7 +52,7 @@ class Pass13ArchitectureTest(unittest.TestCase):
 
         self.assertTrue(changed)
         self.assertEqual(trade["status"], "CLOSED")
-        self.assertEqual(trade["outcome"], "TP1")
+        self.assertEqual(trade["outcome"], "TP3")
         self.assertEqual(trade["id"], "PASS13_XAUUSD_001")
 
 
