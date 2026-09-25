@@ -101,15 +101,17 @@ def run(symbol: str, news: dict = None) -> dict:
         }
 
         intelligence_result = IntelligenceAgent(symbol).verdict(payload)
-        if intelligence_result:
-            ArchiveAgent().log(payload)
-            PersistenceAgent(symbol).save(intelligence_result, payload)
-            NotifierAgent(symbol).send(
-                intelligence_result,
-                intelligence_result.get("narrative", "")
-            )
-        else:
-            print("[MAIN] " + symbol + ": archive skipped - intelligence duplicate")
+        if not intelligence_result.get("accepted", False):
+            reason = intelligence_result.get("reason", "duplicate")
+            print("[MAIN] " + symbol + ": signal rejected - " + reason)
+            return {"blocked": "duplicate", "reason": reason}
+
+        ArchiveAgent().log(payload)
+        PersistenceAgent(symbol).save(intelligence_result, payload)
+        NotifierAgent(symbol).send(
+            intelligence_result,
+            intelligence_result.get("narrative", "")
+        )
 
         try:
             ExecutionAgent(symbol).propose(payload)
