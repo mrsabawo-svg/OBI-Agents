@@ -139,20 +139,35 @@ class BybitOrderExecutor:
         sleep_time = random.uniform(self.base_delay, temp)
         return min(sleep_time, 5.0)  # Cap delay to 5 seconds to preserve execution loop
 
+    def find_order_by_client_id(self, cl_order_id: str, category: str) -> Optional[Dict[str, Any]]:
+        """Find an order in open or historical order state by deterministic client ID."""
+        for getter in (self.client.get_open_orders, getattr(self.client, "get_order_history", None)):
+            if getter is None:
+                continue
+            try:
+                res = getter(category=category, orderClientId=cl_order_id)
+                if res.get("retCode") == 0:
+                    rows = res.get("result", {}).get("list", [])
+                    if rows:
+                        return rows[0]
+            except Exception:
+                continue
+        return None
+
     def _order_exists_on_exchange(self, cl_order_id: str, category: str) -> bool:
         """Deduplication lookup helper."""
         try:
-            res = self.client.get_open_orders(category=category, orderClientId=cl_order_id)
-            if res.get("retCode") == 0 and len(res.get("result", {}).get("list", [])) > 0:
-                return True
+            return self.find_order_by_client_id(cl_order_id, category) is not None
         except Exception:
             pass  # Suppress internal verification lookups
         return False
 
     def _fetch_order_by_client_id(self, cl_order_id: str, category: str) -> Dict[str, Any]:
         """Fetches active matching order details directly from exchange."""
-        res = self.client.get_open_orders(category=category, orderClientId=cl_order_id)
-        return res["result"]["list"][0]
+        found = self.find_order_by_client_id(cl_order_id, category)
+        if found is None:
+            raise LookupError("order not found")
+        return found
 
 
 # =====================================================================
