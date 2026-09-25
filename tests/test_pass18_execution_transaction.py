@@ -141,7 +141,7 @@ class Pass18ExecutionTransactionTest(unittest.TestCase):
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(result["data"]["orderId"], "ORDER_RECOVERED")
         self.assertEqual(
-            client.place_order.call_args.args[0]["orderClientId"],
+            client.place_order.call_args.kwargs["orderClientId"],
             execution_order_client_id(self.plan["signal_id"]),
         )
 
