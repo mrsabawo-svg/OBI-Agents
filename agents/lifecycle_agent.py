@@ -66,9 +66,36 @@ class LifecycleAgent:
     def _close(self, trade: dict, outcome: str, now: datetime) -> bool:
         trade["status"] = "CLOSED"
         trade["outcome"] = outcome
+        trade["terminal_outcome"] = outcome
+        trade["milestones"] = [
+            name for name, hit in (("TP1", trade.get("tp1_hit")),
+                                   ("TP2", trade.get("tp2_hit")))
+            if hit
+        ]
         stamp = now.strftime("%Y-%m-%d %H:%M SAST")
         trade["closed"] = stamp
         trade["closed_at"] = stamp
+        trade["pnl_basis"] = "trigger_level"
+        try:
+            entry = float(trade.get("entry", 0))
+            direction = trade.get("direction")
+            exit_level = float(
+                trade.get("tp3") if outcome == "TP3" else trade.get("sl")
+            )
+            pip_size = 0.01 if trade.get("symbol", "").endswith("JPY") else 0.0001
+            if trade.get("symbol") in {"BTCUSD", "ETHUSD"}:
+                pip_size = 0.01
+            elif trade.get("symbol") == "SOLUSD":
+                pip_size = 0.0001
+            elif trade.get("symbol") == "XAUUSD":
+                pip_size = 0.01
+            elif trade.get("symbol") == "NASDAQ":
+                pip_size = 0.25
+            delta = (exit_level - entry) if direction == "BUY" else (entry - exit_level)
+            trade["terminal_pnl_pips"] = round(delta / pip_size, 2)
+            trade["pnl_pips"] = trade["terminal_pnl_pips"]
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
         return True
 
     def _apply_candle(self, trade: dict, high: float, low: float, now: datetime) -> bool:
