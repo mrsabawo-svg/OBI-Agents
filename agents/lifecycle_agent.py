@@ -98,7 +98,8 @@ class LifecycleAgent:
                 target_hit = high >= tp1
                 if stop_hit and target_hit:
                     trade["resolution_note"] = "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"
-                    return False
+                    trade["lifecycle_event"] = "AMBIGUOUS"
+                    return True
                 if target_hit:
                     trade["tp1_hit"] = True
                     trade["outcome"] = "PENDING"
@@ -109,7 +110,8 @@ class LifecycleAgent:
                 target_hit = high >= tp2
                 if stop_hit and target_hit:
                     trade["resolution_note"] = "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"
-                    return bool(trade.get("tp1_hit"))
+                    trade["lifecycle_event"] = "AMBIGUOUS"
+                    return True
                 if target_hit:
                     trade["tp2_hit"] = True
                     trade["outcome"] = "PENDING"
@@ -119,12 +121,15 @@ class LifecycleAgent:
                 target_hit = high >= tp3
                 if stop_hit and target_hit:
                     trade["resolution_note"] = "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"
-                    return bool(trade.get("tp1_hit") or trade.get("tp2_hit"))
+                    trade["lifecycle_event"] = "AMBIGUOUS"
+                    return True
                 if target_hit:
                     trade["tp3_hit"] = True
+                    trade["lifecycle_event"] = "TP3"
                     self._close(trade, "TP3", now)
                     return True
             if stop_hit and not trade.get("status") == "CLOSED":
+                trade["lifecycle_event"] = "SL"
                 self._close(trade, "SL", now)
                 return True
             return changed
@@ -139,6 +144,8 @@ class LifecycleAgent:
                 if target_hit:
                     trade["tp1_hit"] = True
                     trade["outcome"] = "PENDING"
+                    trade["lifecycle_event"] = "TP1"
+                    changed = True
                     print("[LIFECYCLE] " + str(trade.get("id", "")) + ": TP1 milestone")
             if trade.get("tp1_hit") and not trade.get("tp2_hit"):
                 target_hit = low <= tp2
@@ -148,6 +155,8 @@ class LifecycleAgent:
                 if target_hit:
                     trade["tp2_hit"] = True
                     trade["outcome"] = "PENDING"
+                    trade["lifecycle_event"] = "TP2"
+                    changed = True
                     print("[LIFECYCLE] " + str(trade.get("id", "")) + ": TP2 milestone")
             if trade.get("tp2_hit") and not trade.get("tp3_hit"):
                 target_hit = low <= tp3
@@ -190,30 +199,68 @@ class LifecycleAgent:
 
         try:
             df = yf.download(
-                ticker, period="1d", interval="5m",
+                ticker, period="2d", interval="5m",
                 progress=False, auto_adjust=True, threads=False
             )
             if df is None or df.empty:
                 return False
-            high = float(df["High"].squeeze().iloc[-1])
-            low = float(df["Low"].squeeze().iloc[-1])
+
+            last_cursor = trade.get("lifecycle_last_candle")
+            last_dt = None
+            if last_cursor:
+                try:
+                    last_dt = datetime.fromisoformat(last_cursor.replace("Z", "+00:00"))
+                except Exception:
+                    last_dt = None
+
+            changed = False
+            processed = 0
+            for idx, row in df.iterrows():
+                candle_dt = idx.to_pydatetime() if hasattr(idx, "to_pydatetime") else idx
+                if candle_dt.tzinfo is None:
+                    candle_dt = pytz.utc.localize(candle_dt)
+                if last_dt is not None and candle_dt <= last_dt:
+                    continue
+                if candle_dt > now.astimezone(candle_dt.tzinfo):
+                    continue
+
+                high = float(row["High"])
+                low = float(row["Low"])
+                before_status = trade.get("status")
+                candle_changed = self._apply_candle(trade, high, low, now)
+                processed += 1
+                changed = changed or candle_changed
+
+                trade["lifecycle_last_candle"] = candle_dt.astimezone(pytz.utc).isoformat().replace("+00:00", "Z")
+                if candle_changed:
+                    trade.setdefault("lifecycle_events", []).append({
+                        "event": trade.get("lifecycle_event", "UNKNOWN"),
+                        "candle": trade["lifecycle_last_candle"],
+                        "note": trade.get("resolution_note"),
+                    })
+                trade.pop("lifecycle_event", None)
+
+                if before_status != trade.get("status") or trade.get("status") == "CLOSED":
+                    break
+
+            if processed:
+                changed = True
+
+            if changed:
+                print(
+                    "[LIFECYCLE] " + str(symbol) + " "
+                    + str(trade.get("id", "")) + ": "
+                    + str(trade.get("outcome")) + " | "
+                    + "TP1=" + str(bool(trade.get("tp1_hit"))) + " "
+                    + "TP2=" + str(bool(trade.get("tp2_hit"))) + " "
+                    + "TP3=" + str(bool(trade.get("tp3_hit"))) + " | "
+                    + "candles=" + str(processed)
+                )
+
+            return changed
         except Exception as e:
             print("[LIFECYCLE] Price fetch error for " + str(symbol) + ": " + str(e))
             return False
-
-        changed = self._apply_candle(trade, high, low, now)
-
-        if changed:
-            print(
-                "[LIFECYCLE] " + str(symbol) + " "
-                + str(trade.get("id", "")) + ": "
-                + str(trade.get("outcome")) + " | "
-                + "TP1=" + str(bool(trade.get("tp1_hit"))) + " "
-                + "TP2=" + str(bool(trade.get("tp2_hit"))) + " "
-                + "TP3=" + str(bool(trade.get("tp3_hit")))
-            )
-
-        return changed
 
     def _print_streak(self, archive: list):
         closed = [
