@@ -6,6 +6,8 @@ on:
       - "pass9-archive-authority"
     paths:
       - "agents/persistence_agent.py"
+      - "agents/archive_agent.py"
+      - "agents/lifecycle_agent.py"
       - "tests/test_pass15b_idempotency.py"
       - ".github/workflows/pass15b_test.yml"
   pull_request:
