@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 from agents.execution_agent import (
@@ -17,7 +18,7 @@ class Pass17ExecutionIdentityTest(unittest.TestCase):
             "ticker": "BTCUSDT",
             "direction": "BUY",
             "qty": 1,
-            "timestamp": "2026-09-24 07:00 SAST",
+            "timestamp": "2026-09-25 07:00 SAST",
         }
         self.plan_b = {
             "signal_id": "BTCUSD_20260924_070001_SAST_bbbb2222",
@@ -25,7 +26,7 @@ class Pass17ExecutionIdentityTest(unittest.TestCase):
             "ticker": "BTCUSDT",
             "direction": "SELL",
             "qty": 2,
-            "timestamp": "2026-09-24 07:01 SAST",
+            "timestamp": "2026-09-25 07:01 SAST",
         }
 
     def test_multiple_pending_trades_are_stored_by_signal_id(self):
