@@ -235,26 +235,44 @@ def _is_operator(sender_id: str) -> bool:
     return str(sender_id) == str(OPERATOR_ID)
 
 
-def handle_approve(symbol: str, sender_id: str) -> str:
-    from agents.execution_agent import ExecutionAgent, CRYPTO_SYMBOLS
+def _resolve_execution_symbol(signal_id: str) -> str:
+    from agents.execution_agent import load_pending, load_execution_state
+
+    plan = load_pending(signal_id)
+    if plan.get("signal_id") == signal_id:
+        return plan.get("symbol", "")
+    state = load_execution_state(signal_id)
+    if state.get("signal_id") == signal_id:
+        return state.get("symbol", "")
+    return ""
+
+
+def handle_approve(signal_id: str, sender_id: str) -> str:
+    from agents.execution_agent import ExecutionAgent
 
     if not _is_operator(sender_id):
         print(f"[CMD] Unauthorized /approve attempt from sender_id={sender_id}")
         return "⛔ Not authorized. Only the operator can approve trades."
 
-    signal_id = symbol.strip()
-    return ExecutionAgent(signal_id.split("_")[0]).approve(signal_id)
+    signal_id = signal_id.strip()
+    symbol = _resolve_execution_symbol(signal_id)
+    if not symbol:
+        return "⚠️ Unknown execution signal ID. No pending or recorded execution state found."
+    return ExecutionAgent(symbol).approve(signal_id)
 
 
-def handle_skip(symbol: str, sender_id: str) -> str:
-    from agents.execution_agent import ExecutionAgent, CRYPTO_SYMBOLS
+def handle_skip(signal_id: str, sender_id: str) -> str:
+    from agents.execution_agent import ExecutionAgent
 
     if not _is_operator(sender_id):
         print(f"[CMD] Unauthorized /skip attempt from sender_id={sender_id}")
         return "⛔ Not authorized. Only the operator can dismiss trades."
 
-    signal_id = symbol.strip()
-    return ExecutionAgent(signal_id.split("_")[0]).skip(signal_id)
+    signal_id = signal_id.strip()
+    symbol = _resolve_execution_symbol(signal_id)
+    if not symbol:
+        return "⚠️ Unknown execution signal ID. No pending or recorded execution state found."
+    return ExecutionAgent(symbol).skip(signal_id)
 
 
 # ── Router ────────────────────────────────────────────────────────────────────
