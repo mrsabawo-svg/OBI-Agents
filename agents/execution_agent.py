@@ -193,6 +193,7 @@ def build_trade_plan(symbol: str, payload: dict) -> dict:
     qty      = _calculate_qty(balance, risk_pct, entry, sl)
 
     return {
+        "signal_id":  payload.get("id"),
         "symbol":     symbol,
         "ticker":     ticker,
         "direction":  direction,
@@ -229,8 +230,8 @@ def format_plan_message(plan: dict) -> str:
         f"Risk:    `{plan['risk_pct']}% → ${plan['balance'] * plan['risk_pct'] / 100:.2f}`\n"
         f"Qty:     `{plan['qty']}`\n"
         f"{'─' * 32}\n"
-        f"Reply `/approve {plan['symbol']}` to execute\n"
-        f"Reply `/skip {plan['symbol']}` to dismiss\n"
+        f"Reply `/approve {plan['signal_id']}` to execute\n"
+        f"Reply `/skip {plan['signal_id']}` to dismiss\n"
         f"_Expires in {PLAN_EXPIRY_MINUTES} minutes_\n"
         f"{plan['timestamp']}"
     )
@@ -252,27 +253,43 @@ def save_pending(plan: dict) -> None:
     try:
         from core.memory import load as load_memory, save as save_memory
         mem = load_memory() or {}
-        mem["_pending_trade"] = plan
+        signal_id = plan.get("signal_id")
+        if not signal_id:
+            print("[EXEC] Cannot save pending plan without canonical signal_id")
+            return
+        pending = mem.setdefault("_pending_trades", {})
+        pending[signal_id] = plan
         save_memory(mem)
     except Exception as e:
         print(f"[EXEC] Save pending error: {e}")
 
 
-def load_pending() -> dict:
+def load_pending(signal_id: str = None) -> dict:
     try:
         from core.memory import load as load_memory
         mem = load_memory() or {}
+        pending = mem.get("_pending_trades", {})
+        if signal_id:
+            return pending.get(signal_id, {})
         return mem.get("_pending_trade", {})
     except Exception as e:
         print(f"[EXEC] Load pending error: {e}")
         return {}
 
 
-def clear_pending() -> None:
+def clear_pending(signal_id: str = None) -> None:
     try:
         from core.memory import load as load_memory, save as save_memory
         mem = load_memory() or {}
-        mem.pop("_pending_trade", None)
+        if signal_id:
+            pending = mem.get("_pending_trades", {})
+            pending.pop(signal_id, None)
+            if pending:
+                mem["_pending_trades"] = pending
+            else:
+                mem.pop("_pending_trades", None)
+        else:
+            mem.pop("_pending_trade", None)
         save_memory(mem)
     except Exception as e:
         print(f"[EXEC] Clear pending error: {e}")
@@ -301,19 +318,20 @@ class ExecutionAgent:
         _send(format_plan_message(plan), operator_only=True)
         print(f"[EXEC] {self.symbol}: trade plan sent to Telegram")
 
-    def approve(self, symbol: str) -> str:
-        plan = load_pending()
+    def approve(self, signal_id: str) -> str:
+        signal_id = signal_id.strip()
+        plan = load_pending(signal_id)
         if not plan:
-            return "⚠️ No pending trade found. It may have expired."
-        if plan.get("symbol") != symbol.upper():
-            return f"⚠️ Pending trade is for *{plan.get('symbol')}*, not *{symbol}*."
+            return "⚠️ No pending trade found for that signal ID. It may have expired."
+        if plan.get("signal_id") != signal_id:
+            return "⚠️ Signal identity mismatch. Execution refused."
 
         try:
             plan_time   = datetime.strptime(plan.get("timestamp", "").replace(" SAST", ""), "%Y-%m-%d %H:%M")
             plan_time   = SAST.localize(plan_time)
             age_minutes = (datetime.now(SAST) - plan_time).total_seconds() / 60
             if age_minutes > PLAN_EXPIRY_MINUTES:
-                clear_pending()
+                clear_pending(signal_id)
                 return f"⏰ *{plan['symbol']}* trade plan expired ({round(age_minutes)} min old). Wait for the next signal."
         except Exception as e:
             print(f"[EXEC] Expiry check error: {e}")
@@ -335,10 +353,10 @@ class ExecutionAgent:
         try:
             result = _executor.place_order_safe(order_params)
         except CircuitBreakerTrippedError:
-            clear_pending()
+            clear_pending(signal_id)
             return "🚨 Circuit breaker OPEN — too many execution failures. Order NOT sent."
 
-        clear_pending()
+        clear_pending(signal_id)
 
         if result["status"] == "SUCCESS":
             order_id = result["data"].get("orderId", "unknown")
@@ -354,10 +372,11 @@ class ExecutionAgent:
             err    = f"{reason} (code {code})" if code else reason
             return f"❌ Order failed: `{err}`"
 
-    def skip(self, symbol: str) -> str:
-        plan = load_pending()
-        if not plan or plan.get("symbol") != symbol.upper():
-            return f"ℹ️ No pending trade for *{symbol}*."
-        clear_pending()
-        print(f"[EXEC] {symbol}: trade skipped by user")
-        return f"⏭️ *{symbol}* trade skipped and cleared."
+    def skip(self, signal_id: str) -> str:
+        signal_id = signal_id.strip()
+        plan = load_pending(signal_id)
+        if not plan:
+            return f"ℹ️ No pending trade for signal *{signal_id}*."
+        clear_pending(signal_id)
+        print(f"[EXEC] {plan.get('symbol')}: trade skipped by signal {signal_id}")
+        return f"⏭️ *{plan.get('symbol')}* trade skipped and cleared."
