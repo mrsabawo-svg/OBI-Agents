@@ -93,7 +93,8 @@ class LifecycleAgent:
                 pip_size = 0.25
             delta = (exit_level - entry) if direction == "BUY" else (entry - exit_level)
             trade["terminal_pnl_pips"] = round(delta / pip_size, 2)
-            trade["pnl_pips"] = trade["terminal_pnl_pips"]
+            # Legacy pnl_pips is intentionally not populated here: trigger-level
+            # outcome is not the same thing as realized exchange PnL.
         except (TypeError, ValueError, ZeroDivisionError):
             pass
         return True
