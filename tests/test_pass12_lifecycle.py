@@ -29,16 +29,13 @@ class CloseSeries:
 class FakeFrame:
     empty = False
 
-    def __init__(self, high, low):
+    def __init__(self, high, low, candle_time):
         self.high = high
         self.low = low
+        self.candle_time = candle_time
 
-    def __getitem__(self, key):
-        if key == "High":
-            return CloseSeries(self.high)
-        if key == "Low":
-            return CloseSeries(self.low)
-        raise AssertionError("Lifecycle requested unexpected column")
+    def iterrows(self):
+        yield self.candle_time, {"High": self.high, "Low": self.low}
 
 
 class Pass12BLifecycleTest(unittest.TestCase):
@@ -99,7 +96,7 @@ class Pass12BLifecycleTest(unittest.TestCase):
 
         # TP1 is a milestone: the record remains OPEN.
         with patch("agents.lifecycle_agent.yf.download",
-                   return_value=FakeFrame(4012.0, 4005.0)):
+                   return_value=FakeFrame(4012.0, 4005.0, SAST.localize(datetime.strptime("2026-09-25 10:15", "%Y-%m-%d %H:%M")))):
             memory = load()
             changed = lifecycle._check_trade(memory["_archive"][0], now)
             if changed:
@@ -116,7 +113,7 @@ class Pass12BLifecycleTest(unittest.TestCase):
 
         # TP2 is another milestone: still OPEN.
         with patch("agents.lifecycle_agent.yf.download",
-                   return_value=FakeFrame(4022.0, 4015.0)):
+                   return_value=FakeFrame(4022.0, 4015.0, SAST.localize(datetime.strptime("2026-09-25 10:20", "%Y-%m-%d %H:%M")))):
             memory = load()
             changed = lifecycle._check_trade(memory["_archive"][0], now)
             if changed:
@@ -130,7 +127,7 @@ class Pass12BLifecycleTest(unittest.TestCase):
 
         # TP3 is terminal and closes the SAME record.
         with patch("agents.lifecycle_agent.yf.download",
-                   return_value=FakeFrame(4031.0, 4025.0)):
+                   return_value=FakeFrame(4031.0, 4025.0, SAST.localize(datetime.strptime("2026-09-25 10:25", "%Y-%m-%d %H:%M")))):
             memory = load()
             changed = lifecycle._check_trade(memory["_archive"][0], now)
             if changed:
