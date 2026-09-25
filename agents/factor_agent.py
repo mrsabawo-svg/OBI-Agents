@@ -21,7 +21,8 @@ class FactorAgent:
             archive = memory.get("_archive", [])
             closed  = [
                 t for t in archive
-                if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"
+                if t.get("status") == "CLOSED"
+                and t.get("terminal_outcome", t.get("outcome")) not in ("EXPIRED", "AMBIGUOUS")
             ]
 
             if len(closed) < MIN_SAMPLE:
@@ -56,7 +57,10 @@ class FactorAgent:
     def _wr(self, trades: list) -> float:
         if not trades:
             return 0.0
-        wins = len([t for t in trades if t.get("outcome") in ["TP1", "TP2", "TP3"]])
+        wins = len([
+            t for t in trades
+            if t.get("terminal_outcome", t.get("outcome")) == "TP3"
+        ])
         return round(wins / len(trades) * 100, 1)
 
     def _bucket(self, trades: list, key_fn) -> dict:
