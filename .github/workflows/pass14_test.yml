@@ -31,6 +31,6 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run Pass 14 state machine proof
         run: |
-          # Explicit Pass 14 regression trigger/verification step.
+          # Explicit Pass 14 regression trigger/verification step.\n          # Fixture changes are part of the lifecycle proof surface.
           python -m unittest tests/test_pass12_lifecycle.py
           python -m unittest tests/test_pass14_lifecycle.py
