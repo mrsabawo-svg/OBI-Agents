@@ -459,7 +459,7 @@ class ExecutionAgent:
                 f"Order placed for {plan['symbol']}\n"
                 f"Order ID: {order_id}\n"
                 f"Side: {plan['direction']} | Qty: {plan['qty']}\n"
-                f"SL: {plan['sl']} | TP1: {plan['tp1']}"
+                f"SL: {plan['sl']} | TP3: {plan['tp3']}"
             )
 
         reason = result.get("reason", "UNKNOWN")
