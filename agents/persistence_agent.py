@@ -18,10 +18,11 @@ class PersistenceAgent:
 
     def save(self, result: dict, payload: dict) -> None:
         memory = load_memory()
-        self._update_memory(memory, result, payload)
-        self._push_to_gist(result)
+        processed = self._update_memory(memory, result, payload)
+        if processed:
+            self._push_to_gist(result)
 
-    def _update_memory(self, memory: dict, result: dict, payload: dict) -> None:
+    def _update_memory(self, memory: dict, result: dict, payload: dict) -> bool:
         try:
             if self.symbol not in memory:
                 memory[self.symbol] = {"signals": 0, "wins": 0, "losses": 0}
@@ -35,7 +36,7 @@ class PersistenceAgent:
             )
             if signal_id in processed:
                 print("[PERSIST] Duplicate signal ignored: " + signal_id)
-                return
+                return False
 
             memory[self.symbol]["signals"] = memory[self.symbol].get("signals", 0) + 1
             memory[self.symbol]["last_signal"]     = result.get("timestamp")
@@ -67,8 +68,10 @@ class PersistenceAgent:
             del processed[:-100]
             save_memory(memory)
             print("[PERSIST] Memory updated - archive untouched: " + signal_id)
+            return True
         except Exception as e:
             print("[PERSIST] Memory error: " + str(e))
+            return False
 
     def _push_to_gist(self, result: dict) -> None:
         try:
