@@ -127,6 +127,12 @@ class BybitClient:
             params["orderLinkId"] = orderClientId
         return self._signed_get("/v5/order/realtime", params)
 
+    def get_order_history(self, category: str = "linear", orderClientId: str = None, **kwargs) -> dict:
+        params = {"category": category}
+        if orderClientId:
+            params["orderLinkId"] = orderClientId
+        return self._signed_get("/v5/order/history", params)
+
 
 # ── Telegram helpers ──────────────────────────────────────────────────────────
 
@@ -368,7 +374,24 @@ class ExecutionAgent:
         if plan.get("symbol") != self.symbol.upper():
             return "Signal symbol mismatch. Execution refused."
         if state.get("status") == "SUBMITTING":
-            return "Signal is already in SUBMITTING state. Recovery must verify the exchange order before another submission."
+            order_client_id = state.get("order_client_id") or execution_order_client_id(signal_id)
+            recovered = _executor.find_order_by_client_id(order_client_id, "linear")
+            if recovered:
+                order_id = recovered.get("orderId", "unknown")
+                recovered_state = dict(state)
+                recovered_state.update({
+                    "status": "EXECUTED",
+                    "order_id": order_id,
+                    "order_client_id": order_client_id,
+                    "recovery": "EXCHANGE_LOOKUP",
+                    "updated_at": datetime.now(SAST).strftime("%Y-%m-%d %H:%M:%S SAST"),
+                })
+                _save_execution_state(recovered_state)
+                clear_pending(signal_id)
+                return "Recovered existing exchange order. Order ID: " + str(order_id)
+            # No matching exchange order was found. Re-submit is safe because
+            # the deterministic order client ID is reused on the next attempt.
+            print("[EXEC] No exchange order found for SUBMITTING state; retrying with same order identity.")
 
         try:
             plan_time = datetime.strptime(
@@ -404,7 +427,7 @@ class ExecutionAgent:
             "orderType": "Market",
             "qty": str(round(plan["qty"], 3)),
             "stopLoss": str(round(plan["sl"], 2)),
-            "takeProfit": str(round(plan["tp1"], 2)),
+            "takeProfit": str(round(plan["tp3"], 2)),
             "timeInForce": "GoodTillCancel",
             "positionIdx": 0,
             "orderClientId": order_client_id,
