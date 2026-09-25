@@ -74,10 +74,10 @@ def handle_help() -> str:
         "`/market` — bias summary for all symbols\n\n"
         "`/health` — system health check\n\n"
         "`/status` — last pipeline run info\n\n"
-        "`/approve <SYMBOL>` — execute pending trade (operator only)\n"
-        "  e.g. `/approve BTCUSD`\n\n"
-        "`/skip <SYMBOL>` — dismiss pending trade (operator only)\n"
-        "  e.g. `/skip BTCUSD`\n\n"
+        "`/approve <SIGNAL_ID>` — execute that exact pending trade (operator only)\n"
+        "  e.g. `/approve BTCUSD_20260924_070000_SAST_a1b2c3d4`\n\n"
+        "`/skip <SIGNAL_ID>` — dismiss that exact pending trade (operator only)\n"
+        "  e.g. `/skip BTCUSD_20260924_070000_SAST_a1b2c3d4`\n\n"
         "`/help` — show this menu"
     )
 
@@ -242,10 +242,8 @@ def handle_approve(symbol: str, sender_id: str) -> str:
         print(f"[CMD] Unauthorized /approve attempt from sender_id={sender_id}")
         return "⛔ Not authorized. Only the operator can approve trades."
 
-    symbol = symbol.upper().strip()
-    if symbol not in CRYPTO_SYMBOLS:
-        return f"❌ Unknown symbol: `{symbol}`\nExecutable: {', '.join(sorted(CRYPTO_SYMBOLS))}"
-    return ExecutionAgent(symbol).approve(symbol)
+    signal_id = symbol.strip()
+    return ExecutionAgent(signal_id.split("_")[0]).approve(signal_id)
 
 
 def handle_skip(symbol: str, sender_id: str) -> str:
@@ -255,10 +253,8 @@ def handle_skip(symbol: str, sender_id: str) -> str:
         print(f"[CMD] Unauthorized /skip attempt from sender_id={sender_id}")
         return "⛔ Not authorized. Only the operator can dismiss trades."
 
-    symbol = symbol.upper().strip()
-    if symbol not in CRYPTO_SYMBOLS:
-        return f"❌ Unknown symbol: `{symbol}`\nExecutable: {', '.join(sorted(CRYPTO_SYMBOLS))}"
-    return ExecutionAgent(symbol).skip(symbol)
+    signal_id = symbol.strip()
+    return ExecutionAgent(signal_id.split("_")[0]).skip(signal_id)
 
 
 # ── Router ────────────────────────────────────────────────────────────────────
@@ -285,13 +281,13 @@ def route(text: str, sender_id: str = "") -> str:
     if lower.startswith("/approve"):
         parts = text.split()
         if len(parts) < 2:
-            return "Usage: `/approve <SYMBOL>` — e.g. `/approve BTCUSD`"
+            return "Usage: `/approve <SIGNAL_ID>` — e.g. `/approve BTCUSD_...`"
         return handle_approve(parts[1], sender_id)
 
     if lower.startswith("/skip"):
         parts = text.split()
         if len(parts) < 2:
-            return "Usage: `/skip <SYMBOL>` — e.g. `/skip BTCUSD`"
+            return "Usage: `/skip <SIGNAL_ID>` — e.g. `/skip BTCUSD_...`"
         return handle_skip(parts[1], sender_id)
 
     return f"❓ Unknown command: `{text}`\nType `/help` to see available commands."
