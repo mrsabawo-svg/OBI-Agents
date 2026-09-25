@@ -51,3 +51,5 @@ jobs:
 
       - name: Run audit findings regression proof
         run: python -m unittest tests/test_audit_findings.py
+
+# Audit remediation regression boundary updated 2026-09-25.
