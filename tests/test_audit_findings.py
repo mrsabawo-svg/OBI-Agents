@@ -75,6 +75,18 @@ class AuditFindingsRegressionTests(unittest.TestCase):
         self.assertEqual(entry["factors"], ["HTF", "VWAP"])
         self.assertEqual(entry["obi_score"], 82)
 
+    def test_terminal_and_realized_pnl_are_separate(self):
+        entry = ArchiveAgent()._build_entry({
+            "id": "BTCUSD_2", "symbol": "BTCUSD",
+            "trigger": {"direction": "BUY", "grade": "B", "entry": 100, "sl": 90,
+                        "tp1": 101, "tp2": 102, "tp3": 103, "rr": 3,
+                        "tags": [], "confluence": 1},
+            "regime": {}, "bias": {"score": 50, "factors": []}, "htf": {}, "mtf": {},
+            "score": {"grade": "B", "confidence": 50},
+        })
+        self.assertIsNone(entry["realized_pnl_pips"])
+        self.assertEqual(entry["terminal_pnl_pips"], 0)
+
     def test_factor_reader_accepts_canonical_archive_fields(self):
         factor = FactorAgent()
         trades = [
