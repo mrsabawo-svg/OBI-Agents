@@ -1,5 +1,7 @@
 name: Pass 15B State Write Idempotency Test
 
+# Includes the signal/setup identity boundary regression.
+
 on:
   push:
     branches:
@@ -8,6 +10,8 @@ on:
       - "agents/persistence_agent.py"
       - "agents/archive_agent.py"
       - "agents/lifecycle_agent.py"
+      - "agents/signal_reviewer.py"
+      - "tests/test_pass16_identity.py"
       - "tests/test_pass15b_idempotency.py"
       - ".github/workflows/pass15b_test.yml"
   pull_request:
