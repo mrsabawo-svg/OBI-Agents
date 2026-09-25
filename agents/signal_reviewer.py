@@ -5,6 +5,7 @@ Renamed: Devil's Advocate -> Skeptic (blunt, single purpose, no theatre)
 """
 import os
 import json
+import hashlib
 import requests
 from datetime import datetime
 from core.memory import load as load_memory
@@ -19,22 +20,77 @@ class SignalReviewer:
     def __init__(self, symbol: str):
         self.symbol = symbol
 
+    @staticmethod
+    def setup_identity(payload: dict) -> str:
+        """Return a deterministic identity for the underlying trade setup.
+
+        Signal identity answers: "Is this the exact signal event?"
+        Setup identity answers: "Is this materially the same setup being
+        proposed again?"  The two identities must not be conflated.
+        """
+        trigger = payload.get("trigger", {})
+        get = lambda name, default=None: getattr(trigger, name, default) if hasattr(trigger, name) else trigger.get(name, default)
+        setup = {
+            "symbol": payload.get("symbol"),
+            "direction": get("direction"),
+            "entry": round(float(get("entry")), 5) if get("entry") is not None else None,
+            "sl": round(float(get("sl")), 5) if get("sl") is not None else None,
+            "tp1": round(float(get("tp1")), 5) if get("tp1") is not None else None,
+            "tp2": round(float(get("tp2")), 5) if get("tp2") is not None else None,
+            "tp3": round(float(get("tp3")), 5) if get("tp3") is not None else None,
+            "tags": sorted(get("tags", []) or []),
+            "regime": payload.get("regime", {}).get("label"),
+        }
+        encoded = json.dumps(setup, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
     def is_duplicate(self, payload: dict) -> bool:
         try:
-            memory    = load_memory()
-            archive   = memory.get("_archive", [])
-            new_entry = float(payload["trigger"].entry)
-            now       = datetime.now(SAST)
-            recent    = [t for t in archive if t.get("symbol") == self.symbol and t.get("status") == "OPEN"]
-            for t in recent:
-                try:
-                    opened = datetime.strptime(t.get("opened", "").replace(" SAST", ""), "%Y-%m-%d %H:%M")
-                    opened = SAST.localize(opened)
-                    if (now - opened).total_seconds() < 7200:
-                        if abs(float(t.get("entry", 0)) - new_entry) < 0.01:
-                            return True
-                except:
+            memory = load_memory() or {}
+            archive = memory.get("_archive", [])
+            signal_id = payload.get("id")
+            setup_id = self.setup_identity(payload)
+            now = datetime.now(SAST)
+
+            for t in archive:
+                if t.get("status") != "OPEN" or t.get("symbol") != self.symbol:
                     continue
+
+                # Exact signal identity is independent from setup identity.
+                if signal_id and t.get("id") == signal_id:
+                    return True
+
+                try:
+                    opened = datetime.strptime(
+                        t.get("opened", "").replace(" SAST", ""),
+                        "%Y-%m-%d %H:%M"
+                    )
+                    opened = SAST.localize(opened)
+                    if (now - opened).total_seconds() >= 7200:
+                        continue
+
+                    archived_setup_id = t.get("setup_id")
+                    if not archived_setup_id:
+                        legacy_payload = {
+                            "symbol": t.get("symbol"),
+                            "trigger": {
+                                "direction": t.get("direction"),
+                                "entry": t.get("entry"),
+                                "sl": t.get("sl"),
+                                "tp1": t.get("tp1"),
+                                "tp2": t.get("tp2"),
+                                "tp3": t.get("tp3"),
+                                "tags": t.get("tags", []),
+                            },
+                            "regime": {"label": t.get("regime")},
+                        }
+                        archived_setup_id = self.setup_identity(legacy_payload)
+
+                    if archived_setup_id == setup_id:
+                        return True
+                except Exception:
+                    continue
+
             return False
         except Exception as e:
             print("[REVIEWER] Duplicate check error: " + str(e))
