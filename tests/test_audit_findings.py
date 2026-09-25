@@ -98,5 +98,37 @@ class AuditFindingsRegressionTests(unittest.TestCase):
         self.assertIn("70+", factor._by_score_bucket(trades))
 
 
+    @patch("main.ExecutionAgent")
+    @patch("main.IntelligenceAgent")
+    @patch("main.ScoreAgent")
+    @patch("main.EdgeAgent")
+    @patch("main.TriggerAgent")
+    @patch("main.LTFAgent")
+    @patch("main.ZoneAgent")
+    @patch("main.BiasAgent")
+    @patch("main.MTFAgent")
+    @patch("main.RegimeAgent")
+    @patch("main.HTFAgent")
+    @patch("main.SessionAgent")
+    @patch("main.DataAgent")
+    def test_duplicate_rejection_stops_execution(self, data, session, htf, regime, mtf, bias, zone, ltf, trigger, edge, score, intelligence, execution):
+        session.return_value.analyse.return_value = {"tradeable": True}
+        bias.return_value.evaluate.return_value.approved = True
+        trigger.return_value.evaluate.return_value.fire = True
+        intelligence.return_value.verdict.return_value = {"accepted": False, "reason": "duplicate"}
+        from main import run
+        result = run("BTCUSD", {"safe": True})
+        self.assertEqual(result["blocked"], "duplicate")
+        execution.return_value.propose.assert_not_called()
+
+    def test_factor_win_rate_uses_terminal_tp3_only(self):
+        factor = FactorAgent()
+        trades = [{"status": "CLOSED", "outcome": "TP3", "terminal_outcome": "TP3"}] + [{"status": "CLOSED", "outcome": "SL", "terminal_outcome": "SL"}] * 4
+        self.assertEqual(factor._wr(trades), 20.0)
+
+    def test_lifecycle_replay_window_covers_more_than_expiry_window(self):
+        import agents.lifecycle_agent as lifecycle
+        self.assertGreaterEqual(lifecycle.REPLAY_DAYS, 2)
+
 if __name__ == "__main__":
     unittest.main()
