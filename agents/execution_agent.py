@@ -325,6 +325,8 @@ class ExecutionAgent:
             return "⚠️ No pending trade found for that signal ID. It may have expired."
         if plan.get("signal_id") != signal_id:
             return "⚠️ Signal identity mismatch. Execution refused."
+        if plan.get("symbol") != self.symbol.upper():
+            return "⚠️ Signal symbol mismatch. Execution refused."
 
         try:
             plan_time   = datetime.strptime(plan.get("timestamp", "").replace(" SAST", ""), "%Y-%m-%d %H:%M")
