@@ -138,11 +138,15 @@ class AuditFindingsRegressionTests(unittest.TestCase):
     def test_telegram_acknowledges_after_command_processing(self, load_offset, get_updates, save_offset, route, send):
         from agents.telegram_command_agent import poll_and_process
         get_updates.return_value = [{"update_id": 7, "message": {"chat": {"id": "chat"}, "text": "/health", "from": {"id": "operator"}}}]
+        events = []
+        route.side_effect = lambda *args, **kwargs: events.append("route") or "ok"
+        save_offset.side_effect = lambda *args, **kwargs: events.append("save") or True
         import agents.telegram_command_agent as cmd
         with patch.object(cmd, "CHAT_ID", "chat"):
             poll_and_process()
         route.assert_called_once()
         save_offset.assert_called_once_with(8, 7)
+        self.assertEqual(events, ["route", "save"])
 
 if __name__ == "__main__":
     unittest.main()
