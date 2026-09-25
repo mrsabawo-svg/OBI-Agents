@@ -20,7 +20,12 @@ class IntelligenceAgent:
 
         if reviewer.is_duplicate(payload):
             print("[INTEL] " + self.symbol + ": DUPLICATE BLOCKED")
-            return {}
+            return {
+                "accepted": False,
+                "reason": "duplicate",
+                "id": payload.get("id"),
+                "symbol": self.symbol,
+            }
 
         memory   = load_memory()
         accuracy = memory.get(self.symbol, {}).get("accuracy", "No history yet")
@@ -30,6 +35,7 @@ class IntelligenceAgent:
 
         trigger = payload["trigger"]
         result = {
+            "accepted": True,
             "id":              payload.get("id"),
             "symbol":          self.symbol,
             "timestamp":       sast_str(),
