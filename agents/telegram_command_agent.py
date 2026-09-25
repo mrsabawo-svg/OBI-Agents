@@ -330,23 +330,31 @@ def poll_and_process() -> None:
             print(f"[CMD] Skipping already processed update_id={update_id}")
             continue
 
-        if not _save_offset(update_id + 1, update_id):
-            print(f"[CMD] WARNING: offset save failed for update_id={update_id} — will retry next poll")
-            continue
-
-        offset         = update_id + 1
-        last_processed = update_id
-
         msg = update.get("message") or update.get("edited_message")
         if not msg:
+            if not _save_offset(update_id + 1, update_id):
+                print(f"[CMD] WARNING: offset save failed for update_id={update_id}")
+                continue
+            offset         = update_id + 1
+            last_processed = update_id
             continue
 
         if str(msg.get("chat", {}).get("id")) != str(CHAT_ID):
             print(f"[CMD] Ignoring message from unknown chat")
+            if not _save_offset(update_id + 1, update_id):
+                print(f"[CMD] WARNING: offset save failed for update_id={update_id}")
+                continue
+            offset         = update_id + 1
+            last_processed = update_id
             continue
 
         text = msg.get("text", "").strip()
         if not text.startswith("/"):
+            if not _save_offset(update_id + 1, update_id):
+                print(f"[CMD] WARNING: offset save failed for update_id={update_id}")
+                continue
+            offset         = update_id + 1
+            last_processed = update_id
             continue
 
         sender_id = str(msg.get("from", {}).get("id", ""))
@@ -357,5 +365,13 @@ def poll_and_process() -> None:
             send(response)
         except Exception as e:
             print(f"[CMD] Error handling '{text}': {e}")
+            continue
+
+        if not _save_offset(update_id + 1, update_id):
+            print(f"[CMD] WARNING: offset save failed after processing update_id={update_id} — will retry next poll")
+            continue
+
+        offset         = update_id + 1
+        last_processed = update_id
 
 
