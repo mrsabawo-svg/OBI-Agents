@@ -77,7 +77,7 @@ class FactorAgent:
     def _by_factor(self, closed: list) -> dict:
         all_factors = set()
         for t in closed:
-            all_factors.update(t.get("factors", []))
+            all_factors.update(t.get("factors", t.get("bias_factors", [])))
 
         result = {}
         for factor in sorted(all_factors):
@@ -109,7 +109,7 @@ class FactorAgent:
 
     def _by_score_bucket(self, closed: list) -> dict:
         def bucket_label(t):
-            score = t.get("obi_score") or 0
+            score = t.get("obi_score") if t.get("obi_score") is not None else 0
             if score < 40:  return "0-39"
             if score < 55:  return "40-54"
             if score < 70:  return "55-69"
