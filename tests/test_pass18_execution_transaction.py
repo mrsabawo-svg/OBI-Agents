@@ -51,7 +51,7 @@ class Pass18ExecutionTransactionTest(unittest.TestCase):
             }
             result = ExecutionAgent("BTCUSD").approve(self.plan["signal_id"])
 
-        self.assertIn("order placed", result)
+        self.assertIn("order placed", result.lower())
         self.assertEqual(memory["_execution_state"][self.plan["signal_id"]]["status"], "EXECUTED")
         self.assertEqual(
             memory["_execution_state"][self.plan["signal_id"]]["order_client_id"],
@@ -177,7 +177,9 @@ class Pass18ExecutionTransactionTest(unittest.TestCase):
         executor.place_order_safe.assert_not_called()
 
     def test_telegram_resolves_symbol_from_pending_signal_not_string_parsing(self):
-        import agents.telegram_command_agent as commands
+        import os
+        with patch.dict(os.environ, {"TELEGRAM_BOT_TOKEN": "test-token", "TELEGRAM_CHAT_ID": "test-chat"}, clear=False):
+            import agents.telegram_command_agent as commands
         with patch.object(commands, "OPERATOR_ID", "42"),              patch("agents.execution_agent.load_pending", return_value=self.plan),              patch("agents.execution_agent.ExecutionAgent") as agent_cls:
             agent_cls.return_value.approve.return_value = "approved"
             result = commands.handle_approve(
