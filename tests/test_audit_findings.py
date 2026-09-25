@@ -130,5 +130,20 @@ class AuditFindingsRegressionTests(unittest.TestCase):
         import agents.lifecycle_agent as lifecycle
         self.assertGreaterEqual(lifecycle.REPLAY_DAYS, 2)
 
+    @patch("agents.telegram_command_agent.send")
+    @patch("agents.telegram_command_agent.route", return_value="ok")
+    @patch("agents.telegram_command_agent._save_offset", return_value=True)
+    @patch("agents.telegram_command_agent._get_updates")
+    @patch("agents.telegram_command_agent._load_offset", return_value=(0, 0))
+    def test_telegram_acknowledges_after_command_processing(self, load_offset, get_updates, save_offset, route, send):
+        from agents.telegram_command_agent import poll_and_process
+        get_updates.return_value = [{"update_id": 7, "message": {"chat": {"id": "chat"}, "text": "/health", "from": {"id": "operator"}}}]
+        import agents.telegram_command_agent as cmd
+        with patch.object(cmd, "CHAT_ID", "chat"):
+            poll_and_process()
+        route.assert_called_once()
+        save_offset.assert_called_once_with(8, 7)
+        self.assertLess(route.call_args_list[0].__class__.__name__ == "never", 1)
+
 if __name__ == "__main__":
     unittest.main()
