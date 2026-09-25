@@ -9,6 +9,7 @@ from datetime import datetime
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
+from agents.signal_reviewer import SignalReviewer
 
 SAST = pytz.timezone("Africa/Johannesburg")
 
@@ -100,6 +101,7 @@ class ArchiveAgent:
 
         return {
             "id": signal_id,
+            "setup_id": SignalReviewer.setup_identity(signal),
             "symbol": signal.get("symbol"),
             "timestamp": timestamp,
             "opened": timestamp,
