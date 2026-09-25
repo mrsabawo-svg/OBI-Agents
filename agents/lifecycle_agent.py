@@ -230,7 +230,7 @@ class LifecycleAgent:
 
         try:
             df = yf.download(
-                ticker, period="2d", interval="5m",
+                ticker, period="7d", interval="5m",
                 progress=False, auto_adjust=True, threads=False
             )
             if df is None or df.empty:
