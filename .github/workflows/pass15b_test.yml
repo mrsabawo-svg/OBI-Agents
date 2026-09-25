@@ -11,6 +11,9 @@ on:
       - "agents/archive_agent.py"
       - "agents/lifecycle_agent.py"
       - "agents/signal_reviewer.py"
+      - "agents/execution_agent.py"
+      - "agents/telegram_command_agent.py"
+      - "tests/test_pass17_execution_identity.py"
       - "tests/test_pass16_identity.py"
       - "tests/test_pass15b_idempotency.py"
       - ".github/workflows/pass15b_test.yml"
@@ -35,3 +38,5 @@ jobs:
         run: python -m unittest tests/test_pass15b_idempotency.py
       - name: Run Pass 16 identity proof
         run: python -m unittest tests/test_pass16_identity.py
+      - name: Run Pass 17 execution identity proof
+        run: python -m unittest tests/test_pass17_execution_identity.py
