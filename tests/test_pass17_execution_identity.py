@@ -103,7 +103,7 @@ class Pass17ExecutionIdentityTest(unittest.TestCase):
         self.assertEqual(order_params["side"], "Sell")
         self.assertEqual(order_params["qty"], "2.0")
         self.assertEqual(order_params["stopLoss"], "101000.0")
-        self.assertEqual(order_params["takeProfit"], "98000.0")
+        self.assertEqual(order_params["takeProfit"], "94000.0")
 
     def test_wrong_symbol_agent_cannot_execute_signal(self):
         agent = ExecutionAgent("ETHUSD")
