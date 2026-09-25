@@ -95,7 +95,7 @@ class Pass12BLifecycleTest(unittest.TestCase):
         self.assertEqual(store["_archive"][0]["id"], payload["id"])
 
         lifecycle = LifecycleAgent()
-        now = SAST.localize(datetime.strptime("2026-09-24 06:30", "%Y-%m-%d %H:%M"))
+        now = SAST.localize(datetime.strptime("2026-09-25 10:30", "%Y-%m-%d %H:%M"))
 
         # TP1 is a milestone: the record remains OPEN.
         with patch("agents.lifecycle_agent.yf.download",
