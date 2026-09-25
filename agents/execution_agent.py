@@ -247,6 +247,36 @@ _executor = BybitOrderExecutor(
 )
 
 
+# ── Execution transaction identity/state ──────────────────────────────────────
+
+def execution_order_client_id(signal_id: str) -> str:
+    """Return a deterministic Bybit-safe idempotency key for one signal."""
+    if not signal_id:
+        raise ValueError("canonical signal_id is required")
+    return "obi-" + hashlib.sha256(signal_id.encode("utf-8")).hexdigest()[:32]
+
+
+def load_execution_state(signal_id: str = None) -> dict:
+    try:
+        from core.memory import load as load_memory
+        mem = load_memory() or {}
+        state = mem.get("_execution_state", {})
+        if signal_id:
+            return state.get(signal_id, {})
+        return state
+    except Exception as e:
+        print(f"[EXEC] Execution state load error: {e}")
+        return {}
+
+
+def _save_execution_state(state: dict) -> None:
+    from core.memory import load as load_memory, save as save_memory
+    mem = load_memory() or {}
+    states = mem.setdefault("_execution_state", {})
+    states[state["signal_id"]] = state
+    save_memory(mem)
+
+
 # ── Pending trade store ───────────────────────────────────────────────────────
 
 def save_pending(plan: dict) -> None:
@@ -321,64 +351,127 @@ class ExecutionAgent:
     def approve(self, signal_id: str) -> str:
         signal_id = signal_id.strip()
         plan = load_pending(signal_id)
+        state = load_execution_state(signal_id)
+
+        if state.get("status") == "EXECUTED":
+            return "Signal already executed. Order ID: " + str(state.get("order_id", "unknown"))
+
         if not plan:
-            return "⚠️ No pending trade found for that signal ID. It may have expired."
+            if state.get("status") == "FAILED_RECOVERABLE":
+                return "Recoverable execution state exists, but the pending trade payload is missing."
+            if state.get("status") == "FAILED_FATAL":
+                return "This signal has a recorded fatal execution failure. Review before retrying."
+            return "No pending trade found for that signal ID. It may have expired."
+
         if plan.get("signal_id") != signal_id:
-            return "⚠️ Signal identity mismatch. Execution refused."
+            return "Signal identity mismatch. Execution refused."
         if plan.get("symbol") != self.symbol.upper():
-            return "⚠️ Signal symbol mismatch. Execution refused."
+            return "Signal symbol mismatch. Execution refused."
+        if state.get("status") == "SUBMITTING":
+            return "Signal is already in SUBMITTING state. Recovery must verify the exchange order before another submission."
 
         try:
-            plan_time   = datetime.strptime(plan.get("timestamp", "").replace(" SAST", ""), "%Y-%m-%d %H:%M")
-            plan_time   = SAST.localize(plan_time)
+            plan_time = datetime.strptime(
+                plan.get("timestamp", "").replace(" SAST", ""),
+                "%Y-%m-%d %H:%M",
+            )
+            plan_time = SAST.localize(plan_time)
             age_minutes = (datetime.now(SAST) - plan_time).total_seconds() / 60
-            if age_minutes > PLAN_EXPIRY_MINUTES:
+            if age_minutes > PLAN_EXPIRY_MINUTES and state.get("status") != "FAILED_RECOVERABLE":
                 clear_pending(signal_id)
-                return f"⏰ *{plan['symbol']}* trade plan expired ({round(age_minutes)} min old). Wait for the next signal."
+                return f"Trade plan expired ({round(age_minutes)} min old). Wait for the next signal."
         except Exception as e:
             print(f"[EXEC] Expiry check error: {e}")
 
-        _send(f"⚡ Executing *{plan['symbol']}* {plan['direction']} order…")
+        order_client_id = state.get("order_client_id") or execution_order_client_id(signal_id)
+        submitting = {
+            "signal_id": signal_id,
+            "symbol": plan["symbol"],
+            "status": "SUBMITTING",
+            "order_client_id": order_client_id,
+            "order_id": state.get("order_id"),
+            "last_error": None,
+            "updated_at": datetime.now(SAST).strftime("%Y-%m-%d %H:%M:%S SAST"),
+        }
+        _save_execution_state(submitting)
+
+        _send(f"Executing {plan['symbol']} {plan['direction']} order...")
 
         order_params = {
-            "category":    "linear",
-            "symbol":      plan["ticker"],
-            "side":        "Buy" if plan["direction"] == "BUY" else "Sell",
-            "orderType":   "Market",
-            "qty":         str(round(plan["qty"], 3)),
-            "stopLoss":    str(round(plan["sl"], 2)),
-            "takeProfit":  str(round(plan["tp1"], 2)),
+            "category": "linear",
+            "symbol": plan["ticker"],
+            "side": "Buy" if plan["direction"] == "BUY" else "Sell",
+            "orderType": "Market",
+            "qty": str(round(plan["qty"], 3)),
+            "stopLoss": str(round(plan["sl"], 2)),
+            "takeProfit": str(round(plan["tp1"], 2)),
             "timeInForce": "GoodTillCancel",
             "positionIdx": 0,
+            "orderClientId": order_client_id,
         }
 
         try:
             result = _executor.place_order_safe(order_params)
         except CircuitBreakerTrippedError:
-            clear_pending(signal_id)
-            return "🚨 Circuit breaker OPEN — too many execution failures. Order NOT sent."
-
-        clear_pending(signal_id)
+            failed = dict(submitting)
+            failed.update({
+                "status": "FAILED_RECOVERABLE",
+                "last_error": "CIRCUIT_BREAKER_OPEN",
+                "updated_at": datetime.now(SAST).strftime("%Y-%m-%d %H:%M:%S SAST"),
+            })
+            _save_execution_state(failed)
+            return "Circuit breaker OPEN. Order not confirmed; execution remains recoverable."
 
         if result["status"] == "SUCCESS":
             order_id = result["data"].get("orderId", "unknown")
+            executed = dict(submitting)
+            executed.update({
+                "status": "EXECUTED",
+                "order_id": order_id,
+                "updated_at": datetime.now(SAST).strftime("%Y-%m-%d %H:%M:%S SAST"),
+            })
+            _save_execution_state(executed)
+            clear_pending(signal_id)
             return (
-                f"✅ *{plan['symbol']}* order placed\n"
-                f"Order ID: `{order_id}`\n"
+                f"Order placed for {plan['symbol']}\n"
+                f"Order ID: {order_id}\n"
                 f"Side: {plan['direction']} | Qty: {plan['qty']}\n"
-                f"SL: `{plan['sl']}` | TP1: `{plan['tp1']}`"
+                f"SL: {plan['sl']} | TP1: {plan['tp1']}"
             )
-        else:
-            reason = result.get("reason", "UNKNOWN")
-            code   = result.get("code", "")
-            err    = f"{reason} (code {code})" if code else reason
-            return f"❌ Order failed: `{err}`"
+
+        reason = result.get("reason", "UNKNOWN")
+        code = result.get("code", "")
+        err = f"{reason} (code {code})" if code else reason
+        terminal = reason == "FATAL_API_ERROR"
+        failed = dict(submitting)
+        failed.update({
+            "status": "FAILED_FATAL" if terminal else "FAILED_RECOVERABLE",
+            "last_error": err,
+            "updated_at": datetime.now(SAST).strftime("%Y-%m-%d %H:%M:%S SAST"),
+        })
+        _save_execution_state(failed)
+        if terminal:
+            return f"Order failed: {err}"
+        return f"Order failed but remains recoverable: {err}"
 
     def skip(self, signal_id: str) -> str:
         signal_id = signal_id.strip()
         plan = load_pending(signal_id)
+        state = load_execution_state(signal_id)
+        if state.get("status") == "EXECUTED":
+            return "Signal already executed; skip is not applicable."
         if not plan:
-            return f"ℹ️ No pending trade for signal *{signal_id}*."
+            return f"No pending trade for signal {signal_id}."
+        if plan.get("signal_id") != signal_id:
+            return "Signal identity mismatch. Skip refused."
         clear_pending(signal_id)
+        skipped = {
+            "signal_id": signal_id,
+            "symbol": plan.get("symbol"),
+            "status": "SKIPPED",
+            "order_client_id": state.get("order_client_id") or execution_order_client_id(signal_id),
+            "updated_at": datetime.now(SAST).strftime("%Y-%m-%d %H:%M:%S SAST"),
+        }
+        _save_execution_state(skipped)
         print(f"[EXEC] {plan.get('symbol')}: trade skipped by signal {signal_id}")
-        return f"⏭️ *{plan.get('symbol')}* trade skipped and cleared."
+        return f"{plan.get('symbol')} trade skipped and cleared."
