@@ -99,6 +99,52 @@ class Pass18ExecutionTransactionTest(unittest.TestCase):
             "FAILED_RECOVERABLE",
         )
 
+    def test_recoverable_failure_can_retry_with_same_order_identity(self):
+        memory = {
+            "_pending_trades": {self.plan["signal_id"]: self.plan},
+            "_execution_state": {},
+        }
+        with patch("core.memory.load", return_value=memory),              patch("core.memory.save"),              patch("agents.execution_agent._executor") as executor,              patch("agents.execution_agent._send"):
+            executor.place_order_safe.side_effect = [
+                {"status": "FAILED", "reason": "MAX_RETRIES_EXCEEDED"},
+                {"status": "SUCCESS", "data": {"orderId": "ORDER_RECOVERED"}},
+            ]
+            first = ExecutionAgent("BTCUSD").approve(self.plan["signal_id"])
+            first_params = executor.place_order_safe.call_args_list[0].args[0].copy()
+            second = ExecutionAgent("BTCUSD").approve(self.plan["signal_id"])
+            second_params = executor.place_order_safe.call_args_list[1].args[0].copy()
+
+        self.assertIn("recoverable", first.lower())
+        self.assertIn("order placed", second.lower())
+        self.assertEqual(first_params["orderClientId"], second_params["orderClientId"])
+        self.assertEqual(memory["_execution_state"][self.plan["signal_id"]]["status"], "EXECUTED")
+
+    def test_executor_network_recovery_reuses_supplied_order_identity(self):
+        from agents.bybit_order_executor import BybitOrderExecutor
+
+        client = MagicMock()
+        client.place_order.side_effect = ConnectionError("network drop")
+        client.get_open_orders.return_value = {
+            "retCode": 0,
+            "result": {"list": [{"orderId": "ORDER_RECOVERED", "orderLinkId": execution_order_client_id(self.plan["signal_id"])}]},
+        }
+        executor = BybitOrderExecutor(client=client, max_retries=2, base_delay=0.001)
+        params = {
+            "category": "linear",
+            "symbol": "BTCUSDT",
+            "side": "Buy",
+            "orderClientId": execution_order_client_id(self.plan["signal_id"]),
+        }
+
+        result = executor.place_order_safe(params)
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["data"]["orderId"], "ORDER_RECOVERED")
+        self.assertEqual(
+            client.place_order.call_args.args[0]["orderClientId"],
+            execution_order_client_id(self.plan["signal_id"]),
+        )
+
     def test_fatal_failure_is_persisted_and_not_cleared(self):
         memory = {
             "_pending_trades": {self.plan["signal_id"]: self.plan},
