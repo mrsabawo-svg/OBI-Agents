@@ -168,7 +168,8 @@ class LifecycleAgent:
                 target_hit = low <= tp1
                 if stop_hit and target_hit:
                     trade["resolution_note"] = "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"
-                    return False
+                    trade["lifecycle_event"] = "AMBIGUOUS"
+                    return True
                 if target_hit:
                     trade["tp1_hit"] = True
                     trade["outcome"] = "PENDING"
@@ -179,7 +180,8 @@ class LifecycleAgent:
                 target_hit = low <= tp2
                 if stop_hit and target_hit:
                     trade["resolution_note"] = "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"
-                    return bool(trade.get("tp1_hit"))
+                    trade["lifecycle_event"] = "AMBIGUOUS"
+                    return True
                 if target_hit:
                     trade["tp2_hit"] = True
                     trade["outcome"] = "PENDING"
@@ -190,7 +192,8 @@ class LifecycleAgent:
                 target_hit = low <= tp3
                 if stop_hit and target_hit:
                     trade["resolution_note"] = "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"
-                    return bool(trade.get("tp1_hit") or trade.get("tp2_hit"))
+                    trade["lifecycle_event"] = "AMBIGUOUS"
+                    return True
                 if target_hit:
                     trade["tp3_hit"] = True
                     self._close(trade, "TP3", now)
