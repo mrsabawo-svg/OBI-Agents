@@ -50,7 +50,5 @@ class IntelligenceAgent:
             "edge":            payload.get("edge", {}),
         }
 
-        PersistenceAgent(self.symbol).save(result, payload)
-        NotifierAgent(self.symbol).send(result, narrative)
-
+        result["narrative"] = narrative
         return result
