@@ -72,6 +72,10 @@ class LifecycleAgent:
         return True
 
     def _apply_candle(self, trade: dict, high: float, low: float, now: datetime) -> bool:
+        # Closed records are terminal. Reprocessing an old candle must be a no-op.
+        if trade.get("status") == "CLOSED":
+            return False
+        changed = False
         """
         Apply one OHLC candle to the lifecycle state machine.
 
@@ -98,6 +102,7 @@ class LifecycleAgent:
                 if target_hit:
                     trade["tp1_hit"] = True
                     trade["outcome"] = "PENDING"
+                    changed = True
                     print("[LIFECYCLE] " + str(trade.get("id", "")) + ": TP1 milestone")
                     # Continue through later targets if this same candle reached them.
             if trade.get("tp1_hit") and not trade.get("tp2_hit"):
@@ -108,6 +113,7 @@ class LifecycleAgent:
                 if target_hit:
                     trade["tp2_hit"] = True
                     trade["outcome"] = "PENDING"
+                    changed = True
                     print("[LIFECYCLE] " + str(trade.get("id", "")) + ": TP2 milestone")
             if trade.get("tp2_hit") and not trade.get("tp3_hit"):
                 target_hit = high >= tp3
@@ -121,7 +127,7 @@ class LifecycleAgent:
             if stop_hit and not trade.get("status") == "CLOSED":
                 self._close(trade, "SL", now)
                 return True
-            return bool(trade.get("tp1_hit") or trade.get("tp2_hit"))
+            return changed
 
         if direction == "SELL":
             stop_hit = high >= sl
@@ -155,7 +161,7 @@ class LifecycleAgent:
             if stop_hit and not trade.get("status") == "CLOSED":
                 self._close(trade, "SL", now)
                 return True
-            return bool(trade.get("tp1_hit") or trade.get("tp2_hit"))
+            return changed
 
         return False
 
