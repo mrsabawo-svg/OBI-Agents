@@ -21,6 +21,9 @@ from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
+from agents.chief_agent        import ChiefAgent
+from core.models               import SymbolContext
+from core.memory               import load as load_memory
 from core.utils                import sast_str
 
 SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
@@ -119,8 +122,13 @@ if __name__ == "__main__":
     news = NewsAgent().is_safe()
     LifecycleAgent().check_open_signals()
 
+    memory = load_memory() or {}
+    context = SymbolContext.from_memory(memory, SYMBOLS)
+    chief = ChiefAgent(context)
+    decision = chief.decide("full_scan")
+    print("[MAIN] Chief scan order: " + ", ".join(decision["symbols"]))
     results = {}
-    for symbol in SYMBOLS:
+    for symbol in decision["symbols"]:
         results[symbol] = run(symbol, news)
 
     HealthAgent().check(results)
