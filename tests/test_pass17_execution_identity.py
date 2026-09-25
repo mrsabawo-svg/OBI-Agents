@@ -96,7 +96,7 @@ class Pass17ExecutionIdentityTest(unittest.TestCase):
 
             result = agent.approve(self.plan_b["signal_id"])
 
-        self.assertIn("order placed", result)
+        self.assertIn("Order placed", result)
         executor.place_order_safe.assert_called_once()
         order_params = executor.place_order_safe.call_args.args[0]
         self.assertEqual(order_params["symbol"], "BTCUSDT")
