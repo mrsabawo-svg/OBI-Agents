@@ -13,6 +13,7 @@ from core.memory import load as load_memory, save as save_memory
 
 SAST = pytz.timezone("Africa/Johannesburg")
 EXPIRY_HOURS = 48
+REPLAY_DAYS = 7
 
 SYMBOL_MAP = {
     "XAUUSD": "GC=F",
@@ -230,7 +231,7 @@ class LifecycleAgent:
 
         try:
             df = yf.download(
-                ticker, period="7d", interval="5m",
+                ticker, period=str(REPLAY_DAYS) + "d", interval="5m",
                 progress=False, auto_adjust=True, threads=False
             )
             if df is None or df.empty:
