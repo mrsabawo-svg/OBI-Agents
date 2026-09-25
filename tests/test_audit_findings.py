@@ -143,7 +143,6 @@ class AuditFindingsRegressionTests(unittest.TestCase):
             poll_and_process()
         route.assert_called_once()
         save_offset.assert_called_once_with(8, 7)
-        self.assertLess(route.call_args_list[0].__class__.__name__ == "never", 1)
 
 if __name__ == "__main__":
     unittest.main()
