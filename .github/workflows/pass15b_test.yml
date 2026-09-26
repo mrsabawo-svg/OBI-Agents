@@ -56,3 +56,4 @@ jobs:
         run: python -m unittest tests/test_memory_transaction.py
 
 # Audit remediation regression boundary updated 2026-09-25.
+# OTMP verification trigger: 2026-09-26.
