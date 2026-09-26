@@ -1,3 +1,6 @@
+import os
+os.environ.setdefault("TELEGRAM_BOT_TOKEN", "TEST_TOKEN")
+os.environ.setdefault("TELEGRAM_CHAT_ID", "TEST_CHAT")
 import unittest
 from unittest.mock import patch, MagicMock
 from agents.lifecycle_agent import LifecycleAgent, SAST
@@ -112,6 +115,7 @@ class AuditFindingsRegressionTests(unittest.TestCase):
     @patch("main.SessionAgent")
     @patch("main.DataAgent")
     def test_duplicate_rejection_stops_execution(self, data, session, htf, regime, mtf, bias, zone, ltf, trigger, edge, score, intelligence, execution):
+        data.return_value.fetch.return_value = {"5m": []}
         session.return_value.analyse.return_value = {"tradeable": True}
         bias.return_value.evaluate.return_value.approved = True
         trigger.return_value.evaluate.return_value.fire = True
