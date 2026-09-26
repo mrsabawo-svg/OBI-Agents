@@ -88,7 +88,7 @@ class Pass17ExecutionIdentityTest(unittest.TestCase):
                 self.plan_a["signal_id"]: self.plan_a,
                 self.plan_b["signal_id"]: self.plan_b,
             }.get(signal_id, {}),
-        ),              patch("agents.execution_agent._executor") as executor,              patch("agents.execution_agent.clear_pending"),              patch("agents.execution_agent._send"):
+        ),              patch("agents.execution_agent._executor") as executor,              patch("agents.execution_agent.clear_pending"),              patch("agents.execution_agent.load_execution_state", return_value={}),              patch("agents.execution_agent._save_execution_state"),              patch("agents.execution_agent._send"):
             executor.place_order_safe.return_value = {
                 "status": "SUCCESS",
                 "data": {"orderId": "ORDER_17"},
@@ -110,7 +110,7 @@ class Pass17ExecutionIdentityTest(unittest.TestCase):
         with patch(
             "agents.execution_agent.load_pending",
             return_value=self.plan_b,
-        ),              patch("agents.execution_agent._executor") as executor:
+        ),              patch("agents.execution_agent.load_execution_state", return_value={}),              patch("agents.execution_agent._executor") as executor:
             result = agent.approve(self.plan_b["signal_id"])
 
         self.assertIn("Signal symbol mismatch", result)
