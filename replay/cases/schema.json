@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OBI Direction Replay Case",
+  "type": "object",
+  "required": ["schema_version", "case_id", "symbol", "opened", "agent_inputs", "expected"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "case_id": {"type": "string", "minLength": 1},
+    "symbol": {"type": "string", "minLength": 1},
+    "opened": {"type": "string", "minLength": 1},
+    "market_data": {"type": "object"},
+    "agent_inputs": {
+      "type": "object",
+      "required": ["htf", "mtf", "ltf", "zone", "session", "regime"],
+      "properties": {
+        "htf": {"type": "object"},
+        "mtf": {"type": "object"},
+        "ltf": {"type": "object"},
+        "zone": {"type": "object"},
+        "session": {"type": "object"},
+        "regime": {"type": "object"}
+      }
+    },
+    "expected": {"type": "object"}
+  }
+}
