@@ -10,6 +10,7 @@ import yfinance as yf
 from datetime import datetime
 import pytz
 from core.memory import load as load_memory, save as save_memory
+from core.market_data_contract import CONTRACTS, get_contract
 
 SAST = pytz.timezone("Africa/Johannesburg")
 EXPIRY_HOURS = 48
@@ -208,7 +209,7 @@ class LifecycleAgent:
 
     def _check_trade(self, trade: dict, now: datetime) -> bool:
         symbol = trade.get("symbol")
-        ticker = SYMBOL_MAP.get(symbol, symbol)
+        ticker = get_contract(symbol).source
 
         opened_str = trade.get("opened", "")
         if opened_str:
