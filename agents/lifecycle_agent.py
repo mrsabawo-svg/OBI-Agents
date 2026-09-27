@@ -90,7 +90,14 @@ class LifecycleAgent:
             df = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True, threads=False)
             if df is None or df.empty:
                 return False
-            current = float(df["Close"].squeeze().iloc[-1])
+            close = df["Close"]
+            last_close = close.iloc[-1]
+            # yfinance can return either a Series (single-level columns) or a
+            # one-row Series from a one-column DataFrame (MultiIndex columns).
+            # Normalize both shapes to the same scalar price.
+            if hasattr(last_close, "iloc"):
+                last_close = last_close.iloc[0]
+            current = float(last_close)
         except Exception as e:
             print("[LIFECYCLE] Price fetch error for " + str(symbol) + ": " + str(e))
             return False
