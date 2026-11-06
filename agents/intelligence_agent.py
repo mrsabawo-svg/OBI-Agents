@@ -22,7 +22,7 @@ class IntelligenceAgent:
             print("[INTEL] " + self.symbol + ": DUPLICATE BLOCKED")
             return {}
 
-        memory   = load_memory()
+        memory   = load_memory() or {}
         accuracy = memory.get(self.symbol, {}).get("accuracy", "No history yet")
 
         review    = reviewer.review(payload, accuracy)

@@ -17,7 +17,7 @@ class PersistenceAgent:
         self.symbol = symbol
 
     def save(self, result: dict, payload: dict) -> None:
-        memory = load_memory()
+        memory = load_memory() or {}
         self._update_memory(memory, result, payload)
         self._push_to_gist(result)
 

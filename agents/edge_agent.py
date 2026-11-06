@@ -14,7 +14,7 @@ class EdgeAgent:
     def analyse(self, trigger: TriggerResult, bias, regime: dict) -> EdgeResult:
         print("[EDGE] Analysing edge for " + self.symbol)
         try:
-            memory  = load_memory()
+            memory  = load_memory() or {}
             archive = memory.get("_archive", [])
             closed  = [t for t in archive if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"]
 

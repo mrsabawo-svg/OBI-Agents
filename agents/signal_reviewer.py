@@ -21,7 +21,7 @@ class SignalReviewer:
 
     def is_duplicate(self, payload: dict) -> bool:
         try:
-            memory    = load_memory()
+            memory    = load_memory() or {}
             archive   = memory.get("_archive", [])
             new_entry = float(payload["trigger"].entry)
             now       = datetime.now(SAST)
