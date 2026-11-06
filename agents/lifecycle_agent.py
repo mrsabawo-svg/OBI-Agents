@@ -135,20 +135,29 @@ class LifecycleAgent:
         changed = False
 
         if direction == "BUY":
-            # Intrabar detection: High checks upward targets, Low checks stop loss
-            if high_val >= tp1 and not trade.get("tp1_hit"):
+            # Intrabar detection: check for ambiguous same-candle target and stop breach
+            tp_breached = high_val >= tp1
+            sl_breached = low_val <= sl
+
+            if tp_breached and sl_breached:
+                trade["status"] = "CLOSED"
+                trade["outcome"] = "AMBIGUOUS"
+                trade["resolution_note"] = "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"
+                trade["closed"] = now.strftime("%Y-%m-%d %H:%M SAST")
+                changed = True
+            elif high_val >= tp1 and not trade.get("tp1_hit"):
                 trade["tp1_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP1"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if not trade.get("status") == "CLOSED" and high_val >= tp2 and not trade.get("tp2_hit"):
+            elif not trade.get("status") == "CLOSED" and high_val >= tp2 and not trade.get("tp2_hit"):
                 trade["tp2_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP2"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if not trade.get("status") == "CLOSED" and high_val >= tp3:
+            elif not trade.get("status") == "CLOSED" and high_val >= tp3:
                 trade["tp3_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP3"
@@ -161,20 +170,29 @@ class LifecycleAgent:
                 changed = True
 
         elif direction == "SELL":
-            # Intrabar detection: Low checks downward targets, High checks stop loss
-            if low_val <= tp1 and not trade.get("tp1_hit"):
+            # Intrabar detection: check for ambiguous same-candle target and stop breach
+            tp_breached = low_val <= tp1
+            sl_breached = high_val >= sl
+
+            if tp_breached and sl_breached:
+                trade["status"] = "CLOSED"
+                trade["outcome"] = "AMBIGUOUS"
+                trade["resolution_note"] = "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"
+                trade["closed"] = now.strftime("%Y-%m-%d %H:%M SAST")
+                changed = True
+            elif low_val <= tp1 and not trade.get("tp1_hit"):
                 trade["tp1_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP1"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if not trade.get("status") == "CLOSED" and low_val <= tp2 and not trade.get("tp2_hit"):
+            elif not trade.get("status") == "CLOSED" and low_val <= tp2 and not trade.get("tp2_hit"):
                 trade["tp2_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP2"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if not trade.get("status") == "CLOSED" and low_val <= tp3:
+            elif not trade.get("status") == "CLOSED" and low_val <= tp3:
                 trade["tp3_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP3"

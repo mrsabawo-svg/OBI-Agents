@@ -130,6 +130,46 @@ class Pass12BLifecycleTest(unittest.TestCase):
         self.assertEqual(final["_archive"][0]["status"], "CLOSED")
         self.assertEqual(final["_archive"][0]["outcome"], "TP1")
 
+    def test_ambiguous_same_candle_breach_is_marked_deterministically(self):
+        lifecycle = LifecycleAgent()
+        now = SAST.localize(datetime.strptime("2026-09-24 06:30", "%Y-%m-%d %H:%M"))
+        trade = {
+            "id": "PASS12B_AMB_001",
+            "symbol": "BTCUSD",
+            "direction": "BUY",
+            "entry": 100.0,
+            "sl": 90.0,
+            "tp1": 110.0,
+            "tp2": 120.0,
+            "tp3": 130.0,
+            "status": "OPEN",
+        }
+
+        class CandleValues:
+            empty = False
+            def __init__(self, high, low, close):
+                self._map = {
+                    "High": high,
+                    "Low": low,
+                    "Close": close,
+                }
+            def __getitem__(self, key):
+                class Value:
+                    def __init__(self, val):
+                        self.iloc = [val]
+                    def squeeze(self):
+                        return self
+                return Value(self._map[key])
+
+        # High breaches TP1 (115 >= 110), Low breaches SL (85 <= 90) in same candle
+        with patch("agents.lifecycle_agent.yf.download", return_value=CandleValues(115.0, 85.0, 100.0)):
+            changed = lifecycle._check_trade(trade, now)
+
+        self.assertTrue(changed)
+        self.assertEqual(trade["status"], "CLOSED")
+        self.assertEqual(trade["outcome"], "AMBIGUOUS")
+        self.assertEqual(trade["resolution_note"], "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP")
+
 
 if __name__ == "__main__":
     unittest.main()
