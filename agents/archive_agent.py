@@ -143,6 +143,8 @@ class ArchiveAgent:
             "htf_conf": htf.get("confidence"),
             "bias_score": bias_score,
             "bias_factors": bias_factors,
+            "factors": bias_factors,
+            "obi_score": (score.confidence if hasattr(score, "confidence") else score.get("confidence") if isinstance(score, dict) else None),
             "bos": mtf.get("bos"),
             "sweep": mtf.get("sweep"),
             "ob": mtf.get("order_block"),

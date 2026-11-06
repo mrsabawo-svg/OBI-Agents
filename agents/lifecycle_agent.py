@@ -90,28 +90,44 @@ class LifecycleAgent:
             df = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True, threads=False)
             if df is None or df.empty:
                 return False
-            close = df["Close"]
-            if hasattr(close, "squeeze"):
-                squeezed = close.squeeze()
-                if hasattr(squeezed, "iloc"):
-                    last_val = squeezed.iloc[-1]
-                    if hasattr(last_val, "iloc"):
-                        last_val = last_val.iloc[0]
-                    current = float(last_val)
-                elif hasattr(close, "iloc"):
-                    last_val = close.iloc[-1]
-                    if hasattr(last_val, "iloc"):
-                        last_val = last_val.iloc[0]
-                    current = float(last_val)
-                else:
-                    current = float(squeezed)
-            elif hasattr(close, "iloc"):
-                last_val = close.iloc[-1]
-                if hasattr(last_val, "iloc"):
-                    last_val = last_val.iloc[0]
-                current = float(last_val)
-            else:
-                current = float(close)
+
+            # Extract high, low, close defensively to support intrabar candle evaluation
+            def _extract_scalar(series_or_df):
+                if hasattr(series_or_df, "squeeze"):
+                    s = series_or_df.squeeze()
+                    if hasattr(s, "iloc"):
+                        v = s.iloc[-1]
+                        return float(v.iloc[0]) if hasattr(v, "iloc") else float(v)
+                    return float(s)
+                elif hasattr(series_or_df, "iloc"):
+                    v = series_or_df.iloc[-1]
+                    return float(v.iloc[0]) if hasattr(v, "iloc") else float(v)
+                return float(series_or_df)
+
+            has_high = False
+            has_low = False
+            try:
+                high_val = _extract_scalar(df["High"])
+                has_high = True
+            except Exception:
+                high_val = None
+
+            try:
+                low_val = _extract_scalar(df["Low"])
+                has_low = True
+            except Exception:
+                low_val = None
+
+            try:
+                close_val = _extract_scalar(df["Close"])
+            except Exception:
+                close_val = None
+
+            if not has_high or high_val is None:
+                high_val = close_val
+            if not has_low or low_val is None:
+                low_val = close_val
+
         except Exception as e:
             print("[LIFECYCLE] Price fetch error for " + str(symbol) + ": " + str(e))
             return False
@@ -119,57 +135,59 @@ class LifecycleAgent:
         changed = False
 
         if direction == "BUY":
-            if current >= tp1 and not trade.get("tp1_hit"):
+            # Intrabar detection: High checks upward targets, Low checks stop loss
+            if high_val >= tp1 and not trade.get("tp1_hit"):
                 trade["tp1_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP1"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if not trade.get("status") == "CLOSED" and current >= tp2 and not trade.get("tp2_hit"):
+            if not trade.get("status") == "CLOSED" and high_val >= tp2 and not trade.get("tp2_hit"):
                 trade["tp2_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP2"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if not trade.get("status") == "CLOSED" and current >= tp3:
+            if not trade.get("status") == "CLOSED" and high_val >= tp3:
                 trade["tp3_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP3"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            elif not trade.get("status") == "CLOSED" and current <= sl:
+            elif not trade.get("status") == "CLOSED" and low_val <= sl:
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "SL"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
 
         elif direction == "SELL":
-            if current <= tp1 and not trade.get("tp1_hit"):
+            # Intrabar detection: Low checks downward targets, High checks stop loss
+            if low_val <= tp1 and not trade.get("tp1_hit"):
                 trade["tp1_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP1"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if not trade.get("status") == "CLOSED" and current <= tp2 and not trade.get("tp2_hit"):
+            if not trade.get("status") == "CLOSED" and low_val <= tp2 and not trade.get("tp2_hit"):
                 trade["tp2_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP2"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            if not trade.get("status") == "CLOSED" and current <= tp3:
+            if not trade.get("status") == "CLOSED" and low_val <= tp3:
                 trade["tp3_hit"] = True
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "TP3"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
-            elif not trade.get("status") == "CLOSED" and current >= sl:
+            elif not trade.get("status") == "CLOSED" and high_val >= sl:
                 trade["status"]  = "CLOSED"
                 trade["outcome"] = "SL"
                 trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
                 changed = True
 
         if changed and trade.get("status") == "CLOSED":
-            print("[LIFECYCLE] " + symbol + " " + trade.get("id", "") + ": " + trade.get("outcome") + " @ " + str(current))
+            print("[LIFECYCLE] " + symbol + " " + trade.get("id", "") + ": " + trade.get("outcome") + " @ H:" + str(high_val) + "/L:" + str(low_val))
 
         return changed
 

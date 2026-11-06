@@ -57,6 +57,8 @@ class Pass12BLifecycleTest(unittest.TestCase):
         self.assertEqual(trade["id"], payload["id"])
         self.assertEqual(trade["grade"], "A+")
         self.assertEqual(trade["trigger_grade"], "C")
+        self.assertEqual(trade["factors"], ["HTF", "MTF"])
+        self.assertEqual(trade["obi_score"], 88)
         self.assertEqual(trade["status"], "OPEN")
         self.assertEqual(trade["outcome"], "PENDING")
 

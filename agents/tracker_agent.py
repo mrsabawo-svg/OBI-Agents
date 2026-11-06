@@ -23,95 +23,15 @@ SYMBOL_MAP = {
     "NASDAQ": "NQ=F",
 }
 
+from agents.lifecycle_agent import LifecycleAgent
+
 def check_outcome(symbol: str, ticker: str):
+    """
+    Compatibility wrapper delegating exclusively to LifecycleAgent.
+    Eliminates competing lifecycle implementations.
+    """
     try:
-        memory  = load_memory()
-        archive = memory.get("_archive", [])
-
-        open_trades = [
-            t for t in archive
-            if t.get("symbol") == symbol and t.get("status") == "OPEN"
-        ]
-
-        if not open_trades:
-            return
-
-        df = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True, threads=False)
-        if df is None or df.empty:
-            return
-
-        current = float(df["Close"].squeeze().iloc[-1])
-        now     = datetime.now(SAST)
-        changed = False
-
-        for trade in open_trades:
-            direction = trade.get("direction")
-            entry     = float(trade.get("entry", 0))
-            sl        = float(trade.get("sl", 0))
-            tp1       = float(trade.get("tp1", 0))
-            tp2       = float(trade.get("tp2", 0))
-            tp3       = float(trade.get("tp3", 0))
-
-            # Check expiry first
-            opened_str = trade.get("opened", "")
-            if opened_str:
-                try:
-                    opened = datetime.strptime(opened_str.replace(" SAST", ""), "%Y-%m-%d %H:%M")
-                    opened = SAST.localize(opened)
-                    hours_open = (now - opened).total_seconds() / 3600
-                    if hours_open >= EXPIRY_HOURS:
-                        trade["status"]  = "CLOSED"
-                        trade["outcome"] = "EXPIRED"
-                        trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
-                        changed = True
-                        print("[TRACKER] " + symbol + ": EXPIRED after " + str(round(hours_open, 1)) + "h")
-                        continue
-                except:
-                    pass
-
-            if direction == "BUY":
-                if current >= tp1 and not trade.get("tp1_hit"):
-                    trade["tp1_hit"] = True
-                    changed = True
-                if current >= tp2 and not trade.get("tp2_hit"):
-                    trade["tp2_hit"] = True
-                    changed = True
-                if current >= tp3:
-                    trade["tp3_hit"] = True
-                    trade["status"]  = "CLOSED"
-                    trade["outcome"] = "TP3"
-                    trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
-                    changed = True
-                elif current <= sl:
-                    trade["status"]  = "CLOSED"
-                    trade["outcome"] = "SL"
-                    trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
-                    changed = True
-
-            elif direction == "SELL":
-                if current <= tp1 and not trade.get("tp1_hit"):
-                    trade["tp1_hit"] = True
-                    changed = True
-                if current <= tp2 and not trade.get("tp2_hit"):
-                    trade["tp2_hit"] = True
-                    changed = True
-                if current <= tp3:
-                    trade["tp3_hit"] = True
-                    trade["status"]  = "CLOSED"
-                    trade["outcome"] = "TP3"
-                    trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
-                    changed = True
-                elif current >= sl:
-                    trade["status"]  = "CLOSED"
-                    trade["outcome"] = "SL"
-                    trade["closed"]  = now.strftime("%Y-%m-%d %H:%M SAST")
-                    changed = True
-
-        if changed:
-            _rebuild_stats(memory, symbol)
-            save_memory(memory)
-            print("[TRACKER] " + symbol + ": stats rebuilt from archive")
-
+        LifecycleAgent().check_open_signals()
     except Exception as e:
         print("[TRACKER] " + symbol + " error: " + str(e))
 
