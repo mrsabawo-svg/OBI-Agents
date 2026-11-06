@@ -23,12 +23,15 @@ class EdgeAgent:
                 return EdgeResult.default(len(closed))
 
             symbol_wr = self._win_rate([t for t in closed if t.get("symbol") == self.symbol])
-            grade_wr  = self._win_rate([t for t in closed if t.get("grade") == trigger.grade])
             regime_wr = self._win_rate([t for t in closed if t.get("regime") == regime.get("label")])
             tag_wr    = self._win_rate([t for t in closed if any(tag in t.get("tags", []) for tag in trigger.tags)])
             overall   = self._win_rate(closed)
 
-            print("[EDGE] " + self.symbol + ": sym=" + str(symbol_wr) + "% grade=" + str(grade_wr) + "% regime=" + str(regime_wr) + "%")
+            # Pass 10 invariant: decouple EdgeAgent historical lookup from the current trigger's grade
+            # to prevent circular dependency trapping signals in C and D grade loops.
+            grade_wr  = overall
+
+            print("[EDGE] " + self.symbol + ": sym=" + str(symbol_wr) + "% regime=" + str(regime_wr) + "% overall=" + str(overall) + "%")
 
             return EdgeResult(
                 symbol_wr=symbol_wr,
