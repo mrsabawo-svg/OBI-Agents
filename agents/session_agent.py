@@ -5,18 +5,24 @@ Only fires signals during high-probability kill zones.
 """
 from core.utils import now_sast, is_kill_zone
 
-CRYPTO_SYMBOLS = {"BTCUSD", "ETHUSD", "SOLUSD"}
+CRYPTO_SYMBOLS    = {"BTCUSD", "ETHUSD", "SOLUSD"}
+SYNTHETIC_SYMBOLS = {"PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"}
 
 SYMBOL_SESSIONS = {
-    "XAUUSD":  ["London Open", "New York Open"],
-    "EURUSD":  ["London Open", "New York Open"],
-    "USDJPY":  ["London Open", "New York Open", "Asian Session"],
-    "GBPJPY":  ["London Open", "New York Open"],
-    "GBPUSD":  ["London Open", "New York Open"],
-    "NASDAQ":  ["New York Open"],
-    "BTCUSD":  ["London Open", "New York Open", "Asian Session"],
-    "ETHUSD":  ["London Open", "New York Open", "Asian Session"],
-    "SOLUSD":  ["London Open", "New York Open", "Asian Session"],
+    "XAUUSD":      ["London Open", "New York Open"],
+    "EURUSD":      ["London Open", "New York Open"],
+    "USDJPY":      ["London Open", "New York Open", "Asian Session"],
+    "GBPJPY":      ["London Open", "New York Open"],
+    "GBPUSD":      ["London Open", "New York Open"],
+    "NASDAQ":      ["New York Open"],
+    "BTCUSD":      ["London Open", "New York Open", "Asian Session"],
+    "ETHUSD":      ["London Open", "New York Open", "Asian Session"],
+    "SOLUSD":      ["London Open", "New York Open", "Asian Session"],
+    "PAIN_999":    ["London Open", "New York Open", "Asian Session", "London Close"],
+    "GAIN_999":    ["London Open", "New York Open", "Asian Session", "London Close"],
+    "PAIN_1200":   ["London Open", "New York Open", "Asian Session", "London Close"],
+    "GAIN_1200":   ["London Open", "New York Open", "Asian Session", "London Close"],
+    "SFX_VOL_75":  ["London Open", "New York Open", "Asian Session", "London Close"],
 }
 
 class SessionAgent:
@@ -30,12 +36,14 @@ class SessionAgent:
             hour      = now.hour
             weekday   = now.weekday()
 
-            # Weekends: crypto trades 24/7, forex/indices closed
-            if weekday >= 5 and self.symbol not in CRYPTO_SYMBOLS:
+            is_always_on = self.symbol in CRYPTO_SYMBOLS or self.symbol in SYNTHETIC_SYMBOLS
+
+            # Weekends: crypto and synthetics trade 24/7, forex/indices closed
+            if weekday >= 5 and not is_always_on:
                 return self._build(False, "Weekend — market closed", kill_zone)
 
-            # Dead hours block: only applies to non-crypto
-            if hour == 23 and self.symbol not in CRYPTO_SYMBOLS:
+            # Dead hours block: only applies to traditional forex/indices
+            if hour == 23 and not is_always_on:
                 return self._build(False, "Dead hours — no liquidity", kill_zone)
 
             preferred = SYMBOL_SESSIONS.get(self.symbol, ["London Open", "New York Open"])
@@ -44,7 +52,10 @@ class SessionAgent:
                 reason = f"{kill_zone['name']} — optimal for {self.symbol}"
                 return self._build(True, reason, kill_zone)
 
-            # Crypto: always tradeable outside weekends
+            # Crypto & Synthetics: always tradeable 24/7
+            if self.symbol in SYNTHETIC_SYMBOLS:
+                return self._build(True, "Synthetic — 24/7 tradeable", kill_zone)
+
             if self.symbol in CRYPTO_SYMBOLS:
                 return self._build(True, "Crypto — 24/7 tradeable", kill_zone)
 

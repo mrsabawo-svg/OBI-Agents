@@ -22,7 +22,11 @@ from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
 from core.utils                import sast_str
 
-SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
+SYMBOLS = [
+    "XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD",
+    "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ",
+    "PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"
+]
 ALL_TF  = ["4h", "1h", "15m", "5m"]
 
 def run(symbol: str, news: dict = None) -> dict:
