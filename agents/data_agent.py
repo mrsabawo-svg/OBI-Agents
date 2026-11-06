@@ -9,7 +9,7 @@ import ta as ta_lib
 yf.set_tz_cache_location("/tmp/yfinance_cache")
 
 SYMBOL_MAP = {
-    "XAUUSD": "GLD",
+    "XAUUSD": "GC=F",
     "EURUSD": "EURUSD=X",
     "USDJPY": "USDJPY=X",
     "GBPJPY": "GBPJPY=X",
@@ -17,7 +17,7 @@ SYMBOL_MAP = {
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
     "SOLUSD": "SOL-USD",
-    "NASDAQ": "QQQ",
+    "NASDAQ": "NQ=F",
 }
 
 # yfinance hard limits:
