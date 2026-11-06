@@ -12,7 +12,7 @@ SAST = pytz.timezone("Africa/Johannesburg")
 EXPIRY_HOURS = 48
 
 SYMBOL_MAP = {
-    "XAUUSD": "GLD",
+    "XAUUSD": "GC=F",
     "EURUSD": "EURUSD=X",
     "USDJPY": "USDJPY=X",
     "GBPJPY": "GBPJPY=X",
@@ -20,7 +20,7 @@ SYMBOL_MAP = {
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
     "SOLUSD": "SOL-USD",
-    "NASDAQ": "QQQ",
+    "NASDAQ": "NQ=F",
 }
 
 def check_outcome(symbol: str, ticker: str):

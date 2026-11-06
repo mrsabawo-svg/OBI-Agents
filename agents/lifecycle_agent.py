@@ -90,7 +90,28 @@ class LifecycleAgent:
             df = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True, threads=False)
             if df is None or df.empty:
                 return False
-            current = float(df["Close"].squeeze().iloc[-1])
+            close = df["Close"]
+            if hasattr(close, "squeeze"):
+                squeezed = close.squeeze()
+                if hasattr(squeezed, "iloc"):
+                    last_val = squeezed.iloc[-1]
+                    if hasattr(last_val, "iloc"):
+                        last_val = last_val.iloc[0]
+                    current = float(last_val)
+                elif hasattr(close, "iloc"):
+                    last_val = close.iloc[-1]
+                    if hasattr(last_val, "iloc"):
+                        last_val = last_val.iloc[0]
+                    current = float(last_val)
+                else:
+                    current = float(squeezed)
+            elif hasattr(close, "iloc"):
+                last_val = close.iloc[-1]
+                if hasattr(last_val, "iloc"):
+                    last_val = last_val.iloc[0]
+                current = float(last_val)
+            else:
+                current = float(close)
         except Exception as e:
             print("[LIFECYCLE] Price fetch error for " + str(symbol) + ": " + str(e))
             return False
