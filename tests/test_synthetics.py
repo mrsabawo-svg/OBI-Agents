@@ -53,24 +53,34 @@ def test_synthetic_session_rules():
 
 def test_chief_agent_synthetics_prioritisation():
     context = SymbolContext()
-    # Mock context to give a synthetic high confidence so it appears in top3 of brief
-    context.last_confidence["PAIN_999"] = 95
-    chief = ChiefAgent(context)
-    chief.weekday = 5  # Saturday
-    decision = chief.decide("full_scan")
-    ranked = decision["symbols"]
-    priority = decision["priority"]
+    # Mock context to give a synthetic top confidence so it appears in top3 of brief
+    context.last_confidence["PAIN_999"] = 100
+    # Freeze time during Asian Session when SFX_VOL_75 is also in SESSION_PRIORITY
+    fixed_time = SAST.localize(datetime(2025, 3, 1, 3, 0))  # Saturday 03:00 SAST
+    with patch("agents.chief_agent.datetime") as mock_dt:
+        mock_dt.now.return_value = fixed_time
+        mock_dt.strptime = datetime.strptime
+        chief = ChiefAgent(context)
+        chief.weekday = 5  # Saturday
+        chief.hour = 3
+        chief.now = fixed_time
+        decision = chief.decide("full_scan")
+        ranked = decision["symbols"]
+        priority = decision["priority"]
 
-    for sym in EXPECTED_SYNTHETICS:
-        assert priority[sym] >= 0, f"{sym} should not be penalized on weekend"
+        for sym in EXPECTED_SYNTHETICS:
+            assert priority[sym] >= 0, f"{sym} should not be penalized on weekend"
 
-    # Non-crypto/non-synthetics should have -999 on weekend
-    assert priority["EURUSD"] == -999
-    assert priority["NASDAQ"] == -999
+        # Non-crypto/non-synthetics should have -999 on weekend
+        assert priority["EURUSD"] == -999
+        assert priority["NASDAQ"] == -999
 
-    # Briefing tags should reflect Synthetic tag
-    brief = chief.brief()
-    assert "⚡ Synthetic" in brief
+        # Briefing tags should reflect Synthetic tag when synthetic is in top3
+        # Since PAIN_999 has conf=100 (+30pts) and SFX_VOL_75 is in Asian session (+10pts), synthetics rank high
+        # Give SFX_VOL_75 top confidence as well
+        context.last_confidence["SFX_VOL_75"] = 100
+        brief = chief.brief()
+        assert "⚡ Synthetic" in brief
 
 
 def test_data_agent_synthetic_fetch_and_indicators():
