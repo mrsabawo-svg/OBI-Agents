@@ -5,8 +5,10 @@ import pandas as pd
 import pytest
 
 import agents.edge_agent as edge_module
+import agents.intelligence_agent as intelligence_module
 from agents.archive_agent import ArchiveAgent
 from agents.edge_agent import EdgeAgent
+from agents.intelligence_agent import IntelligenceAgent
 from core.decision_lineage import (
     AGENT_ORDER,
     AGENT_SPECS,
@@ -273,3 +275,132 @@ def test_edge_agent_hashes_the_exact_archive_fields_it_uses(monkeypatch):
     assert result.low_sample is True
     assert result.sample_size == 2
     assert agent.archive_snapshot_sha256 == expected
+
+
+def _intelligence_payload():
+    return {
+        "symbol": "EURUSD",
+        "trigger": TriggerResult(
+            fire=True, direction="BUY", grade="B",
+            entry=1.1, sl=1.0, tp1=1.3, tp2=1.4, tp3=1.5,
+            rr=2.0, confluence=3, tags=["FVG"], reason="test",
+        ),
+        "regime": {"label": "TRENDING", "confidence": 0.7},
+        "score": {"confidence": 75, "grade": "A"},
+        "edge": {"sample_size": 20},
+    }
+
+
+def test_intelligence_agent_archives_before_persisting_or_notifying(monkeypatch):
+    events = []
+
+    class FakeReviewer:
+        def __init__(self, symbol):
+            pass
+
+        def is_duplicate(self, payload):
+            return False
+
+        def review(self, payload, accuracy):
+            return {"groq_verdict": "PASS", "skeptic_verdict": "PASS"}
+
+        def build_narrative(self, payload):
+            return "test narrative"
+
+    class FakeArchive:
+        def log(self, payload):
+            events.append("archive")
+            return True
+
+    class FakePersistence:
+        def __init__(self, symbol):
+            pass
+
+        def save(self, result, payload):
+            events.append("persist")
+
+    class FakeNotifier:
+        def __init__(self, symbol):
+            pass
+
+        def send(self, result, narrative):
+            events.append("notify")
+
+    monkeypatch.setattr(intelligence_module, "SignalReviewer", FakeReviewer)
+    monkeypatch.setattr(intelligence_module, "ArchiveAgent", FakeArchive)
+    monkeypatch.setattr(intelligence_module, "PersistenceAgent", FakePersistence)
+    monkeypatch.setattr(intelligence_module, "NotifierAgent", FakeNotifier)
+    monkeypatch.setattr(intelligence_module, "load_memory", lambda: {})
+
+    result = IntelligenceAgent("EURUSD").verdict(_intelligence_payload())
+    assert result
+    assert events == ["archive", "persist", "notify"]
+
+
+def test_intelligence_agent_suppresses_notification_when_archive_fails(monkeypatch):
+    events = []
+
+    class FakeReviewer:
+        def __init__(self, symbol):
+            pass
+
+        def is_duplicate(self, payload):
+            return False
+
+        def review(self, payload, accuracy):
+            return {"groq_verdict": "PASS", "skeptic_verdict": "PASS"}
+
+        def build_narrative(self, payload):
+            return "test narrative"
+
+    class FakeArchive:
+        def log(self, payload):
+            events.append("archive")
+            return False
+
+    class FakePersistence:
+        def __init__(self, symbol):
+            pass
+
+        def save(self, result, payload):
+            events.append("persist")
+
+    class FakeNotifier:
+        def __init__(self, symbol):
+            pass
+
+        def send(self, result, narrative):
+            events.append("notify")
+
+    monkeypatch.setattr(intelligence_module, "SignalReviewer", FakeReviewer)
+    monkeypatch.setattr(intelligence_module, "ArchiveAgent", FakeArchive)
+    monkeypatch.setattr(intelligence_module, "PersistenceAgent", FakePersistence)
+    monkeypatch.setattr(intelligence_module, "NotifierAgent", FakeNotifier)
+    monkeypatch.setattr(intelligence_module, "load_memory", lambda: {})
+
+    result = IntelligenceAgent("EURUSD").verdict(_intelligence_payload())
+    assert result == {}
+    assert events == ["archive"]
+
+
+def test_intelligence_agent_does_not_archive_duplicate(monkeypatch):
+    events = []
+
+    class FakeReviewer:
+        def __init__(self, symbol):
+            pass
+
+        def is_duplicate(self, payload):
+            return True
+
+    class FakeArchive:
+        def log(self, payload):
+            events.append("archive")
+            return True
+
+    monkeypatch.setattr(intelligence_module, "SignalReviewer", FakeReviewer)
+    monkeypatch.setattr(intelligence_module, "ArchiveAgent", FakeArchive)
+
+    result = IntelligenceAgent("EURUSD").verdict(_intelligence_payload())
+    assert result == {}
+    assert events == []
