@@ -204,14 +204,18 @@ class MT5Connector:
             "visible": bool(getattr(refreshed, "visible", True)),
         }
 
-    def fetch_rates(self, exact_symbol: str, timeframe: str, count: int):
+    def fetch_rates(
+        self, exact_symbol: str, timeframe: str, count: int, start_pos: int = 0
+    ):
         if timeframe not in self._timeframes or self._timeframes[timeframe] is None:
             raise ValueError("unsupported MT5 timeframe")
         if not isinstance(count, int) or isinstance(count, bool) or count < 1 or count > 2000:
             raise ValueError("count must be an integer between 1 and 2000")
+        if not isinstance(start_pos, int) or isinstance(start_pos, bool) or start_pos < 0 or start_pos > 1000000:
+            raise ValueError("start_pos must be an integer between 0 and 1000000")
         self.select_symbol(exact_symbol)
         rates = self.adapter.copy_rates_from_pos(
-            exact_symbol, self._timeframes[timeframe], 0, count
+            exact_symbol, self._timeframes[timeframe], start_pos, count
         )
         if rates is None or len(rates) == 0:
             error = self.adapter.last_error() if hasattr(self.adapter, "last_error") else "no rates"
