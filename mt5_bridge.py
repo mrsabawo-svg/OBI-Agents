@@ -9,12 +9,14 @@ import math
 import os
 import secrets
 import socket
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import uuid
 
 from flask import Flask, jsonify, request
 
 from core.mt5_connector import ConnectionIdentity, MT5Connector
 from core.raw_observation_store import RawObservationStore
+from core.canonical_data_store import CanonicalCandleStore
 
 try:
     import MetaTrader5 as mt5
@@ -33,6 +35,8 @@ MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
 MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
 MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
 MAX_COUNT = 2000
+TIMEFRAME_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}
+CANONICAL_TRANSFORMATION_VERSION = "mt5-broker-bars-v1"
 connector = None
 
 
@@ -365,6 +369,85 @@ def get_ohlcv():
         for index, raw in enumerate(raw_rows)
     ]
 
+    validation_report_id = str(uuid.uuid4())
+    quality_report = {
+        "report_id": validation_report_id,
+        "received_count": len(raw_rows),
+        "quarantined_observation_count": len({
+            record["observation_index"] for record in quarantine_records
+        }),
+        "quarantine_record_count": len(quarantine_records),
+        "reason_counts": reason_counts,
+        "validator_version": "1",
+    }
+    validation_report = {
+        "report_id": validation_report_id,
+        "batch_id": persisted["batch_id"],
+        "instrument_id": symbol_id,
+        "broker": MT5_BROKER_NAME,
+        "server_name": server_name,
+        "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+        "broker_symbol": broker_symbol,
+        "timeframe": timeframe,
+        "validator_version": quality_report["validator_version"],
+        "report": quality_report,
+    }
+
+    canonical_records = []
+    for index, raw in enumerate(raw_rows):
+        if reasons_by_index.get(index):
+            continue
+        timestamp_value = _finite_number(raw.get("time"))
+        numeric_values = {
+            key: _finite_number(raw.get(key))
+            for key in ("open", "high", "low", "close", "tick_volume")
+        }
+        if (
+            timestamp_value is None
+            or not timestamp_value.is_integer()
+            or timestamp_value <= 0
+            or any(value is None for value in numeric_values.values())
+        ):
+            continue
+        open_time = datetime.fromtimestamp(
+            int(timestamp_value), tz=timezone.utc
+        )
+        canonical_records.append({
+            "instrument_id": symbol_id,
+            "broker": MT5_BROKER_NAME,
+            "server_name": server_name,
+            "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+            "broker_symbol": broker_symbol,
+            "timeframe": timeframe,
+            "open_time": open_time.isoformat(),
+            "close_time": (
+                open_time + timedelta(seconds=TIMEFRAME_SECONDS[timeframe])
+            ).isoformat(),
+            "open": numeric_values["open"],
+            "high": numeric_values["high"],
+            "low": numeric_values["low"],
+            "close": numeric_values["close"],
+            "volume": numeric_values["tick_volume"],
+            "volume_type": "tick_volume",
+            "source_class": "broker_bar",
+            "bar_status": _bar_status(index, latest_index, start_pos),
+            "source_observation_ids": [persisted["observation_ids"][index]],
+            "transformation_version": CANONICAL_TRANSFORMATION_VERSION,
+            "validation_report_id": validation_report_id,
+            "validation_status": "valid",
+        })
+
+    try:
+        canonical_persistence = CanonicalCandleStore(
+            MT5_RAW_DB_PATH
+        ).append_batch(canonical_records, validation_report=validation_report)
+    except Exception:
+        app.logger.exception("Canonical candle persistence failed")
+        return jsonify({
+            "status": "error",
+            "error": "canonical candle persistence failed; data withheld",
+        }), 503
+
     return jsonify({
         "status": "ok",
         "symbol_id": symbol_id,
@@ -380,14 +463,10 @@ def get_ohlcv():
         "volume_type": "tick_volume",
         "retrieved_at": envelope["retrieved_at"],
         "raw_persistence": persisted,
-        "quality_report": {
-            "received_count": len(raw_rows),
-            "quarantined_observation_count": len({
-                record["observation_index"] for record in quarantine_records
-            }),
-            "quarantine_record_count": len(quarantine_records),
-            "reason_counts": reason_counts,
-            "validator_version": "1",
+        "quality_report": quality_report,
+        "canonical_persistence": {
+            "persisted": True,
+            **canonical_persistence,
         },
         "data": response_rows,
     })
