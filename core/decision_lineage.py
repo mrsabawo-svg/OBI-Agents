@@ -57,6 +57,23 @@ AGENT_SPECS = {
             "synthetic_symbols": [
                 "PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"
             ],
+            "symbol_preferred_kill_zones": {
+                "XAUUSD": ["London Open", "New York Open"],
+                "EURUSD": ["London Open", "New York Open"],
+                "USDJPY": ["London Open", "New York Open", "Asian Session"],
+                "GBPJPY": ["London Open", "New York Open"],
+                "GBPUSD": ["London Open", "New York Open"],
+                "NASDAQ": ["New York Open"],
+                "BTCUSD": ["London Open", "New York Open", "Asian Session"],
+                "ETHUSD": ["London Open", "New York Open", "Asian Session"],
+                "SOLUSD": ["London Open", "New York Open", "Asian Session"],
+                "PAIN_999": ["London Open", "New York Open", "Asian Session", "London Close"],
+                "GAIN_999": ["London Open", "New York Open", "Asian Session", "London Close"],
+                "PAIN_1200": ["London Open", "New York Open", "Asian Session", "London Close"],
+                "GAIN_1200": ["London Open", "New York Open", "Asian Session", "London Close"],
+                "SFX_VOL_75": ["London Open", "New York Open", "Asian Session", "London Close"],
+            },
+            "default_preferred_kill_zones": ["London Open", "New York Open"],
         },
         "inputs": ["instrument_id", "captured SAST datetime when required", "kill-zone clock"],
         "outputs": ["tradeable", "reason", "kill_zone", "zone_name", "peak", "evaluated_at_sast (null for synthetic bypass)"],
