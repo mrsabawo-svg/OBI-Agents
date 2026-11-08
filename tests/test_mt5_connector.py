@@ -152,3 +152,15 @@ def test_connector_exposes_no_trade_execution_methods():
     assert not hasattr(connector, "order_send")
     assert not hasattr(connector, "positions_get")
     assert not hasattr(connector, "order_modify")
+
+
+def test_failed_identity_verification_cannot_be_bypassed_by_live_terminal():
+    adapter = FakeMT5()
+    adapter.account_info = lambda: SimpleNamespace(
+        company="Wrong Broker", server="Wrong-Demo"
+    )
+    connector, _ = make_connector(adapter)
+    assert connector.connect() is False
+    # The terminal reports connected, but its broker identity was rejected.
+    assert connector.is_connected() is False
+    assert connector.ensure_connected() is False
