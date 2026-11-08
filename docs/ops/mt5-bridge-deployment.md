@@ -47,9 +47,9 @@ If the terminal is already logged in, the bridge can use that session while stil
 
 ### First-run account pinning
 
-1. Start the bridge with the fingerprint key and exact server configured, but leave `MT5_EXPECTED_ACCOUNT_FINGERPRINT` unset.
+1. Start the bridge with the fingerprint key and exact server configured, but leave `MT5_EXPECTED_ACCOUNT_FINGERPRINT` unset. Leave `MT5_SYMBOL_MAP_JSON` empty (`{}`) during this discovery pass.
 2. Call authenticated `GET /symbols`. Confirm its broker, exact server, environment, and masked account-login suffix match the account visible in MT5. The response will say `account_identity_pinned=false`.
-3. Copy the returned `account_fingerprint` into `MT5_EXPECTED_ACCOUNT_FINGERPRINT` and restart the bridge.
+3. Copy the returned `account_fingerprint` into `MT5_EXPECTED_ACCOUNT_FINGERPRINT`, configure `MT5_SYMBOL_MAP_JSON` with only the exact reviewed symbol mappings, and restart the bridge.
 4. Confirm `/health` reports `account_identity_pinned=true`, then repeat `/symbols` and check the same fingerprint.
 5. Only then can `/ohlcv` return data. Until the pin is set, it returns HTTP 409. DataAgent independently rejects any response without pin evidence.
 
