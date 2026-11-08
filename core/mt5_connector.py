@@ -234,6 +234,7 @@ class MT5Connector:
         return {
             "account_fingerprint": fingerprint,
             "identity_pinned": self.expected_account_fingerprint is not None,
+            "account_login_suffix": str(getattr(account, "login"))[-4:],
             "broker_company": str(getattr(account, "company", "") or "").strip(),
             "server": str(getattr(account, "server", "") or "").strip(),
             "environment": self.identity.environment,
@@ -254,7 +255,10 @@ class MT5Connector:
             return self._fail("account environment must be demo, live, or contest")
         if not self.identity.broker.strip():
             return self._fail("configured broker identity is required")
-        if not self.identity.server.strip():
+        if (
+            not isinstance(self.identity.server, str)
+            or not self.identity.server.strip()
+        ):
             return self._fail("exact configured broker server identity is required")
 
         kwargs = {}
