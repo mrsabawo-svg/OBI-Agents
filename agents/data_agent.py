@@ -284,6 +284,11 @@ class DataAgent:
 
                 # Preserve volume semantics; Volume remains for existing OBI consumers.
                 df["VolumeType"] = df["volume_type"].astype(str)
+                df.drop(
+                    columns=["bar_status", "volume_type", "quarantine_reasons", "observation_id"],
+                    inplace=True,
+                    errors="ignore",
+                )
                 df.attrs["source_metadata"] = {
                     "broker": parsed.get("broker"),
                     "server_name": parsed.get("server_name"),
