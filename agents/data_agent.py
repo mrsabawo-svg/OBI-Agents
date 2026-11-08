@@ -169,7 +169,8 @@ class DataAgent:
                 quarantine_ids = persistence.get("quarantine_ids")
                 quarantine_links = persistence.get("quarantine_records")
                 if (
-                    persistence.get("inserted_count") != len(rows)
+                    persistence.get("account_fingerprint") != fingerprint
+                    or persistence.get("inserted_count") != len(rows)
                     or not isinstance(observation_ids, list)
                     or len(observation_ids) != len(rows)
                     or any(not isinstance(item, str) or not item for item in observation_ids)
