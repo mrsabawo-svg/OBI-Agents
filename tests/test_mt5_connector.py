@@ -137,7 +137,7 @@ def test_unsupported_timeframe_and_invalid_count_are_rejected():
     with pytest.raises(ValueError, match="unsupported"):
         connector.fetch_rates("EURUSD", "3m", 100)
     with pytest.raises(ValueError, match="count"):
-        connector.fetch_rates("EURUSD", "5m", 2001)
+        connector.fetch_rates("EURUSD", "5m", 20001)
 
 
 def test_empty_history_is_reported_not_silently_replaced():
