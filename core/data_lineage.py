@@ -19,6 +19,8 @@ QUALITY_SUMMARY_FIELDS = (
     "invalid_numeric_count",
     "invalid_ohlc_count",
     "duplicate_timestamp_count",
+    "invalid_bar_status_count",
+    "invalid_volume_type_count",
     "forming_excluded_count",
 )
 REQUIRED_CANONICAL_METADATA = (
