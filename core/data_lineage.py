@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 
-LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v4"
+LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v5"
 DEFAULT_ID_WINDOW = 50
 QUALITY_SUMMARY_FIELDS = (
     "received_count",
@@ -31,6 +31,9 @@ REQUIRED_CANONICAL_METADATA = (
     "server_name",
     "account_environment",
     "account_fingerprint",
+    "instrument_verification_status",
+    "instrument_verification_id",
+    "instrument_metadata_sha256",
     "history_status",
     "history_report_id",
     "history_session_model",
@@ -125,6 +128,9 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         len(fingerprint) == 64
         and all(char in "0123456789abcdef" for char in fingerprint)
         and metadata.get("account_identity_pinned") is True
+        and metadata.get("instrument_verification_status") == "verified"
+        and metadata.get("timeframe_verified") is True
+        and metadata.get("analysis_eligible") is True
         and metadata.get("history_status") == "complete"
     )
     report_hash = metadata.get("canonical_validation_report_sha256", "")
@@ -158,6 +164,12 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "account_environment": metadata.get("account_environment"),
         "account_fingerprint": metadata.get("account_fingerprint"),
         "account_identity_pinned": metadata.get("account_identity_pinned") is True,
+        "instrument_verification_status": metadata.get("instrument_verification_status"),
+        "instrument_verification_id": metadata.get("instrument_verification_id"),
+        "instrument_metadata_sha256": metadata.get("instrument_metadata_sha256"),
+        "verified_timeframes": metadata.get("verified_timeframes", []),
+        "timeframe_verified": metadata.get("timeframe_verified") is True,
+        "analysis_eligible": metadata.get("analysis_eligible") is True,
         "history_completeness": {
             "report_id": metadata.get("history_report_id"),
             "status": metadata.get("history_status"),
