@@ -277,6 +277,7 @@ def assess_history_completeness(
         "retrieved_at": now.isoformat(),
         "snapshot_stable": snapshot_stable,
         "snapshot_check_performed": snapshot_check_performed,
+        "snapshot_stability_scope": "latest_bar_open_time",
         "pagination": {
             "page_count": page_count,
             "page_sizes": page_sizes,
