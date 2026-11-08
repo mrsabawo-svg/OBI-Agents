@@ -235,9 +235,15 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     from core.raw_observation_store import RawObservationStore
     store = RawObservationStore(tmp_path / "raw.sqlite3")
     quarantine = store.get_quarantine_records()
-    assert len(quarantine) == 1
-    assert quarantine[0]["observation_id"] == payload["data"][1]["observation_id"]
-    assert quarantine[0]["reason_code"] == "INVALID_OHLC"
+    # Both /ohlcv calls are distinct broker retrievals. The raw evidence store
+    # is append-only, so each malformed observation must retain its own
+    # quarantine link rather than being silently deduplicated.
+    assert len(quarantine) == 2
+    assert {record["observation_id"] for record in quarantine} == {
+        first_payload["data"][1]["observation_id"],
+        payload["data"][1]["observation_id"],
+    }
+    assert {record["reason_code"] for record in quarantine} == {"INVALID_OHLC"}
 
     from core.canonical_data_store import CanonicalCandleStore
     canonical = CanonicalCandleStore(tmp_path / "raw.sqlite3")
