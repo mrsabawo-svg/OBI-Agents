@@ -156,7 +156,7 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                     "platform": "MT5",
                 },
                 "raw_persistence": {
-                    "persisted": True, "batch_id": "test-batch",
+                    "persisted": True, "account_fingerprint": "a" * 64, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
                     "observation_ids": [f"obs-{i}" for i in range(len(rows))],
                     "quarantine_ids": [],
@@ -221,7 +221,7 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                     "platform": "MT5",
                 },
                 "raw_persistence": {
-                    "persisted": True, "batch_id": "lineage-test",
+                    "persisted": True, "account_fingerprint": "a" * 64, "batch_id": "lineage-test",
                     "inserted_count": 1, "quarantine_count": 0,
                     "observation_ids": ["obs-1"], "quarantine_ids": [],
                     "quarantine_records": [],
@@ -282,7 +282,7 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                     "platform": "MT5",
                 },
                 "raw_persistence": {
-                    "persisted": True, "batch_id": "test-batch",
+                    "persisted": True, "account_fingerprint": "a" * 64, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
                     "observation_ids": [f"obs-{i}" for i in range(len(rows))],
                     "quarantine_ids": [], "quarantine_records": [],
@@ -337,7 +337,7 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                     "platform": "MT5",
                 },
                 "raw_persistence": {
-                    "persisted": True, "batch_id": "test-batch",
+                    "persisted": True, "account_fingerprint": "a" * 64, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
                     "observation_ids": [f"obs-{i}" for i in range(len(rows))],
                     "quarantine_ids": [], "quarantine_records": [],
@@ -446,7 +446,7 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                     "platform": "MT5",
                 },
                 "raw_persistence": {
-                    "persisted": True, "batch_id": "quarantine-test",
+                    "persisted": True, "account_fingerprint": "a" * 64, "batch_id": "quarantine-test",
                     "inserted_count": len(rows), "quarantine_count": 1,
                     "observation_ids": [f"obs-{i}" for i in range(len(rows))],
                     "quarantine_ids": ["quarantine-0"],
@@ -503,7 +503,7 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                     "platform": "MT5",
                 },
                 "raw_persistence": {
-                    "persisted": True, "batch_id": "mismatch-test",
+                    "persisted": True, "account_fingerprint": "a" * 64, "batch_id": "mismatch-test",
                     "inserted_count": 1, "quarantine_count": 0,
                     "observation_ids": ["obs-0"], "quarantine_ids": [],
                     "quarantine_records": [],
