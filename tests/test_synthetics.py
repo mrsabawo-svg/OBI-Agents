@@ -160,6 +160,7 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
         "Volume": 100,
         "volume_type": "tick_volume",
         "bar_status": "closed",
+        "quarantine_reasons": [],
     }]
 
     class FakeResponse:
@@ -172,7 +173,14 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
-                "raw_persistence": {"persisted": True, "batch_id": "test-batch"},
+                "raw_persistence": {
+                    "persisted": True, "batch_id": "test-batch",
+                    "inserted_count": len(rows), "quarantine_count": 0,
+                },
+                "quality_report": {
+                    "received_count": len(rows), "quarantined_observation_count": 0,
+                    "quarantine_record_count": 0, "reason_counts": {},
+                },
                 "data": rows,
             }
 
@@ -193,7 +201,8 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
             "timestamp": timestamp.isoformat(), "Open": price,
             "High": price + 2, "Low": price - 2, "Close": price + 1,
             "Volume": 100, "volume_type": "tick_volume",
-            "bar_status": "forming" if index == 79 else "closed", "quarantine_reasons": [],
+            "bar_status": "forming" if index == 79 else "closed",
+            "quarantine_reasons": [], "quarantine_reasons": [],
         })
 
     class FakeResponse:
