@@ -81,7 +81,13 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
 
     from datetime import datetime, timezone
 
-    current_bucket = int(datetime.now(timezone.utc).timestamp() // 300) * 300
+    frozen_now = datetime.now(timezone.utc)
+    current_bucket = int(frozen_now.timestamp() // 300) * 300
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen_now
 
     class FakeRates:
         dtype = SimpleNamespace(names=(
@@ -152,6 +158,7 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
         def symbol_info(self, symbol):
             return SimpleNamespace(description="SFX Vol 75")
 
+    monkeypatch.setattr(mt5_bridge, "datetime", FrozenDateTime)
     monkeypatch.setattr(mt5_bridge, "connector", FakeConnector())
     monkeypatch.setattr(mt5_bridge, "mt5", FakeMT5())
     monkeypatch.setattr(mt5_bridge, "SYMBOL_MAP", {"SFX_VOL_75": "SFX Vol 75"})
