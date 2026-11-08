@@ -9,6 +9,7 @@ from core.instrument_registry import (
     validate_instrument_record,
 )
 from core.raw_observation_store import RawObservationStore
+from core.instrument_registry_store import InstrumentRegistryStore
 
 
 def valid_record():
@@ -206,3 +207,79 @@ def test_non_finite_raw_values_are_preserved_as_explicit_json_sentinels(tmp_path
     )
     saved = store.get(result["observation_ids"][0])
     assert saved["payload"]["open"] == {"__non_finite_float__": "nan"}
+
+
+def test_instrument_registry_persists_account_scoped_discovery_without_auto_verification(tmp_path):
+    store = InstrumentRegistryStore(tmp_path / "registry.sqlite3")
+    account = {
+        "account_fingerprint": "a" * 64,
+        "broker_company": "Weltrade Ltd",
+        "server": "Weltrade-Demo",
+        "environment": "demo",
+        "platform": "MT5",
+    }
+    symbols = [{
+        "name": "SFX Vol 75",
+        "description": "SFX Vol 75",
+        "selected": True,
+        "visible": True,
+        "metadata": {
+            "name": "SFX Vol 75", "digits": 2, "point": 0.01,
+            "trade_tick_size": 0.01, "selected": True, "visible": True,
+        },
+    }]
+
+    result = store.record_discovery(account, symbols, {"SFX_VOL_75": "SFX Vol 75"})
+    record = store.latest_symbol("a" * 64, "SFX Vol 75")
+
+    assert result["symbol_count"] == 1
+    assert record["mapped_instrument_ids"] == ["SFX_VOL_75"]
+    assert record["availability_status"] == "selectable"
+    assert record["verification_status"] == "partially_verified"
+    assert record["metadata_sha256"] == result["symbols"][0]["metadata_sha256"]
+    assert store.account_observation_count() == 1
+    assert store.instrument_discovery_count() == 1
+
+
+def test_instrument_registry_isolates_accounts_and_rejects_ambiguous_mapping(tmp_path):
+    store = InstrumentRegistryStore(tmp_path / "registry.sqlite3")
+    account = {
+        "account_fingerprint": "b" * 64,
+        "broker_company": "Weltrade Ltd",
+        "server": "Weltrade-Demo",
+        "environment": "demo",
+        "platform": "MT5",
+    }
+    symbol = {
+        "name": "SFX Vol 75", "description": "SFX Vol 75",
+        "metadata": {"name": "SFX Vol 75", "digits": 2},
+    }
+    store.record_discovery(
+        account, [symbol],
+        {"SFX_VOL_75": "SFX Vol 75", "SFX_VOL_75_ALT": "SFX Vol 75"},
+    )
+    record = store.latest_symbol("b" * 64, "SFX Vol 75")
+    assert record["mapping_conflict"] is True
+    assert record["verification_status"] == "partially_verified"
+    assert store.latest_symbol("c" * 64, "SFX Vol 75") is None
+
+
+def test_instrument_registry_evidence_is_append_only(tmp_path):
+    path = tmp_path / "registry.sqlite3"
+    store = InstrumentRegistryStore(path)
+    account = {
+        "account_fingerprint": "d" * 64,
+        "broker_company": "Weltrade Ltd",
+        "server": "Weltrade-Demo",
+        "environment": "demo",
+        "platform": "MT5",
+    }
+    store.record_discovery(account, [{
+        "name": "EURUSD", "description": "Euro vs US Dollar",
+        "metadata": {"name": "EURUSD"},
+    }])
+    with sqlite3.connect(path) as db:
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            db.execute("UPDATE mt5_instrument_discoveries SET broker_symbol = 'EURUSDx'")
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            db.execute("DELETE FROM mt5_account_observations")
