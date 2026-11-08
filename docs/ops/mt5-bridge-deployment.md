@@ -154,3 +154,6 @@ The /symbols endpoint persists an append-only account observation and account-sc
 The /ohlcv endpoint requires the exact symbol to have been discovered under the current account fingerprint. It compares the current symbol contract metadata with the last persisted discovery fingerprint; a mismatch requires rediscovery and review. Raw observations now also persist the account fingerprint (schema version 2); existing SQLite databases are migrated additively, leaving historical rows with a null fingerprint rather than inventing one.
 
 Discovery records remain unverified or partially_verified. Merely seeing or selecting a symbol, or successfully retrieving one batch, does not automatically promote it to verified. A later operator verification step must record timeframe-specific evidence and explicit approval before a symbol can be treated as fully verified.
+
+
+Account fingerprints are also included in each immutable validation report and raw-observation row, then validated by DataAgent and carried into the archived signal's per-timeframe source lineage. A signal can therefore be traced to the exact broker account identity without exposing the account login number.
