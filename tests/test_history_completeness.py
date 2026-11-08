@@ -26,7 +26,7 @@ def fetch(count, *, stable=True, page_sizes=None, starts=None):
 
 def test_contiguous_requested_window_is_complete_and_marks_current_bar_forming():
     report = assess_history_completeness(
-        rows(1794132300, 1794132600, 1794132900),
+        rows(1794138600, 1794138900, 1794139200),
         "5m",
         3,
         fetch(3),
@@ -42,7 +42,7 @@ def test_contiguous_requested_window_is_complete_and_marks_current_bar_forming()
 
 def test_short_history_is_incomplete_not_silently_accepted():
     report = assess_history_completeness(
-        rows(1794132300, 1794132600),
+        rows(1794138600, 1794138900),
         "5m",
         3,
         {"returned_count": 2, "snapshot_stable": True},
@@ -54,7 +54,7 @@ def test_short_history_is_incomplete_not_silently_accepted():
 
 def test_unexplained_gap_is_unverifiable_without_a_session_model():
     report = assess_history_completeness(
-        rows(1794132300, 1794132900),
+        rows(1794138600, 1794139200),
         "5m",
         2,
         fetch(2),
@@ -68,7 +68,7 @@ def test_unexplained_gap_is_unverifiable_without_a_session_model():
 
 def test_gap_is_incomplete_for_verified_continuous_market():
     report = assess_history_completeness(
-        rows(1794132300, 1794132900),
+        rows(1794138600, 1794139200),
         "5m",
         2,
         fetch(2),
@@ -82,7 +82,7 @@ def test_gap_is_incomplete_for_verified_continuous_market():
 
 def test_duplicate_timestamp_is_incomplete():
     report = assess_history_completeness(
-        rows(1794132300, 1794132300, 1794132600),
+        rows(1794138600, 1794138600, 1794138900),
         "5m",
         3,
         fetch(3),
@@ -96,7 +96,7 @@ def test_duplicate_timestamp_is_incomplete():
 
 def test_out_of_order_timestamps_are_incomplete():
     report = assess_history_completeness(
-        rows(1794132600, 1794132300, 1794132900),
+        rows(1794138900, 1794138600, 1794139200),
         "5m",
         3,
         fetch(3),
@@ -122,7 +122,7 @@ def test_timeframe_misalignment_is_incomplete():
 
 def test_future_bars_are_incomplete():
     report = assess_history_completeness(
-        rows(1794132900, 1794133200),
+        rows(1794139200, 1794139500),
         "5m",
         2,
         fetch(2),
@@ -135,7 +135,7 @@ def test_future_bars_are_incomplete():
 
 def test_stale_latest_window_is_unverifiable_without_session_evidence():
     report = assess_history_completeness(
-        rows(1794132000, 1794132300),
+        rows(1794138300, 1794138600),
         "5m",
         2,
         fetch(2),
@@ -148,7 +148,7 @@ def test_stale_latest_window_is_unverifiable_without_session_evidence():
 
 def test_stale_latest_window_is_incomplete_for_continuous_market():
     report = assess_history_completeness(
-        rows(1794132000, 1794132300),
+        rows(1794138300, 1794138600),
         "5m",
         2,
         fetch(2),
@@ -161,7 +161,7 @@ def test_stale_latest_window_is_incomplete_for_continuous_market():
 
 def test_pagination_snapshot_drift_is_incomplete():
     report = assess_history_completeness(
-        rows(1794132300, 1794132600, 1794132900),
+        rows(1794138600, 1794138900, 1794139200),
         "5m",
         3,
         fetch(3, stable=False, page_sizes=[2, 1], starts=[0, 2]),
