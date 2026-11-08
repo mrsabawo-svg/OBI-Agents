@@ -431,3 +431,41 @@ def test_partial_paginated_history_reports_returned_count():
     assert metadata["returned_count"] == 1000
     assert metadata["page_count"] == 1
     assert metadata["snapshot_stable"] is True
+
+
+def test_numpy_structured_pages_use_native_concatenation_when_available():
+    np = pytest.importorskip("numpy")
+    connector, adapter = make_connector()
+    dtype = [
+        ("time", "i8"), ("open", "f8"), ("high", "f8"),
+        ("low", "f8"), ("close", "f8"), ("tick_volume", "i8"),
+        ("real_volume", "i8"), ("spread", "i8"),
+    ]
+
+    def native_rates(times):
+        return np.array([
+            (timestamp, 1.0, 1.2, 0.9, 1.1, 10, 0, 1)
+            for timestamp in times
+        ], dtype=dtype)
+
+    newer = native_rates(range(2001, 4001))
+    older = native_rates(range(1001, 2001))
+    latest = native_rates([4000])
+
+    def paged_copy(symbol, timeframe, start, count):
+        if start == 0 and count == 1:
+            return latest
+        if start == 0:
+            return newer
+        if start == 2000:
+            return older
+        return native_rates([])
+
+    adapter.copy_rates_from_pos = paged_copy
+    assert connector.connect()
+    rates, metadata = connector.fetch_rates_detailed("EURUSD", "5m", 3000)
+
+    assert isinstance(rates, np.ndarray)
+    assert int(rates["time"][0]) == 1001
+    assert int(rates["time"][-1]) == 4000
+    assert metadata["snapshot_stable"] is True
