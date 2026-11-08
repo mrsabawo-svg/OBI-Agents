@@ -142,7 +142,7 @@ class MT5Connector:
             "login": str(getattr(account, "login", "")),
             "trade_mode": int(getattr(account, "trade_mode")),
         }
-        if not all(identity.values()):
+        if not identity["company"] or not identity["server"] or not identity["login"]:
             raise ValueError("account identity is incomplete")
         canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(("obi-mt5-account-v1:" + canonical).encode("utf-8")).hexdigest()
