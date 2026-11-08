@@ -33,6 +33,7 @@ REQUIRED_CANONICAL_METADATA = (
     "account_fingerprint",
     "history_status",
     "history_report_id",
+    "history_session_model",
     "broker_symbol",
     "source_type",
 )
