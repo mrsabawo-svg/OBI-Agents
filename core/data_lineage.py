@@ -158,6 +158,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "history_completeness": {
             "report_id": metadata.get("history_report_id"),
             "status": metadata.get("history_status"),
+            "session_model": metadata.get("history_session_model"),
             "requested_count": metadata.get("history_requested_count"),
             "returned_count": metadata.get("history_returned_count"),
             "missing_interval_count": metadata.get("history_gap_count"),
