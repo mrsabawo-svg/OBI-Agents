@@ -192,8 +192,20 @@ def get_ohlcv():
             "bar_status": _bar_status(index, latest_index, start_pos),
         })
 
+    # Re-check the authenticated account after rate retrieval. If the
+    # terminal/account changed or disconnected mid-request, withhold the batch.
     account = mt5.account_info()
+    if account is None or not connector.is_connected():
+        return jsonify({
+            "status": "error",
+            "error": "MT5 account session changed during retrieval; data withheld",
+        }), 503
     server_name = str(getattr(account, "server", "") or "")
+    if not server_name:
+        return jsonify({
+            "status": "error",
+            "error": "broker server identity unavailable; data withheld",
+        }), 503
     envelope = {
         "instrument_id": symbol_id,
         "broker": MT5_BROKER_NAME,
@@ -243,4 +255,5 @@ if __name__ == "__main__":
     if not _is_loopback(MT5_BRIDGE_HOST) and not MT5_BRIDGE_TOKEN:
         raise SystemExit("[BRIDGE] Non-loopback binding requires MT5_BRIDGE_TOKEN")
     port = int(os.environ.get("PORT", "5000"))
-    app.run(host=MT5_BRIDGE_HOST, port=port)
+    from waitress import serve
+    serve(app, host=MT5_BRIDGE_HOST, port=port, threads=8)
