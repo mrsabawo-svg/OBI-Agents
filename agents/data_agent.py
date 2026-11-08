@@ -241,6 +241,8 @@ class DataAgent:
                         page_count > 1
                         and history_report.get("snapshot_check_performed") is not True
                     )
+                    or history_report.get("valid_timestamp_count") != len(rows)
+                    or history_report.get("invalid_timestamp_count") != 0
                     or history_report.get("missing_interval_count") != 0
                     or history_report.get("gap_segment_count") != 0
                     or history_report.get("duplicate_timestamp_count") != 0
