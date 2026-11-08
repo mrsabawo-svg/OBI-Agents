@@ -324,3 +324,17 @@ def test_raw_store_additively_migrates_existing_database_for_account_fingerprint
     result = store.append_batch(envelope, [{"time": 1794132000, "open": 100.0}])
     saved = store.get(result["observation_ids"][0])
     assert saved["account_fingerprint"] == "9" * 64
+
+
+def test_instrument_registry_rejects_malformed_account_fingerprint(tmp_path):
+    store = InstrumentRegistryStore(tmp_path / "registry.sqlite3")
+    account = {
+        "account_fingerprint": "not-a-sha256",
+        "broker_company": "Weltrade Ltd",
+        "server": "Weltrade-Demo",
+        "environment": "demo",
+        "platform": "MT5",
+    }
+    with pytest.raises(ValueError, match="SHA-256"):
+        store.record_discovery(account, [])
+    assert store.account_observation_count() == 0
