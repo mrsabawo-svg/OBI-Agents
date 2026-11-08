@@ -1,8 +1,11 @@
 """Validated instrument-registry records for OBI market-data acquisition.
 
 A family catalogue entry is not proof that a broker symbol exists in an account.
+Schema v0.2.0 binds verified instruments to an exact server and account fingerprint.
 """
 from typing import Any
+
+REGISTRY_SCHEMA_VERSION = "0.2.0"
 
 FAMILY_IDS = frozenset({
     "FX_VOL", "SFX_VOL", "PAIN", "GAIN", "FLIP", "SWITCH", "BREAK",
@@ -10,7 +13,7 @@ FAMILY_IDS = frozenset({
 })
 ACCOUNT_ENVIRONMENTS = frozenset({"demo", "live", "contest", "unknown"})
 AVAILABILITY_STATES = frozenset({
-    "unverified", "visible_in_market_watch", "selectable", "data_verified",
+    "unverified", "discovered", "visible_in_market_watch", "selectable", "data_verified",
     "disabled", "unavailable",
 })
 VERIFICATION_STATES = frozenset({
