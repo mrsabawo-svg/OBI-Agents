@@ -55,7 +55,7 @@ class ArchiveAnalyticsSchemaTest(unittest.TestCase):
     def test_archive_preserves_data_lineage_manifest(self):
         signal = self._signal(FakeScore())
         lineage = {
-            "schema_version": "obi-data-lineage-v1",
+            "schema_version": "obi-data-lineage-v2",
             "instrument_id": "XAUUSD",
             "status": "complete",
             "timeframes": {
