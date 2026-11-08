@@ -67,7 +67,7 @@ The reusable connector has explicit lifecycle states: DISCONNECTED, INITIALIZING
 - GET /health reports connection state only.
 - GET /symbols returns account-scoped symbol discovery and contract metadata (digits, point, tick size/value, contract size, currencies, volume limits, path, and availability flags). Every call appends the account observation and symbol snapshot to the SQLite registry. Discovery does not classify a symbol as SyntX or mark it analysis-eligible.
 - GET /ohlcv requires a prior /symbols discovery for the same account fingerprint and exact broker symbol. A changed contract-metadata fingerprint or ambiguous OBI mapping blocks the request until reviewed and rediscovered.
-- GET /ohlcv?symbol=OBI_ID&timeframe=5m|15m|1h|4h&count=1..2000&start_pos=0..1000000 returns mapped broker rates after persistence. Position zero includes the current bar; positive positions page backward through historical bars.
+- GET /ohlcv?symbol=OBI_ID&timeframe=5m|15m|1h|4h&count=1..20000&start_pos=0..1000000 returns mapped broker rates after persistence. Requests up to 20,000 bars are fetched in 2,000-bar pages. The bridge reassembles pages chronologically and checks that the newest bar timestamp did not change during multi-page retrieval. Position zero may include the current bar; forming/closed status is determined from the UTC timeframe boundary, not array position.
 
 Only exact symbols configured in MT5_SYMBOL_MAP_JSON can be requested through the OBI instrument ID. Symbol discovery is evidence for account-specific mapping, not automatic authorization. Timeframes are explicit; unsupported values fail rather than falling back.
 
@@ -161,6 +161,6 @@ Account fingerprints are also included in each immutable validation report and r
 
 ## Broker-history completeness gate
 
-Each OHLCV response now includes an immutable history-completeness subreport. The report is scoped to the exact requested window (count and start position); it does not claim that all older broker history exists. It records requested/returned counts, page boundaries, snapshot stability, timestamp ordering/alignment, duplicates, gaps, forming/closed bars, freshness, and a status of complete, incomplete, or unverifiable.
+Each OHLCV response now includes an immutable history-completeness subreport. The report is scoped to the exact requested window (count and start position); it does not claim that all older broker history exists. It records requested/returned counts, page boundaries, snapshot stability, timestamp ordering/alignment, duplicates, gaps, forming/closed bars, freshness, and a status of complete, incomplete, or unverifiable. A complete status certifies only the requested window, not the broker's entire historical archive.
 
 Unexplained gaps or stale latest data remain unverifiable when no verified broker session calendar is available. They are not silently treated as missing bars or as valid continuous-market history. A verified continuous 24/7 session model can classify those gaps as incomplete. DataAgent accepts only complete history windows; incomplete or unverifiable windows are persisted as evidence but withheld from signal generation. The archived per-timeframe data lineage now uses schema v3 and carries the history report summary alongside the account fingerprint.
