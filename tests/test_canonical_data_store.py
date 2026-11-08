@@ -163,3 +163,17 @@ def test_canonical_batch_is_atomic_when_later_record_is_invalid(tmp_path):
         store.append_batch([valid, invalid_source])
 
     assert store.count() == 0
+
+
+def test_canonical_store_rejects_source_class_mismatch(tmp_path):
+    path = tmp_path / "market.sqlite3"
+    source_envelope = envelope()
+    source_envelope["source_type"] = "third_party"
+    raw = RawObservationStore(path)
+    result = raw.append_batch(source_envelope, [{"time": 1794132000, "close": 102}])
+    store = CanonicalCandleStore(path)
+
+    with pytest.raises(CanonicalDataError, match="source type"):
+        store.append_batch([candle(result["observation_ids"][0])])
+
+    assert store.count() == 0
