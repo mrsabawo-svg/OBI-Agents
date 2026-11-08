@@ -343,6 +343,18 @@ def test_init_mt5_requires_stable_fingerprint_key_and_exact_server(monkeypatch):
     assert "fingerprint_key" in message.lower()
 
 
+def test_init_mt5_clears_stale_connector_before_rejecting_configuration(monkeypatch):
+    stale_connector = object()
+    monkeypatch.setattr(mt5_bridge, "connector", stale_connector)
+    monkeypatch.setattr(mt5_bridge, "mt5", None)
+
+    ok, message = mt5_bridge.init_mt5()
+
+    assert ok is False
+    assert "package not installed" in message
+    assert mt5_bridge.connector is None
+
+
 def test_init_mt5_uses_prelogged_terminal_without_triggering_partial_login(monkeypatch):
     captured = {}
 
