@@ -28,6 +28,7 @@ class FakeMT5:
 
     def initialize(self, **kwargs):
         self.initialized = True
+        self.connected = True
         return True
 
     def login(self, **kwargs):
@@ -164,3 +165,13 @@ def test_failed_identity_verification_cannot_be_bypassed_by_live_terminal():
     # The terminal reports connected, but its broker identity was rejected.
     assert connector.is_connected() is False
     assert connector.ensure_connected() is False
+
+
+def test_connected_account_switch_is_detected():
+    connector, adapter = make_connector()
+    assert connector.connect()
+    adapter.account_info = lambda: SimpleNamespace(
+        company="Different Broker", server="Different-Server"
+    )
+    assert connector.is_connected() is False
+    assert connector.state is ConnectionState.DISCONNECTED
