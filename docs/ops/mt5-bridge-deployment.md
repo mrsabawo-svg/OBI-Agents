@@ -127,7 +127,7 @@ Manifest status is explicit. These labels describe provenance coverage for the d
 - `untracked`: market data exists but no canonical source lineage is available (for example, third-party Yahoo Finance data).
 - `missing`: no expected timeframe supplied market data.
 
-Archive entries deep-copy the manifest so later in-memory changes cannot rewrite the recorded provenance. This is signal-level provenance, not yet a complete feature-level dependency graph: individual indicator formulas and derived/resampled outputs still need their own versioned lineage records.
+Archive entries deep-copy the manifest so later in-memory changes cannot rewrite the recorded provenance. Signal-level source provenance and DataAgent indicator formula lineage are now recorded; structural agent logic and derived/resampled outputs still need their own versioned lineage records.
 
 
 ## Derived indicator feature lineage
