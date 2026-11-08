@@ -414,6 +414,12 @@ AGENT_SPECS = {
 ROOT_SOURCE_FILES = [
     "main.py",
     "core/decision_lineage.py",
+    "agents/intelligence_agent.py",
+    "agents/archive_agent.py",
+    "agents/signal_reviewer.py",
+    "agents/persistence_agent.py",
+    "agents/notifier_agent.py",
+    "agents/execution_agent.py",
     "agents/data_agent.py",
     "core/data_lineage.py",
     "core/feature_lineage.py",
