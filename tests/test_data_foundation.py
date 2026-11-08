@@ -25,7 +25,7 @@ def valid_record():
         "source_type": "unknown",
         "verification_status": "unverified",
         "supported_timeframes": [],
-        "registry_version": "0.1.0",
+        "registry_version": "0.2.0",
     }
 
 
