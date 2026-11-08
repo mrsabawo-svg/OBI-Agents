@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import hmac
 import json
 import math
 from enum import Enum
@@ -82,6 +83,8 @@ class MT5Connector:
         server: Optional[str] = None,
         terminal_path: Optional[str] = None,
         reconnect_attempts: int = 1,
+        fingerprint_key: Optional[str] = None,
+        expected_account_fingerprint: Optional[str] = None,
     ) -> None:
         self._lock = RLock()
         self.adapter = adapter
@@ -92,6 +95,16 @@ class MT5Connector:
         self.login_server = server
         self.terminal_path = terminal_path
         self.reconnect_attempts = max(0, int(reconnect_attempts))
+        if not isinstance(fingerprint_key, str) or len(fingerprint_key) < 32:
+            raise ValueError("fingerprint_key must contain at least 32 characters")
+        self.fingerprint_key = fingerprint_key.encode("utf-8")
+        if expected_account_fingerprint is not None and (
+            not isinstance(expected_account_fingerprint, str)
+            or len(expected_account_fingerprint) != 64
+            or any(char not in "0123456789abcdef" for char in expected_account_fingerprint)
+        ):
+            raise ValueError("expected_account_fingerprint must be a lowercase SHA-256 hex digest")
+        self.expected_account_fingerprint = expected_account_fingerprint
         self.state = ConnectionState.DISCONNECTED
         self.last_error = None
         self._timeframes = self._build_timeframes(adapter)
@@ -159,9 +172,8 @@ class MT5Connector:
             return False
         return True
 
-    @staticmethod
-    def _fingerprint_for_account(account: Any) -> str:
-        """Create a stable opaque account key without storing the account login."""
+    def _fingerprint_for_account(self, account: Any) -> str:
+        """Create a stable keyed pseudonymous account identifier."""
         identity = {
             "company": str(getattr(account, "company", "") or "").strip().casefold(),
             "server": str(getattr(account, "server", "") or "").strip().casefold(),
@@ -171,7 +183,11 @@ class MT5Connector:
         if not identity["company"] or not identity["server"] or not identity["login"]:
             raise ValueError("account identity is incomplete")
         canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(("obi-mt5-account-v1:" + canonical).encode("utf-8")).hexdigest()
+        return hmac.new(
+            self.fingerprint_key,
+            ("obi-mt5-account-v2:" + canonical).encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
 
     @staticmethod
     def _symbol_metadata(info: Any) -> dict:
@@ -209,11 +225,15 @@ class MT5Connector:
             self.state = ConnectionState.DISCONNECTED
             raise RuntimeError("MT5 account identity verification failed")
         fingerprint = self._fingerprint_for_account(account)
+        if self.expected_account_fingerprint and fingerprint != self.expected_account_fingerprint:
+            self.state = ConnectionState.DISCONNECTED
+            raise RuntimeError("connected account does not match the pinned account fingerprint")
         if self._authenticated_fingerprint and fingerprint != self._authenticated_fingerprint:
             self.state = ConnectionState.DISCONNECTED
             raise RuntimeError("MT5 account fingerprint changed")
         return {
             "account_fingerprint": fingerprint,
+            "identity_pinned": self.expected_account_fingerprint is not None,
             "broker_company": str(getattr(account, "company", "") or "").strip(),
             "server": str(getattr(account, "server", "") or "").strip(),
             "environment": self.identity.environment,
@@ -234,6 +254,8 @@ class MT5Connector:
             return self._fail("account environment must be demo, live, or contest")
         if not self.identity.broker.strip():
             return self._fail("configured broker identity is required")
+        if not self.identity.server.strip():
+            return self._fail("exact configured broker server identity is required")
 
         kwargs = {}
         if self.terminal_path:
@@ -274,6 +296,13 @@ class MT5Connector:
                 return self._fail(
                     "connected account fingerprint differs from the previously authenticated account"
                 )
+            if (
+                self.expected_account_fingerprint is not None
+                and candidate_fingerprint != self.expected_account_fingerprint
+            ):
+                return self._fail(
+                    "connected account does not match the pinned account fingerprint"
+                )
             self._authenticated_fingerprint = candidate_fingerprint
 
             self.state = ConnectionState.AUTHENTICATED
@@ -296,6 +325,10 @@ class MT5Connector:
                 and getattr(terminal, "connected", False)
                 and self._identity_matches(account)
                 and self._fingerprint_for_account(account) == self._authenticated_fingerprint
+                and (
+                    self.expected_account_fingerprint is None
+                    or self._fingerprint_for_account(account) == self.expected_account_fingerprint
+                )
             )
             if not connected:
                 self.state = ConnectionState.DISCONNECTED
