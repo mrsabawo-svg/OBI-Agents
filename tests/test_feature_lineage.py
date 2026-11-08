@@ -12,7 +12,7 @@ from core.feature_lineage import (
 
 class FeatureLineageTest(unittest.TestCase):
     def test_feature_manifest_records_formula_parameters_and_library_version(self):
-        frame = pd.DataFrame(columns=["ADX_14", "EMA_20", "EMA_50", "ATRr_14"])
+        frame = pd.DataFrame({"ADX_14": [20.0], "EMA_20": [101.0], "EMA_50": [100.0], "ATRr_14": [1.5]})
 
         manifest = build_indicator_lineage(frame, library_version="0.11.0")
 
@@ -25,7 +25,7 @@ class FeatureLineageTest(unittest.TestCase):
         self.assertTrue(all(feature["available"] for feature in manifest["features"]))
 
     def test_missing_indicator_columns_are_explicitly_partial(self):
-        frame = pd.DataFrame(columns=["EMA_20", "EMA_50"])
+        frame = pd.DataFrame({"EMA_20": [101.0], "EMA_50": [100.0]})
 
         manifest = build_indicator_lineage(frame, library_version="0.11.0")
 
@@ -38,11 +38,30 @@ class FeatureLineageTest(unittest.TestCase):
         self.assertEqual(missing, {"ADX_14", "ATRr_14"})
 
     def test_unknown_calculation_library_version_is_not_complete(self):
-        frame = pd.DataFrame(columns=["ADX_14", "EMA_20", "EMA_50", "ATRr_14"])
+        frame = pd.DataFrame({
+            "ADX_14": [20.0], "EMA_20": [101.0],
+            "EMA_50": [100.0], "ATRr_14": [1.5],
+        })
 
         manifest = build_indicator_lineage(frame, library_version="unknown")
 
         self.assertEqual(manifest["status"], "partial")
+
+    def test_non_finite_latest_indicator_is_not_available(self):
+        frame = pd.DataFrame({
+            "ADX_14": [20.0],
+            "EMA_20": [101.0],
+            "EMA_50": [100.0],
+            "ATRr_14": [np.nan],
+        })
+
+        manifest = build_indicator_lineage(frame, library_version="0.11.0")
+
+        self.assertEqual(manifest["status"], "partial")
+        atr = next(item for item in manifest["features"] if item["name"] == "ATRr_14")
+        self.assertTrue(atr["column_present"])
+        self.assertFalse(atr["latest_value_valid"])
+        self.assertFalse(atr["available"])
 
     def test_data_agent_attaches_indicator_lineage_to_computed_frame(self):
         index = pd.date_range("2026-11-01T00:00:00Z", periods=80, freq="5min")
