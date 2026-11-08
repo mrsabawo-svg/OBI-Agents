@@ -114,6 +114,8 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
             "Low": price - 2,
             "Close": price + 1,
             "Volume": 100,
+            "volume_type": "tick_volume",
+            "bar_status": "closed",
         })
         price += 1
 
@@ -122,7 +124,14 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
             return None
 
         def json(self):
-            return {"data": rows}
+            return {
+                "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
+                "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo", "account_environment": "demo",
+                "source_type": "broker_bars",
+                "raw_persistence": {"persisted": True, "batch_id": "test-batch"},
+                "data": rows,
+            }
 
     with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
         data = DataAgent("SFX_VOL_75").fetch(["5m"])
@@ -142,6 +151,8 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
         "Low": 5010,
         "Close": 5005,
         "Volume": 100,
+        "volume_type": "tick_volume",
+        "bar_status": "closed",
     }]
 
     class FakeResponse:
@@ -149,11 +160,71 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
             return None
 
         def json(self):
-            return {"data": rows}
+            return {
+                "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
+                "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo", "account_environment": "demo",
+                "source_type": "broker_bars",
+                "raw_persistence": {"persisted": True, "batch_id": "test-batch"},
+                "data": rows,
+            }
 
     with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
         data = DataAgent("SFX_VOL_75").fetch(["5m"])
 
+    assert data == {}
+
+
+
+def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+    timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=80, freq="5min")
+    rows = []
+    for index, timestamp in enumerate(timestamps):
+        price = 5000 + index
+        rows.append({
+            "timestamp": timestamp.isoformat(), "Open": price,
+            "High": price + 2, "Low": price - 2, "Close": price + 1,
+            "Volume": 100, "volume_type": "tick_volume",
+            "bar_status": "forming" if index == 79 else "closed",
+        })
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {
+                "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
+                "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo", "account_environment": "demo",
+                "source_type": "broker_bars",
+                "raw_persistence": {"persisted": True, "batch_id": "test-batch"},
+                "data": rows,
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
+    assert "5m" in data
+    assert len(data["5m"]) == 79
+    assert data["5m"].attrs["quality_report"]["forming_excluded_count"] == 1
+
+
+def test_data_agent_withholds_data_without_raw_persistence(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {
+                "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
+                "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo", "account_environment": "demo",
+                "source_type": "broker_bars", "data": [],
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
     assert data == {}
 
 
