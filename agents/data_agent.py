@@ -4,6 +4,7 @@ Fetches OHLCV data across all timeframes for a symbol.
 """
 import json
 import os
+import numpy as np
 import requests
 import yfinance as yf
 import pandas as pd
@@ -125,7 +126,9 @@ class DataAgent:
                     or not parsed.get("server_name")
                     or not parsed.get("broker")
                     or str(parsed.get("broker")).lower() == "unknown"
+                    or str(parsed.get("server_name")).lower() == "unknown"
                     or parsed.get("account_environment") not in {"demo", "live", "contest"}
+                    or parsed.get("source_type") != "broker_bars"
                 ):
                     print(f"[DATA] {self.symbol} {tf}: verified broker/account identity metadata missing")
                     continue
@@ -146,6 +149,8 @@ class DataAgent:
                     "invalid_ohlc_count": 0,
                     "duplicate_timestamp_count": 0,
                     "forming_excluded_count": 0,
+                    "invalid_bar_status_count": 0,
+                    "invalid_volume_type_count": 0,
                 }
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
                 invalid_timestamp = df["timestamp"].isna()
@@ -156,7 +161,10 @@ class DataAgent:
                 numeric_columns = ["Open", "High", "Low", "Close", "Volume"]
                 for column in numeric_columns:
                     df[column] = pd.to_numeric(df[column], errors="coerce")
-                numeric_valid = df[numeric_columns].notna().all(axis=1)
+                numeric_valid = (
+                    df[numeric_columns].notna().all(axis=1)
+                    & np.isfinite(df[numeric_columns]).all(axis=1)
+                )
                 quality["invalid_numeric_count"] = int((~numeric_valid).sum())
                 df = df.loc[numeric_valid].copy()
 
@@ -170,7 +178,8 @@ class DataAgent:
                     continue
 
                 ohlc_valid = (
-                    (df["Low"] > 0)
+                    (df[["Open", "High", "Low", "Close"]] > 0).all(axis=1)
+                    & (df["Volume"] >= 0)
                     & (df["High"] >= df[["Open", "Close"]].max(axis=1))
                     & (df["Low"] <= df[["Open", "Close"]].min(axis=1))
                     & (df["High"] >= df["Low"])
@@ -178,6 +187,14 @@ class DataAgent:
                 quality["invalid_ohlc_count"] = int((~ohlc_valid).sum())
                 df = df.loc[ohlc_valid].copy()
 
+                statuses = df["bar_status"].astype(str).str.lower()
+                status_valid = statuses.isin({"forming", "closed"})
+                quality["invalid_bar_status_count"] = int((~status_valid).sum())
+                df = df.loc[status_valid].copy()
+                volume_types = df["volume_type"].astype(str).str.lower()
+                volume_type_valid = volume_types.eq("tick_volume")
+                quality["invalid_volume_type_count"] = int((~volume_type_valid).sum())
+                df = df.loc[volume_type_valid].copy()
                 forming = df["bar_status"].astype(str).str.lower().eq("forming")
                 quality["forming_excluded_count"] = int(forming.sum())
                 df = df.loc[~forming].sort_index().copy()
