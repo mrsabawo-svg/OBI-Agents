@@ -144,6 +144,7 @@ class DataAgent:
                     or parsed.get("account_environment") not in {"demo", "live", "contest"}
                     or parsed.get("source_type") != "broker_bars"
                     or not fingerprint_valid
+                    or not account_identity.get("broker_company")
                     or account_identity.get("server") != parsed.get("server_name")
                     or account_identity.get("environment") != parsed.get("account_environment")
                     or account_identity.get("platform") != parsed.get("platform")
