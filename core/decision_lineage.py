@@ -687,11 +687,57 @@ def build_decision_lineage(
 
 
 def verify_decision_lineage(manifest: dict) -> bool:
-    """Verify the manifest's content hash without trusting its stored digest."""
+    """Verify nested evidence hashes and the enclosing manifest digest."""
     if not isinstance(manifest, dict):
         return False
     if manifest.get("schema_version") != DECISION_LINEAGE_SCHEMA_VERSION:
         return False
+    if manifest.get("agent_order") != list(AGENT_ORDER):
+        return False
+
+    specs = manifest.get("agent_specs")
+    traces = manifest.get("agent_traces")
+    source_hashes = manifest.get("source_hashes")
+    if not all(isinstance(value, dict) for value in (specs, traces, source_hashes)):
+        return False
+    if set(specs) != set(AGENT_ORDER) or set(traces) != set(AGENT_ORDER):
+        return False
+
+    for agent_name in AGENT_ORDER:
+        spec = specs[agent_name]
+        trace = traces[agent_name]
+        if not isinstance(spec, dict) or not isinstance(trace, dict):
+            return False
+
+        spec_material = dict(spec)
+        supplied_spec_hash = spec_material.pop("formula_spec_sha256", None)
+        if supplied_spec_hash != _sha256(spec_material):
+            return False
+
+        source_files = spec.get("source_files")
+        if not isinstance(source_files, list) or any(
+            source_path not in source_hashes for source_path in source_files
+        ):
+            return False
+        expected_implementation_hash = _sha256({
+            source_path: source_hashes[source_path] for source_path in source_files
+        })
+        if trace.get("formula_spec_sha256") != supplied_spec_hash:
+            return False
+        if trace.get("implementation_sha256") != expected_implementation_hash:
+            return False
+
+        input_snapshot = trace.get("input_snapshot")
+        output = trace.get("output")
+        if not isinstance(input_snapshot, dict) or output is None:
+            return False
+        if trace.get("input_snapshot_sha256") != _sha256(input_snapshot):
+            return False
+        if trace.get("output_sha256") != _sha256(output):
+            return False
+        if trace.get("data_lineage_sha256") != manifest.get("data_lineage_sha256"):
+            return False
+
     supplied_hash = manifest.get("manifest_sha256")
     if not isinstance(supplied_hash, str) or len(supplied_hash) != 64:
         return False
