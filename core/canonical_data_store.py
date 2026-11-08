@@ -195,6 +195,7 @@ class CanonicalCandleStore:
 
         validated = [validate_canonical_candle(candle) for candle in candles]
         inserted_ids = []
+        record_hashes = []
         now = datetime.now(timezone.utc).isoformat()
 
         with self._connect() as connection:
@@ -269,23 +270,12 @@ class CanonicalCandleStore:
                         ) VALUES (?, ?, ?)
                     """, (candle_id, source_id, ordinal))
                 inserted_ids.append(candle_id)
+                record_hashes.append(record_hash)
 
         return {
             "inserted_count": len(inserted_ids),
             "candle_ids": inserted_ids,
-            "record_sha256": [
-                hashlib.sha256(_canonical_json({
-                    key: candle[key] for key in (
-                        "instrument_id", "broker", "server_name",
-                        "account_environment", "broker_symbol", "timeframe",
-                        "open_time", "close_time", "open", "high", "low",
-                        "close", "volume", "volume_type", "source_class",
-                        "bar_status", "source_observation_ids",
-                        "transformation_version",
-                    )
-                }).encode("utf-8")).hexdigest()
-                for candle in validated
-            ],
+            "record_sha256": record_hashes,
         }
 
     def count(self) -> int:
