@@ -234,7 +234,10 @@ class MT5Connector:
         return {
             "account_fingerprint": fingerprint,
             "identity_pinned": self.expected_account_fingerprint is not None,
-            "account_login_suffix": str(getattr(account, "login"))[-4:],
+            "account_login_suffix": (
+                str(getattr(account, "login"))[-4:]
+                if len(str(getattr(account, "login"))) > 4 else None
+            ),
             "broker_company": str(getattr(account, "company", "") or "").strip(),
             "server": str(getattr(account, "server", "") or "").strip(),
             "environment": self.identity.environment,
