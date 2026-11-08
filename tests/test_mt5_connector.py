@@ -107,9 +107,10 @@ def test_connect_rejects_wrong_broker_identity():
 
 
 def test_connect_requires_complete_explicit_credentials():
-    connector, _ = make_connector(login=1234, password="secret")
+    connector, adapter = make_connector(login=1234, password="secret")
     assert connector.connect() is False
     assert "must be configured together" in connector.last_error
+    assert adapter.initialized is False
 
 
 def test_symbol_discovery_does_not_assume_family_identity():
@@ -259,3 +260,14 @@ def test_mt5_api_calls_are_serialized_across_threads():
     for thread in threads:
         thread.join()
     assert maximum_active == 1
+
+
+def test_failed_broker_identity_shuts_down_mt5_api_session():
+    adapter = FakeMT5()
+    adapter.account_info = lambda: SimpleNamespace(
+        company="Wrong Broker", server="Wrong-Demo",
+        login=123456, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_DEMO,
+    )
+    connector, _ = make_connector(adapter)
+    assert connector.connect() is False
+    assert adapter.initialized is False
