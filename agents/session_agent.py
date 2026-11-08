@@ -1,4 +1,4 @@
-"""
+""" 
 OBI Agents — Session Agent
 Determines which trading session is active (SAST).
 Only fires signals during high-probability kill zones.
@@ -30,18 +30,18 @@ class SessionAgent:
         self.symbol = symbol
 
     def analyse(self) -> dict:
+        # Synthetics are continuously available and must not depend on
+        # forex session clocks or kill-zone calculation.
+        if self.symbol in SYNTHETIC_SYMBOLS:
+            return self._build(True, "Synthetic — 24/7 tradeable", {})
+
         try:
             now       = now_sast()
             kill_zone = is_kill_zone()
             hour      = now.hour
             weekday   = now.weekday()
 
-            is_always_on = self.symbol in CRYPTO_SYMBOLS or self.symbol in SYNTHETIC_SYMBOLS
-
-            # Synthetic instruments are not governed by forex session windows.
-            # Keep the 24/7 classification explicit even when a kill zone is active.
-            if self.symbol in SYNTHETIC_SYMBOLS:
-                return self._build(True, "Synthetic — 24/7 tradeable", kill_zone)
+            is_always_on = self.symbol in CRYPTO_SYMBOLS
 
             # Weekends: crypto trades 24/7; forex/indices are closed.
             if weekday >= 5 and not is_always_on:
