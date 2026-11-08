@@ -246,10 +246,14 @@ class DataAgent:
                     or history_report.get("missing_interval_count") != 0
                     or history_report.get("gap_segment_count") != 0
                     or history_report.get("duplicate_timestamp_count") != 0
+                    or history_report.get("duplicate_observation_count") != 0
+                    or history_report.get("duplicate_group_count") != 0
+                    or history_report.get("gaps") != []
                     or history_report.get("out_of_order_count") != 0
                     or history_report.get("timeframe_alignment_error_count") != 0
                     or history_report.get("future_bar_count") != 0
                     or history_report.get("latest_bar_stale") is not False
+                    or history_report.get("freshness_status") != "fresh"
                     or history_report.get("reasons") != []
                 ):
                     status = history_report.get("status") if isinstance(history_report, dict) else "missing"
