@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-REGISTRY_VERSION = "obi-instrument-registry-v2"
+REGISTRY_VERSION = "obi-instrument-registry-v3"
 
 
 def _json(value: Any) -> str:
