@@ -185,6 +185,21 @@ class DataAgent:
                     history_report.get("forming_observation_indexes")
                     if isinstance(history_report, dict) else None
                 )
+                requested_start_pos = (
+                    history_report.get("requested_start_pos")
+                    if isinstance(history_report, dict) else None
+                )
+                expected_page_starts = []
+                if (
+                    isinstance(requested_start_pos, int)
+                    and not isinstance(requested_start_pos, bool)
+                    and isinstance(page_sizes, list)
+                    and all(isinstance(value, int) and not isinstance(value, bool) for value in page_sizes)
+                ):
+                    cursor = requested_start_pos
+                    for page_size in page_sizes:
+                        expected_page_starts.append(cursor)
+                        cursor += page_size
                 expected_forming_indexes = [
                     index for index, row in enumerate(rows)
                     if isinstance(row, dict) and row.get("bar_status") == "forming"
@@ -197,6 +212,7 @@ class DataAgent:
                     and all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in page_sizes)
                     and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in page_starts)
                     and sum(page_sizes) == len(rows)
+                    and page_starts == expected_page_starts
                 )
                 forming_valid = (
                     isinstance(forming_indexes, list)
@@ -207,6 +223,8 @@ class DataAgent:
                     not isinstance(history_report, dict)
                     or history_report.get("schema_version") != "obi-history-completeness-v1"
                     or history_report.get("status") != "complete"
+                    or history_report.get("coverage_scope") != "requested_window"
+                    or history_report.get("requested_start_pos") != parsed.get("start_pos", 0)
                     or history_report.get("timeframe") != tf
                     or history_report.get("instrument_id") != self.symbol
                     or history_report.get("broker_symbol") != parsed.get("broker_symbol")
@@ -219,6 +237,10 @@ class DataAgent:
                     or not forming_valid
                     or not pagination_valid
                     or history_report.get("snapshot_stable") is not True
+                    or (
+                        page_count > 1
+                        and history_report.get("snapshot_check_performed") is not True
+                    )
                     or history_report.get("missing_interval_count") != 0
                     or history_report.get("gap_segment_count") != 0
                     or history_report.get("duplicate_timestamp_count") != 0
