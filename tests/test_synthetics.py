@@ -18,6 +18,22 @@ SAST = pytz.timezone("Africa/Johannesburg")
 EXPECTED_SYNTHETICS = {"PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"}
 
 
+def canonical_receipt(rows, report_id):
+    eligible = [row for row in rows if not row.get("quarantine_reasons")]
+    lineage = [
+        {"observation_id": row["observation_id"], "candle_id": f"candle-{row['observation_id']}"}
+        for row in eligible
+    ]
+    return {
+        "persisted": True,
+        "inserted_count": len(lineage),
+        "candle_ids": [link["candle_id"] for link in lineage],
+        "source_lineage": lineage,
+        "validation_report_id": report_id,
+        "validation_report_sha256": "a" * 64,
+    }
+
+
 def test_synthetic_symbols_registered():
     assert EXPECTED_SYNTHETICS == SYNTHETIC_SYMBOLS
     assert EXPECTED_SYNTHETICS == SYNTHETICS
@@ -138,9 +154,11 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                     "quarantine_records": [],
                 },
                 "quality_report": {
+                    "report_id": "accepted-report",
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
+                "canonical_persistence": canonical_receipt(rows, "accepted-report"),
                 "data": rows,
             }
 
@@ -185,9 +203,11 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                     "quarantine_ids": [], "quarantine_records": [],
                 },
                 "quality_report": {
+                    "report_id": "invalid-report",
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
+                "canonical_persistence": canonical_receipt(rows, "invalid-report"),
                 "data": rows,
             }
 
@@ -229,9 +249,11 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                     "quarantine_ids": [], "quarantine_records": [],
                 },
                 "quality_report": {
+                    "report_id": "forming-report",
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
+                "canonical_persistence": canonical_receipt(rows, "forming-report"),
                 "data": rows,
             }
 
@@ -324,9 +346,11 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                     }],
                 },
                 "quality_report": {
+                    "report_id": "quarantine-report",
                     "received_count": len(rows), "quarantined_observation_count": 1,
                     "quarantine_record_count": 1, "reason_counts": {"INVALID_OHLC": 1},
                 },
+                "canonical_persistence": canonical_receipt(rows, "quarantine-report"),
                 "data": rows,
             }
 
@@ -364,9 +388,11 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                     "quarantine_records": [],
                 },
                 "quality_report": {
+                    "report_id": "mismatch-report",
                     "received_count": 1, "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
+                "canonical_persistence": canonical_receipt(rows, "mismatch-report"),
                 "data": rows,
             }
 
