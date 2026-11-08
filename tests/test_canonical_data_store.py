@@ -173,6 +173,13 @@ def test_canonical_records_and_source_links_are_append_only(tmp_path):
                 "DELETE FROM canonical_candle_sources WHERE candle_id = ?",
                 (candle_id,),
             )
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            connection.execute(
+                "UPDATE canonical_validation_reports SET validator_version = ?",
+                ("tampered",),
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            connection.execute("DELETE FROM canonical_validation_reports")
 
 
 
@@ -187,6 +194,10 @@ def test_canonical_batch_is_atomic_when_later_record_is_invalid(tmp_path):
         store.append_batch([valid, invalid_source], validation_report())
 
     assert store.count() == 0
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM canonical_validation_reports"
+        ).fetchone()[0] == 0
 
 
 def test_canonical_store_rejects_source_class_mismatch(tmp_path):
