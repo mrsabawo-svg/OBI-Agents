@@ -21,7 +21,7 @@ Set these on the Windows machine or VPS that runs the MT5 terminal:
 - `MT5_BROKER_NAME`: broker name, e.g. `Weltrade`.
 - `MT5_ACCOUNT_ENVIRONMENT`: `demo`, `live`, or `contest`. The connector verifies this against the actual MT5 `account_info().trade_mode` value using the MetaTrader5 package constants; a mismatch or unavailable trade mode fails closed.
 - `MT5_SYMBOL_MAP_JSON`: JSON mapping from OBI's internal instrument IDs to exact symbols visible in this account.
-- `MT5_RAW_DB_PATH`: durable SQLite file path. Default: `data/raw_observations.sqlite3`.
+- `MT5_RAW_DB_PATH`: durable SQLite file path shared by raw observations, canonical candles, and the append-only account/instrument registry. Default: `data/raw_observations.sqlite3`.
 - `MT5_BRIDGE_HOST`: defaults to `127.0.0.1`.
 - `PORT`: defaults to `5000`.
 
@@ -65,7 +65,8 @@ A successful HTTP response does not by itself promote an instrument to verified.
 The reusable connector has explicit lifecycle states: DISCONNECTED, INITIALIZING, CONNECTED, AUTHENTICATED, and ERROR. A session is trusted only after terminal connectivity, configured broker/server identity checks, and actual MT5 account trade-mode verification pass. Access to the process-wide MT5 API is serialized across HTTP worker threads so concurrent requests cannot interleave terminal operations. If the session drops, the connector performs one bounded reconnect attempt when a data request arrives; it does not retry indefinitely.
 
 - GET /health reports connection state only.
-- GET /symbols returns terminal-visible symbol names and selection/visibility flags. Discovery does not classify a symbol as SyntX or mark it analysis-eligible.
+- GET /symbols returns account-scoped symbol discovery and contract metadata (digits, point, tick size/value, contract size, currencies, volume limits, path, and availability flags). Every call appends the account observation and symbol snapshot to the SQLite registry. Discovery does not classify a symbol as SyntX or mark it analysis-eligible.
+- GET /ohlcv requires a prior /symbols discovery for the same account fingerprint and exact broker symbol. A changed contract-metadata fingerprint or ambiguous OBI mapping blocks the request until reviewed and rediscovered.
 - GET /ohlcv?symbol=OBI_ID&timeframe=5m|15m|1h|4h&count=1..2000&start_pos=0..1000000 returns mapped broker rates after persistence. Position zero includes the current bar; positive positions page backward through historical bars.
 
 Only exact symbols configured in MT5_SYMBOL_MAP_JSON can be requested through the OBI instrument ID. Symbol discovery is evidence for account-specific mapping, not automatic authorization. Timeframes are explicit; unsupported values fail rather than falling back.
@@ -119,7 +120,7 @@ This is the first direct lineage integration. Derived indicator/feature dependen
 
 ## Signal archive lineage manifest
 
-Each scan builds a bounded `obi-data-lineage-v1` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
+Each scan builds a bounded `obi-data-lineage-v2` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
 
 Manifest status is explicit. These labels describe provenance coverage for the data frames used by the scan, not broker-history completeness, data quality approval, or trading eligibility:
 - `complete`: every expected timeframe has canonical IDs and a complete immutable source/report reference.
@@ -140,3 +141,19 @@ DataAgent attaches an `obi-feature-lineage-v1` manifest to every frame after ind
 - ATR(14): `ta.volatility.average_true_range(High, Low, Close)`, stored as `ATRr_14`
 
 Feature lineage status is independent of source lineage status. An indicator is marked available only when its output column exists and its latest value is finite. A frame may have canonical raw-data provenance while its feature manifest is partial if an indicator output or calculation-library version is unavailable. The feature manifest is included in the per-timeframe signal archive lineage. This does not yet version the structural logic inside HTFAgent, MTFAgent, ZoneAgent, LTFAgent, RegimeAgent, BiasAgent, TriggerAgent, or ScoreAgent.
+
+
+## Account fingerprint and persistent instrument discovery
+
+The connector now requires an actual MT5 account login identifier to be present in account metadata, even when explicit login credentials are not configured. On successful authentication it pins a SHA-256 account fingerprint derived from the broker company, exact server, login identifier, and actual MT5 trade-mode constant. The raw login and password are never returned by the bridge or written to the registry. The fingerprint is an opaque account correlation key, not an authentication secret.
+
+The connector retains the authenticated fingerprint across reconnect attempts. A switch to a different account—even on the same broker server and with the same demo/live mode—fails closed instead of silently re-binding the running bridge. Restarting the bridge is required to intentionally establish a different account identity.
+
+The /symbols endpoint persists an append-only account observation and account-scoped symbol discovery snapshot. Each discovered broker symbol includes exact name and available contract metadata. OBI's internal-to-broker mapping is matched by exact string only. If multiple internal IDs map to the same broker symbol, the registry records a mapping conflict and /ohlcv refuses that mapping.
+
+The /ohlcv endpoint requires the exact symbol to have been discovered under the current account fingerprint. It compares the current symbol contract metadata with the last persisted discovery fingerprint; a mismatch requires rediscovery and review. Raw observations now also persist the account fingerprint (schema version 2); existing SQLite databases are migrated additively, leaving historical rows with a null fingerprint rather than inventing one.
+
+Discovery records remain unverified or partially_verified. Merely seeing or selecting a symbol, or successfully retrieving one batch, does not automatically promote it to verified. A later operator verification step must record timeframe-specific evidence and explicit approval before a symbol can be treated as fully verified.
+
+
+Account fingerprints are also included in each immutable validation report and raw-observation row, then validated by DataAgent and carried into the archived signal's per-timeframe source lineage. A signal can therefore be traced to the exact broker account identity without exposing the account login number.

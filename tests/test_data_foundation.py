@@ -9,6 +9,7 @@ from core.instrument_registry import (
     validate_instrument_record,
 )
 from core.raw_observation_store import RawObservationStore
+from core.instrument_registry_store import InstrumentRegistryStore
 
 
 def valid_record():
@@ -24,7 +25,7 @@ def valid_record():
         "source_type": "unknown",
         "verification_status": "unverified",
         "supported_timeframes": [],
-        "registry_version": "0.1.0",
+        "registry_version": "0.2.0",
     }
 
 
@@ -75,6 +76,8 @@ def test_registry_verified_record_requires_evidence_fields():
         "availability_status": "data_verified",
         "supported_timeframes": ["5m"],
         "account_environment": "demo",
+        "server_name": "Weltrade-Demo",
+        "account_fingerprint": "a" * 64,
         "evidence_refs": ["evidence://account-observation-001"],
         "last_verified_at": "2026-11-08T10:00:00Z",
     })
@@ -206,3 +209,132 @@ def test_non_finite_raw_values_are_preserved_as_explicit_json_sentinels(tmp_path
     )
     saved = store.get(result["observation_ids"][0])
     assert saved["payload"]["open"] == {"__non_finite_float__": "nan"}
+
+
+def test_instrument_registry_persists_account_scoped_discovery_without_auto_verification(tmp_path):
+    store = InstrumentRegistryStore(tmp_path / "registry.sqlite3")
+    account = {
+        "account_fingerprint": "a" * 64,
+        "broker_company": "Weltrade Ltd",
+        "server": "Weltrade-Demo",
+        "environment": "demo",
+        "platform": "MT5",
+    }
+    symbols = [{
+        "name": "SFX Vol 75",
+        "description": "SFX Vol 75",
+        "selected": True,
+        "visible": True,
+        "metadata": {
+            "name": "SFX Vol 75", "digits": 2, "point": 0.01,
+            "trade_tick_size": 0.01, "selected": True, "visible": True,
+        },
+    }]
+
+    result = store.record_discovery(account, symbols, {"SFX_VOL_75": "SFX Vol 75"})
+    record = store.latest_symbol("a" * 64, "SFX Vol 75")
+
+    assert result["symbol_count"] == 1
+    assert record["mapped_instrument_ids"] == ["SFX_VOL_75"]
+    assert record["availability_status"] == "selectable"
+    assert record["verification_status"] == "partially_verified"
+    assert record["metadata_sha256"] == result["symbols"][0]["metadata_sha256"]
+    assert store.account_observation_count() == 1
+    assert store.instrument_discovery_count() == 1
+
+
+def test_instrument_registry_isolates_accounts_and_rejects_ambiguous_mapping(tmp_path):
+    store = InstrumentRegistryStore(tmp_path / "registry.sqlite3")
+    account = {
+        "account_fingerprint": "b" * 64,
+        "broker_company": "Weltrade Ltd",
+        "server": "Weltrade-Demo",
+        "environment": "demo",
+        "platform": "MT5",
+    }
+    symbol = {
+        "name": "SFX Vol 75", "description": "SFX Vol 75",
+        "metadata": {"name": "SFX Vol 75", "digits": 2},
+    }
+    store.record_discovery(
+        account, [symbol],
+        {"SFX_VOL_75": "SFX Vol 75", "SFX_VOL_75_ALT": "SFX Vol 75"},
+    )
+    record = store.latest_symbol("b" * 64, "SFX Vol 75")
+    assert record["mapping_conflict"] is True
+    assert record["verification_status"] == "partially_verified"
+    assert store.latest_symbol("c" * 64, "SFX Vol 75") is None
+
+
+def test_instrument_registry_evidence_is_append_only(tmp_path):
+    path = tmp_path / "registry.sqlite3"
+    store = InstrumentRegistryStore(path)
+    account = {
+        "account_fingerprint": "d" * 64,
+        "broker_company": "Weltrade Ltd",
+        "server": "Weltrade-Demo",
+        "environment": "demo",
+        "platform": "MT5",
+    }
+    store.record_discovery(account, [{
+        "name": "EURUSD", "description": "Euro vs US Dollar",
+        "metadata": {"name": "EURUSD"},
+    }])
+    with sqlite3.connect(path) as db:
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            db.execute("UPDATE mt5_instrument_discoveries SET broker_symbol = 'EURUSDx'")
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            db.execute("DELETE FROM mt5_account_observations")
+
+
+def test_raw_observations_persist_account_fingerprint(tmp_path):
+    store = RawObservationStore(tmp_path / "raw.sqlite3")
+    envelope = source_envelope()
+    envelope["account_fingerprint"] = "f" * 64
+    result = store.append_batch(envelope, [{"time": 1794132000, "open": 100.0}])
+    saved = store.get(result["observation_ids"][0])
+    assert saved["account_fingerprint"] == "f" * 64
+
+
+def test_raw_store_additively_migrates_existing_database_for_account_fingerprint(tmp_path):
+    path = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("""
+            CREATE TABLE raw_observations (
+                observation_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                instrument_id TEXT NOT NULL,
+                broker TEXT NOT NULL,
+                server_name TEXT,
+                account_environment TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                broker_symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_timestamp TEXT,
+                retrieved_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_sha256 TEXT NOT NULL,
+                schema_version TEXT NOT NULL
+            )
+        """)
+    store = RawObservationStore(path)
+    envelope = source_envelope()
+    envelope["account_fingerprint"] = "9" * 64
+    result = store.append_batch(envelope, [{"time": 1794132000, "open": 100.0}])
+    saved = store.get(result["observation_ids"][0])
+    assert saved["account_fingerprint"] == "9" * 64
+
+
+def test_instrument_registry_rejects_malformed_account_fingerprint(tmp_path):
+    store = InstrumentRegistryStore(tmp_path / "registry.sqlite3")
+    account = {
+        "account_fingerprint": "not-a-sha256",
+        "broker_company": "Weltrade Ltd",
+        "server": "Weltrade-Demo",
+        "environment": "demo",
+        "platform": "MT5",
+    }
+    with pytest.raises(ValueError, match="SHA-256"):
+        store.record_discovery(account, [])
+    assert store.account_observation_count() == 0

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 
-LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v1"
+LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v2"
 DEFAULT_ID_WINDOW = 50
 QUALITY_SUMMARY_FIELDS = (
     "received_count",
@@ -30,6 +30,7 @@ REQUIRED_CANONICAL_METADATA = (
     "broker",
     "server_name",
     "account_environment",
+    "account_fingerprint",
     "broker_symbol",
     "source_type",
 )
@@ -116,6 +117,11 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         isinstance(metadata.get(key), str) and metadata.get(key).strip()
         for key in REQUIRED_CANONICAL_METADATA
     )
+    fingerprint = metadata.get("account_fingerprint", "")
+    metadata_complete = metadata_complete and (
+        len(fingerprint) == 64
+        and all(char in "0123456789abcdef" for char in fingerprint)
+    )
     report_hash = metadata.get("canonical_validation_report_sha256", "")
     metadata_complete = metadata_complete and (
         len(report_hash) == 64
@@ -145,6 +151,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "broker": metadata.get("broker"),
         "server_name": metadata.get("server_name"),
         "account_environment": metadata.get("account_environment"),
+        "account_fingerprint": metadata.get("account_fingerprint"),
         "broker_symbol": metadata.get("broker_symbol"),
         "source_type": metadata.get("source_type"),
         "quality_summary": quality_summary,

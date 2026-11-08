@@ -125,6 +125,16 @@ class DataAgent:
                 if parsed.get("symbol_id") != self.symbol or parsed.get("timeframe") != tf:
                     print(f"[DATA] {self.symbol} {tf}: response identity mismatch")
                     continue
+                account_identity = parsed.get("account_identity")
+                fingerprint = (
+                    account_identity.get("account_fingerprint")
+                    if isinstance(account_identity, dict) else None
+                )
+                fingerprint_valid = (
+                    isinstance(fingerprint, str)
+                    and len(fingerprint) == 64
+                    and all(char in "0123456789abcdef" for char in fingerprint)
+                )
                 if (
                     not parsed.get("broker_symbol")
                     or not parsed.get("server_name")
@@ -133,8 +143,13 @@ class DataAgent:
                     or str(parsed.get("server_name")).lower() == "unknown"
                     or parsed.get("account_environment") not in {"demo", "live", "contest"}
                     or parsed.get("source_type") != "broker_bars"
+                    or not fingerprint_valid
+                    or not account_identity.get("broker_company")
+                    or account_identity.get("server") != parsed.get("server_name")
+                    or account_identity.get("environment") != parsed.get("account_environment")
+                    or account_identity.get("platform") != parsed.get("platform")
                 ):
-                    print(f"[DATA] {self.symbol} {tf}: verified broker/account identity metadata missing")
+                    print(f"[DATA] {self.symbol} {tf}: verified broker/account identity metadata missing or inconsistent")
                     continue
 
                 rows = parsed.get("data")
@@ -142,15 +157,20 @@ class DataAgent:
                     print(f"[DATA] {self.symbol} {tf}: bridge returned no candle rows")
                     continue
                 quality_report = parsed.get("quality_report")
-                if not isinstance(quality_report, dict) or not quality_report.get("report_id"):
-                    print(f"[DATA] {self.symbol} {tf}: durable validation report missing")
+                if (
+                    not isinstance(quality_report, dict)
+                    or not quality_report.get("report_id")
+                    or quality_report.get("account_fingerprint") != fingerprint
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: durable validation report or account fingerprint missing")
                     continue
                 canonical_persistence = parsed.get("canonical_persistence")
                 observation_ids = persistence.get("observation_ids")
                 quarantine_ids = persistence.get("quarantine_ids")
                 quarantine_links = persistence.get("quarantine_records")
                 if (
-                    persistence.get("inserted_count") != len(rows)
+                    persistence.get("account_fingerprint") != fingerprint
+                    or persistence.get("inserted_count") != len(rows)
                     or not isinstance(observation_ids, list)
                     or len(observation_ids) != len(rows)
                     or any(not isinstance(item, str) or not item for item in observation_ids)
@@ -352,6 +372,7 @@ class DataAgent:
                     "broker": parsed.get("broker"),
                     "server_name": parsed.get("server_name"),
                     "account_environment": parsed.get("account_environment"),
+                    "account_fingerprint": fingerprint,
                     "broker_symbol": parsed.get("broker_symbol"),
                     "source_type": parsed.get("source_type"),
                     "raw_batch_id": persistence.get("batch_id"),

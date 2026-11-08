@@ -1,8 +1,11 @@
 """Validated instrument-registry records for OBI market-data acquisition.
 
 A family catalogue entry is not proof that a broker symbol exists in an account.
+Schema v0.2.0 binds verified instruments to an exact server and account fingerprint.
 """
 from typing import Any
+
+REGISTRY_SCHEMA_VERSION = "0.2.0"
 
 FAMILY_IDS = frozenset({
     "FX_VOL", "SFX_VOL", "PAIN", "GAIN", "FLIP", "SWITCH", "BREAK",
@@ -10,7 +13,7 @@ FAMILY_IDS = frozenset({
 })
 ACCOUNT_ENVIRONMENTS = frozenset({"demo", "live", "contest", "unknown"})
 AVAILABILITY_STATES = frozenset({
-    "unverified", "visible_in_market_watch", "selectable", "data_verified",
+    "unverified", "discovered", "visible_in_market_watch", "selectable", "data_verified",
     "disabled", "unavailable",
 })
 VERIFICATION_STATES = frozenset({
@@ -82,6 +85,15 @@ def validate_instrument_record(record: dict[str, Any]) -> dict[str, Any]:
             raise RegistryValidationError("verified records require verified timeframes")
         if record["account_environment"] == "unknown":
             raise RegistryValidationError("verified records require a known account environment")
+        if not isinstance(record.get("server_name"), str) or not record["server_name"].strip():
+            raise RegistryValidationError("verified records require the exact broker server")
+        fingerprint = record.get("account_fingerprint")
+        if (
+            not isinstance(fingerprint, str)
+            or len(fingerprint) != 64
+            or any(char not in "0123456789abcdef" for char in fingerprint)
+        ):
+            raise RegistryValidationError("verified records require a SHA-256 account_fingerprint")
         evidence_refs = record.get("evidence_refs")
         if not isinstance(evidence_refs, list) or not evidence_refs:
             raise RegistryValidationError("verified records require evidence_refs")
@@ -90,7 +102,9 @@ def validate_instrument_record(record: dict[str, Any]) -> dict[str, Any]:
 
     fingerprint = record.get("account_fingerprint")
     if fingerprint is not None and (
-        not isinstance(fingerprint, str) or not fingerprint.strip()
+        not isinstance(fingerprint, str)
+        or len(fingerprint) != 64
+        or any(char not in "0123456789abcdef" for char in fingerprint)
     ):
-        raise RegistryValidationError("account_fingerprint must be null or non-empty")
+        raise RegistryValidationError("account_fingerprint must be null or a lowercase SHA-256 hex digest")
     return record

@@ -17,6 +17,7 @@ from flask import Flask, jsonify, request
 from core.mt5_connector import ConnectionIdentity, MT5Connector
 from core.raw_observation_store import RawObservationStore
 from core.canonical_data_store import CanonicalCandleStore
+from core.instrument_registry_store import InstrumentRegistryStore, metadata_fingerprint
 
 try:
     import MetaTrader5 as mt5
@@ -248,11 +249,24 @@ def get_symbols():
     if connector is None:
         return jsonify({"status": "error", "error": "MT5 connector is not initialized"}), 503
     try:
+        account_identity = connector.get_account_identity()
         symbols = connector.discover_symbols()
+        discovery = InstrumentRegistryStore(MT5_RAW_DB_PATH).record_discovery(
+            account_identity, symbols, SYMBOL_MAP
+        )
     except Exception:
-        app.logger.exception("MT5 symbol discovery failed")
-        return jsonify({"status": "error", "error": "symbol discovery failed"}), 503
-    return jsonify({"status": "ok", "count": len(symbols), "symbols": symbols})
+        app.logger.exception("MT5 symbol discovery or registry persistence failed")
+        return jsonify({
+            "status": "error",
+            "error": "symbol discovery or registry persistence failed",
+        }), 503
+    return jsonify({
+        "status": "ok",
+        "count": len(symbols),
+        "account_identity": account_identity,
+        "discovery": discovery,
+        "symbols": symbols,
+    })
 
 
 @app.route("/ohlcv", methods=["GET"])
@@ -283,6 +297,33 @@ def get_ohlcv():
         }), 404
 
     try:
+        account_identity = connector.get_account_identity()
+        registry = InstrumentRegistryStore(MT5_RAW_DB_PATH)
+        latest_discovery = registry.latest_symbol(
+            account_identity["account_fingerprint"], broker_symbol
+        )
+        if latest_discovery is None:
+            return jsonify({
+                "status": "error",
+                "error": "exact broker symbol has not been discovered for this account; call /symbols first",
+            }), 409
+        if latest_discovery["mapping_conflict"]:
+            return jsonify({
+                "status": "error",
+                "error": "broker symbol is ambiguously mapped to multiple OBI instruments",
+            }), 409
+        if symbol_id not in latest_discovery["mapped_instrument_ids"]:
+            return jsonify({
+                "status": "error",
+                "error": "exact OBI-to-broker mapping is not present in the account registry",
+            }), 409
+        selected_symbol = connector.select_symbol(broker_symbol)
+        current_metadata = selected_symbol.get("metadata", {})
+        if metadata_fingerprint(current_metadata) != latest_discovery["metadata_sha256"]:
+            return jsonify({
+                "status": "error",
+                "error": "broker symbol contract metadata changed; rediscover symbols before requesting data",
+            }), 409
         rates = connector.fetch_rates(broker_symbol, timeframe, count, start_pos)
         symbol_info = mt5.symbol_info(broker_symbol)
     except ValueError as exc:
@@ -323,13 +364,20 @@ def get_ohlcv():
 
     # Re-check the authenticated account after rate retrieval. If the
     # terminal/account changed or disconnected mid-request, withhold the batch.
-    account = mt5.account_info()
-    if account is None or not connector.is_connected():
+    try:
+        account_identity_after = connector.get_account_identity()
+    except Exception:
+        account_identity_after = None
+    if (
+        account_identity_after is None
+        or account_identity_after["account_fingerprint"] != account_identity["account_fingerprint"]
+        or not connector.is_connected()
+    ):
         return jsonify({
             "status": "error",
             "error": "MT5 account session changed during retrieval; data withheld",
         }), 503
-    server_name = str(getattr(account, "server", "") or "")
+    server_name = account_identity["server"]
     if not server_name:
         return jsonify({
             "status": "error",
@@ -340,6 +388,7 @@ def get_ohlcv():
         "broker": MT5_BROKER_NAME,
         "server_name": server_name,
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+        "account_fingerprint": account_identity["account_fingerprint"],
         "platform": "MT5",
         "broker_symbol": broker_symbol,
         "timeframe": timeframe,
@@ -372,6 +421,7 @@ def get_ohlcv():
     validation_report_id = str(uuid.uuid4())
     quality_report = {
         "report_id": validation_report_id,
+        "account_fingerprint": account_identity["account_fingerprint"],
         "received_count": len(raw_rows),
         "quarantined_observation_count": len({
             record["observation_index"] for record in quarantine_records
@@ -387,6 +437,7 @@ def get_ohlcv():
         "broker": MT5_BROKER_NAME,
         "server_name": server_name,
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+        "account_fingerprint": account_identity["account_fingerprint"],
         "broker_symbol": broker_symbol,
         "timeframe": timeframe,
         "validator_version": quality_report["validator_version"],
@@ -456,6 +507,7 @@ def get_ohlcv():
         "broker_display_name": str(getattr(symbol_info, "description", "") or ""),
         "server_name": server_name,
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+        "account_identity": account_identity,
         "platform": "MT5",
         "timeframe": timeframe,
         "start_pos": start_pos,
