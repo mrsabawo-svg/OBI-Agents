@@ -411,7 +411,20 @@ AGENT_SPECS = {
     },
 }
 
-ROOT_SOURCE_FILES = ["main.py", "core/decision_lineage.py"]
+ROOT_SOURCE_FILES = [
+    "main.py",
+    "core/decision_lineage.py",
+    "agents/data_agent.py",
+    "core/data_lineage.py",
+    "core/feature_lineage.py",
+    "core/history_completeness.py",
+    "core/mt5_connector.py",
+    "core/canonical_data_store.py",
+    "core/raw_observation_store.py",
+    "core/instrument_registry.py",
+    "core/instrument_registry_store.py",
+    "mt5_bridge.py",
+]
 
 
 def _normalise(value: Any) -> Any:
