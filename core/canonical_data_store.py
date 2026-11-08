@@ -78,6 +78,11 @@ def validate_canonical_candle(record: dict[str, Any]) -> dict[str, Any]:
     close_time = _utc_datetime(record["close_time"], "close_time")
     if close_time <= open_time:
         raise CanonicalDataError("close_time must be later than open_time")
+    expected_seconds = TIMEFRAME_SECONDS.get(record["timeframe"])
+    if expected_seconds is None:
+        raise CanonicalDataError("unsupported canonical timeframe")
+    if (close_time - open_time).total_seconds() != expected_seconds:
+        raise CanonicalDataError("candle boundaries do not match the declared timeframe")
 
     values = {}
     for field in ("open", "high", "low", "close", "volume"):
