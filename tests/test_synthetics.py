@@ -178,6 +178,7 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     assert lineage["timeframes"]["5m"]["quality_summary"]["received_count"] == 80
     assert lineage["timeframes"]["5m"]["quality_summary"]["durable_quarantined_count"] == 0
     assert lineage["timeframes"]["5m"]["feature_lineage_status"] == "complete"
+    assert lineage["feature_lineage_status"] == "complete"
     assert lineage["timeframes"]["5m"]["feature_lineage"]["feature_set_version"] == "data-agent-indicators-v1"
 
 
