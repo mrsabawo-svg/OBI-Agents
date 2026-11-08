@@ -168,6 +168,7 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                     "history_completeness": {
                         "schema_version": "obi-history-completeness-v1",
                         "status": "complete",
+                        "session_model": "unknown",
                         "coverage_scope": "requested_window",
                         "requested_start_pos": 0,
                         "timeframe": "5m",
@@ -271,6 +272,7 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                     "history_completeness": {
                         "schema_version": "obi-history-completeness-v1",
                         "status": "complete",
+                        "session_model": "unknown",
                         "coverage_scope": "requested_window",
                         "requested_start_pos": 0,
                         "timeframe": "5m",
@@ -371,6 +373,7 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                     "history_completeness": {
                         "schema_version": "obi-history-completeness-v1",
                         "status": "complete",
+                        "session_model": "unknown",
                         "coverage_scope": "requested_window",
                         "requested_start_pos": 0,
                         "timeframe": "5m",
@@ -465,6 +468,7 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                     "history_completeness": {
                         "schema_version": "obi-history-completeness-v1",
                         "status": "complete",
+                        "session_model": "unknown",
                         "coverage_scope": "requested_window",
                         "requested_start_pos": 0,
                         "timeframe": "5m",
@@ -618,6 +622,7 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                     "history_completeness": {
                         "schema_version": "obi-history-completeness-v1",
                         "status": "complete",
+                        "session_model": "unknown",
                         "coverage_scope": "requested_window",
                         "requested_start_pos": 0,
                         "timeframe": "5m",
@@ -709,6 +714,7 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                     "history_completeness": {
                         "schema_version": "obi-history-completeness-v1",
                         "status": "complete",
+                        "session_model": "unknown",
                         "coverage_scope": "requested_window",
                         "requested_start_pos": 0,
                         "timeframe": "5m",
