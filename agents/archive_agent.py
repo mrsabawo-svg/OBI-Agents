@@ -195,5 +195,6 @@ class ArchiveAgent:
             "data_lineage_status": data_lineage.get("status", "unavailable"),
             "decision_lineage": decision_lineage,
             "decision_lineage_status": decision_lineage.get("status", "unavailable"),
+            "decision_lineage_provenance_status": decision_lineage.get("provenance_status", "unavailable"),
             "decision_lineage_sha256": decision_lineage.get("manifest_sha256"),
         }
