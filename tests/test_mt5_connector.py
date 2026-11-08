@@ -14,6 +14,9 @@ class FakeMT5:
     TIMEFRAME_M15 = 15
     TIMEFRAME_H1 = 60
     TIMEFRAME_H4 = 240
+    ACCOUNT_TRADE_MODE_DEMO = 0
+    ACCOUNT_TRADE_MODE_CONTEST = 1
+    ACCOUNT_TRADE_MODE_REAL = 2
 
     def __init__(self):
         self.initialized = False
@@ -42,7 +45,7 @@ class FakeMT5:
     def account_info(self):
         if not self.initialized or not self.connected:
             return None
-        return SimpleNamespace(company="Weltrade Ltd", server="Weltrade-Demo")
+        return SimpleNamespace(company="Weltrade Ltd", server="Weltrade-Demo", login=123456, trade_mode=0)
 
     def symbols_get(self):
         return self.symbols
@@ -191,3 +194,40 @@ def test_history_pagination_rejects_out_of_range_start_position():
     assert connector.connect()
     with pytest.raises(ValueError, match="start_pos"):
         connector.fetch_rates("EURUSD", "1h", 100, start_pos=1000001)
+
+
+def test_demo_configuration_rejects_actual_live_account():
+    connector, adapter = make_connector()
+    adapter.account_info = lambda: SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Demo",
+        login=123456, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_REAL,
+    )
+    assert connector.connect() is False
+    assert "environment does not match" in connector.last_error
+
+
+def test_live_and_contest_modes_are_verified_against_mt5_constants():
+    live, live_adapter = make_connector()
+    live.identity = ConnectionIdentity("Weltrade", "Weltrade-Live", "live")
+    live_adapter.account_info = lambda: SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Live",
+        login=123456, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_REAL,
+    )
+    assert live.connect() is True
+
+    contest, contest_adapter = make_connector()
+    contest.identity = ConnectionIdentity("Weltrade", "Weltrade-Contest", "contest")
+    contest_adapter.account_info = lambda: SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Contest",
+        login=123456, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_CONTEST,
+    )
+    assert contest.connect() is True
+
+
+def test_missing_account_trade_mode_fails_closed():
+    connector, adapter = make_connector()
+    adapter.account_info = lambda: SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Demo", login=123456
+    )
+    assert connector.connect() is False
+    assert "trade mode is unavailable" in connector.last_error
