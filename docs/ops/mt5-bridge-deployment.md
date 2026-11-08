@@ -53,7 +53,7 @@ If the terminal is already logged in, the bridge can use that session while stil
 4. Confirm `/health` reports `account_identity_pinned=true`, then repeat `/symbols` and check the same fingerprint.
 5. Only then can `/ohlcv` return data. Until the pin is set, it returns HTTP 409. DataAgent independently rejects any response without pin evidence.
 
-The fingerprint is an HMAC-SHA256 pseudonymous account identifier, not a password or access token. The full MT5 login is not returned or stored; only its last four digits are exposed for first-run operator confirmation. Keep the HMAC key stable across restarts and backups.
+The fingerprint is an HMAC-SHA256 pseudonymous account identifier, not a password or access token. The full MT5 login is not returned or stored; only its last four digits are exposed for first-run operator confirmation. Keep the HMAC key stable across restarts and backups. Do not reuse `MT5_BRIDGE_TOKEN`: the fingerprint key and HTTP bearer token serve different purposes.
 
 ## Remote access
 
