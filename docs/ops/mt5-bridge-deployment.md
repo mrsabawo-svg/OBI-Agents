@@ -75,6 +75,29 @@ The response labels tick volume explicitly. A request from MT5 position zero mar
 A successful HTTP response does not by itself promote an instrument to verified. Exact symbol, broker/server, account environment, timeframe, data quality, and persisted evidence must still be reviewed.
 
 
+## Instrument verification and OBI analysis eligibility
+
+Account pinning is necessary but not sufficient for signal analysis. A discovered symbol remains `partially_verified` until an operator approves exact instrument/timeframe evidence.
+
+1. After account pinning and exact `MT5_SYMBOL_MAP_JSON` configuration, call authenticated `GET /symbols`.
+2. Request the required timeframes through `GET /ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=300` (repeat for each timeframe). The bridge persists raw observations, canonical candles, and an immutable validation report. Before approval the response is still useful as evidence, but reports `analysis_eligible=false`; DataAgent will not consume it.
+3. Review the broker symbol, contract metadata, account fingerprint, history-completeness report, quarantine counts, and closed canonical candles.
+4. Submit an authenticated `POST /instruments/verify` request with the exact instrument/symbol and the validation report IDs to approve:
+
+   ```json
+   {
+     "instrument_id": "SFX_VOL_75",
+     "broker_symbol": "SFX Vol 75",
+     "reviewer": "operator-review",
+     "evidence_report_ids": ["REPORT_ID_5M", "REPORT_ID_15M"]
+   }
+   ```
+
+5. The bridge verifies each report's immutable hash, account pin, exact account/instrument/symbol identity, complete history status, and at least one valid closed canonical candle. It records an append-only verification event and returns the approved timeframes.
+6. Only approved timeframes return `analysis_eligible=true` and pass DataAgent's independent gate. A timeframe not included in the approval cannot feed OBI analysis.
+
+A new account fingerprint, changed broker contract metadata, changed exact symbol mapping, or unapproved timeframe automatically removes analysis eligibility. Rediscover and explicitly re-verify after such changes. Repeated discovery with unchanged metadata does not erase an existing approval.
+
 ## Connector capabilities and API
 
 The reusable connector has explicit lifecycle states: DISCONNECTED, INITIALIZING, CONNECTED, AUTHENTICATED, and ERROR. A session is trusted only after terminal connectivity, configured broker/server identity checks, and actual MT5 account trade-mode verification pass. Access to the process-wide MT5 API is serialized across HTTP worker threads so concurrent requests cannot interleave terminal operations. If the session drops, the connector performs one bounded reconnect attempt when a data request arrives; it does not retry indefinitely.
@@ -135,7 +158,7 @@ This is the first direct lineage integration. Derived indicator/feature dependen
 
 ## Signal archive lineage manifest
 
-Each scan builds a bounded `obi-data-lineage-v4` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
+Each scan builds a bounded `obi-data-lineage-v5` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
 
 Manifest status is explicit. These labels describe provenance coverage for the data frames used by the scan, not broker-history completeness, data quality approval, or trading eligibility:
 - `complete`: every expected timeframe has canonical IDs and a complete immutable source/report reference.
@@ -178,7 +201,7 @@ Account fingerprints are also included in each immutable validation report and r
 
 Each OHLCV response now includes an immutable history-completeness subreport. The report is scoped to the exact requested window (count and start position); it does not claim that all older broker history exists. It records requested/returned counts, page boundaries, latest-bar anchor stability, timestamp ordering/alignment, duplicates, gaps, forming/closed bars, freshness, and a status of complete, incomplete, or unverifiable. A complete status certifies only the requested window, not the broker's entire historical archive.
 
-Unexplained gaps or stale latest data remain unverifiable when no verified broker session calendar is available. They are not silently treated as missing bars or as valid continuous-market history. A verified continuous 24/7 session model can classify those gaps as incomplete. DataAgent accepts only complete history windows; incomplete or unverifiable windows are persisted as evidence but withheld from signal generation. The archived per-timeframe data lineage now uses schema v4 and carries the history report summary alongside the account fingerprint.
+Unexplained gaps or stale latest data remain unverifiable when no verified broker session calendar is available. They are not silently treated as missing bars or as valid continuous-market history. A verified continuous 24/7 session model can classify those gaps as incomplete. DataAgent accepts only complete history windows; incomplete or unverifiable windows are persisted as evidence but withheld from signal generation. The archived per-timeframe data lineage now uses schema v5 and carries the history report summary alongside the account fingerprint.
 
 ### Explicit session-calendar declaration
 
