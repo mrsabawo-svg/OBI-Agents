@@ -1,6 +1,8 @@
 """Versioned definitions for DataAgent-derived indicator columns."""
 from __future__ import annotations
 
+from copy import deepcopy
+
 from importlib.metadata import PackageNotFoundError, version
 import math
 from typing import Any
@@ -68,7 +70,7 @@ def build_indicator_lineage(
             except (TypeError, ValueError, OverflowError, KeyError, IndexError):
                 latest_value_valid = False
         features.append({
-            **definition,
+            **deepcopy(definition),
             "column_present": column_present,
             "latest_value_valid": latest_value_valid,
             "available": bool(column_present and latest_value_valid),
