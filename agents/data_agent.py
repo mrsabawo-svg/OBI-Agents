@@ -120,8 +120,14 @@ class DataAgent:
                 if parsed.get("symbol_id") != self.symbol or parsed.get("timeframe") != tf:
                     print(f"[DATA] {self.symbol} {tf}: response identity mismatch")
                     continue
-                if not parsed.get("broker_symbol") or not parsed.get("server_name"):
-                    print(f"[DATA] {self.symbol} {tf}: broker identity metadata missing")
+                if (
+                    not parsed.get("broker_symbol")
+                    or not parsed.get("server_name")
+                    or not parsed.get("broker")
+                    or str(parsed.get("broker")).lower() == "unknown"
+                    or parsed.get("account_environment") not in {"demo", "live", "contest"}
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: verified broker/account identity metadata missing")
                     continue
 
                 rows = parsed.get("data")
