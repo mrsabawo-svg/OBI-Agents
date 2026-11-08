@@ -19,7 +19,10 @@ python -m pip install Flask MetaTrader5 waitress
 Set these on the Windows machine or VPS that runs the MT5 terminal:
 
 - `MT5_BROKER_NAME`: broker name, e.g. `Weltrade`.
+- `MT5_SERVER`: exact expected MT5 server name. Required even when the terminal is already logged in.
 - `MT5_ACCOUNT_ENVIRONMENT`: `demo`, `live`, or `contest`. The connector verifies this against the actual MT5 `account_info().trade_mode` value using the MetaTrader5 package constants; a mismatch or unavailable trade mode fails closed.
+- `MT5_ACCOUNT_FINGERPRINT_KEY`: stable secret of at least 32 characters used to HMAC-pseudonymize the account login. Keep it private and back it up with the SQLite database; losing or rotating it changes the fingerprint.
+- `MT5_EXPECTED_ACCOUNT_FINGERPRINT`: leave unset only for initial discovery. After reviewing `/symbols`, set it to the returned 64-character fingerprint and restart the bridge. Market-data requests are blocked until this pin matches.
 - `MT5_SYMBOL_MAP_JSON`: JSON mapping from OBI's internal instrument IDs to exact symbols visible in this account.
 - `MT5_RAW_DB_PATH`: durable SQLite file path shared by raw observations, canonical candles, and the append-only account/instrument registry. Default: `data/raw_observations.sqlite3`.
 - `MT5_BRIDGE_HOST`: defaults to `127.0.0.1`.
@@ -29,16 +32,28 @@ Example only — replace the broker symbol with the exact string shown in your o
 
 ```powershell
 $env:MT5_BROKER_NAME = "Weltrade"
+$env:MT5_SERVER = "EXACT SERVER NAME FROM MT5"
 $env:MT5_ACCOUNT_ENVIRONMENT = "demo"
+$env:MT5_ACCOUNT_FINGERPRINT_KEY = "REPLACE_WITH_A_STABLE_RANDOM_SECRET_AT_LEAST_32_CHARS"
 $env:MT5_SYMBOL_MAP_JSON = '{"SFX_VOL_75":"EXACT SYMBOL FROM MARKET WATCH"}'
 $env:MT5_RAW_DB_PATH = "D:\OBI\data\raw_observations.sqlite3"
 $env:MT5_BRIDGE_HOST = "127.0.0.1"
 python mt5_bridge.py
 ```
 
-Do not copy the example placeholder as a real symbol. Confirm it in the connected account first.
+Do not copy the example placeholders as real values. Confirm the exact server and symbol in the connected MT5 terminal first. Generate a fingerprint key with `python -c "import secrets; print(secrets.token_urlsafe(48))"`; store it as a host secret, not in Git.
 
-If the terminal is already logged in, the bridge can use that session. Alternatively set all three variables `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER`; never commit them to Git or place them in source code.
+If the terminal is already logged in, the bridge can use that session while still checking the exact configured `MT5_SERVER`. Alternatively set both `MT5_LOGIN` and `MT5_PASSWORD` to authenticate explicitly; the server remains required. Never commit credentials or fingerprint keys to Git.
+
+### First-run account pinning
+
+1. Start the bridge with the fingerprint key and exact server configured, but leave `MT5_EXPECTED_ACCOUNT_FINGERPRINT` unset.
+2. Call authenticated `GET /symbols`. Confirm its broker, exact server, environment, and masked account-login suffix match the account visible in MT5. The response will say `account_identity_pinned=false`.
+3. Copy the returned `account_fingerprint` into `MT5_EXPECTED_ACCOUNT_FINGERPRINT` and restart the bridge.
+4. Confirm `/health` reports `account_identity_pinned=true`, then repeat `/symbols` and check the same fingerprint.
+5. Only then can `/ohlcv` return data. Until the pin is set, it returns HTTP 409. DataAgent independently rejects any response without pin evidence.
+
+The fingerprint is an HMAC-SHA256 pseudonymous account identifier, not a password or access token. The full MT5 login is not returned or stored; only its last four digits are exposed for first-run operator confirmation. Keep the HMAC key stable across restarts and backups.
 
 ## Remote access
 
@@ -64,9 +79,9 @@ A successful HTTP response does not by itself promote an instrument to verified.
 
 The reusable connector has explicit lifecycle states: DISCONNECTED, INITIALIZING, CONNECTED, AUTHENTICATED, and ERROR. A session is trusted only after terminal connectivity, configured broker/server identity checks, and actual MT5 account trade-mode verification pass. Access to the process-wide MT5 API is serialized across HTTP worker threads so concurrent requests cannot interleave terminal operations. If the session drops, the connector performs one bounded reconnect attempt when a data request arrives; it does not retry indefinitely.
 
-- GET /health reports connection state only.
+- GET /health reports connection state and whether the expected account fingerprint is pinned.
 - GET /symbols returns account-scoped symbol discovery and contract metadata (digits, point, tick size/value, contract size, currencies, volume limits, path, and availability flags). Every call appends the account observation and symbol snapshot to the SQLite registry. Discovery does not classify a symbol as SyntX or mark it analysis-eligible.
-- GET /ohlcv requires a prior /symbols discovery for the same account fingerprint and exact broker symbol. A changed contract-metadata fingerprint or ambiguous OBI mapping blocks the request until reviewed and rediscovered.
+- GET /ohlcv requires an explicit expected-account fingerprint pin, a prior /symbols discovery for the same account fingerprint, and an exact broker symbol mapping. A changed contract-metadata fingerprint or ambiguous OBI mapping blocks the request.
 - GET /ohlcv?symbol=OBI_ID&timeframe=5m|15m|1h|4h&count=1..20000&start_pos=0..1000000 returns mapped broker rates after persistence. Requests up to 20,000 bars are fetched in 2,000-bar pages. The bridge reassembles pages chronologically and checks that the newest bar open-time anchor did not change during multi-page retrieval. This detects a new bar opening and shifting position-based pages; it does not claim that the broker never revises historical OHLC values. Position zero may include the current bar; forming/closed status is determined from the UTC timeframe boundary, not array position.
 
 Only exact symbols configured in MT5_SYMBOL_MAP_JSON can be requested through the OBI instrument ID. Symbol discovery is evidence for account-specific mapping, not automatic authorization. Timeframes are explicit; unsupported values fail rather than falling back.
