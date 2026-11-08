@@ -118,11 +118,11 @@ def _quarantine_reasons(raw_rows):
             reasons.append({
                 "observation_index": index,
                 "reason_code": "INVALID_NUMERIC",
-                "reason_detail": "One or more MT5 numeric fields are non-finite or non-numeric",
+                "reason_detail": "One or more MT5 numeric fields are non-finite, non-numeric, or not integer-valued",
             })
-            continue
 
-        if fields["tick_volume"] < 0 or fields["real_volume"] < 0 or fields["spread"] < 0:
+        volume_values = (fields["tick_volume"], fields["real_volume"], fields["spread"])
+        if any(value is not None and value < 0 for value in volume_values):
             reasons.append({
                 "observation_index": index,
                 "reason_code": "INVALID_VOLUME",
@@ -131,10 +131,13 @@ def _quarantine_reasons(raw_rows):
 
         o, h, l, close = fields["open"], fields["high"], fields["low"], fields["close"]
         if (
-            min(o, h, l, close) <= 0
-            or h < max(o, close)
-            or l > min(o, close)
-            or h < l
+            all(value is not None for value in (o, h, l, close))
+            and (
+                min(o, h, l, close) <= 0
+                or h < max(o, close)
+                or l > min(o, close)
+                or h < l
+            )
         ):
             reasons.append({
                 "observation_index": index,
