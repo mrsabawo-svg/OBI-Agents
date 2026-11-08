@@ -71,7 +71,10 @@ def test_response_row_handles_invalid_timestamp_and_non_finite_prices():
         "low": 9, "close": 11, "tick_volume": 10,
         "real_volume": 0, "spread": 1,
     }
-    response = mt5_bridge._response_row(row, 0, None, 0, ["INVALID_TIMESTAMP", "INVALID_NUMERIC"])
+    response = mt5_bridge._response_row(
+        row, 0, None, 0, ["INVALID_TIMESTAMP", "INVALID_NUMERIC"], "raw-observation-001"
+    )
+    assert response["observation_id"] == "raw-observation-001"
     assert response["timestamp"] is None
     assert response["Open"] is None
     assert response["bar_status"] == "closed"
