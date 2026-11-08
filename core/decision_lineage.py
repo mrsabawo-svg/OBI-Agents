@@ -609,7 +609,7 @@ def build_decision_lineage(
         "agent_traces": traces,
         "warnings": warnings,
     }
-    manifest["manifest_size_bytes"] = len(_canonical_json(manifest).encode("utf-8"))
+    manifest["manifest_content_size_bytes"] = len(_canonical_json(manifest).encode("utf-8"))
     manifest["manifest_sha256"] = _sha256(manifest)
     return manifest
 
