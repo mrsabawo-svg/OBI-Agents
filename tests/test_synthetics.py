@@ -275,3 +275,81 @@ def test_lifecycle_agent_synthetic_trade_resolution():
         assert changed is True
         assert trade["status"] == "CLOSED"
         assert trade["outcome"] in ["TP1", "TP2"]
+
+
+def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+    timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=80, freq="5min")
+    rows = []
+    for index, timestamp in enumerate(timestamps):
+        price = 5000 + index
+        rows.append({
+            "timestamp": timestamp.isoformat(), "Open": price,
+            "High": price + 2, "Low": price - 2, "Close": price + 1,
+            "Volume": 100, "volume_type": "tick_volume",
+            "bar_status": "closed",
+            "quarantine_reasons": ["INVALID_OHLC"] if index == 10 else [],
+        })
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
+                "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo", "account_environment": "demo",
+                "source_type": "broker_bars",
+                "raw_persistence": {
+                    "persisted": True, "batch_id": "quarantine-test",
+                    "inserted_count": len(rows), "quarantine_count": 1,
+                },
+                "quality_report": {
+                    "received_count": len(rows), "quarantined_observation_count": 1,
+                    "quarantine_record_count": 1, "reason_counts": {"INVALID_OHLC": 1},
+                },
+                "data": rows,
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
+
+    assert "5m" in data
+    assert len(data["5m"]) == 79
+    assert data["5m"].attrs["quality_report"]["durable_quarantined_count"] == 1
+
+
+def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+    rows = [{
+        "timestamp": "2026-11-08T00:00:00Z", "Open": 5000,
+        "High": 5002, "Low": 4998, "Close": 5001, "Volume": 100,
+        "volume_type": "tick_volume", "bar_status": "closed",
+        "quarantine_reasons": ["INVALID_OHLC"],
+    }]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
+                "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo", "account_environment": "demo",
+                "source_type": "broker_bars",
+                "raw_persistence": {
+                    "persisted": True, "batch_id": "mismatch-test",
+                    "inserted_count": 1, "quarantine_count": 0,
+                },
+                "quality_report": {
+                    "received_count": 1, "quarantined_observation_count": 0,
+                    "quarantine_record_count": 0, "reason_counts": {},
+                },
+                "data": rows,
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
+    assert data == {}
