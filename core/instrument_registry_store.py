@@ -112,6 +112,9 @@ class InstrumentRegistryStore:
         )
         if any(not account_identity.get(key) for key in required):
             raise ValueError("complete verified account identity is required")
+        identity_pinned = account_identity.get("identity_pinned", False)
+        if not isinstance(identity_pinned, bool):
+            raise ValueError("identity_pinned must be a boolean")
         fingerprint = account_identity.get("account_fingerprint")
         if (
             not isinstance(fingerprint, str)
@@ -205,6 +208,7 @@ class InstrumentRegistryStore:
         return {
             "account_observation_id": account_observation_id,
             "account_fingerprint": account_fingerprint,
+            "account_identity_pinned": identity_pinned,
             "discovered_at": observed_at,
             "symbol_count": len(discoveries),
             "symbols": discoveries,
