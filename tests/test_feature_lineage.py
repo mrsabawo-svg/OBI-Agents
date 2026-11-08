@@ -24,6 +24,18 @@ class FeatureLineageTest(unittest.TestCase):
         self.assertEqual(definitions["EMA_50"]["parameters"]["window"], 50)
         self.assertTrue(all(feature["available"] for feature in manifest["features"]))
 
+    def test_manifest_mutation_does_not_change_global_feature_contract(self):
+        frame = pd.DataFrame({
+            "ADX_14": [20.0], "EMA_20": [101.0],
+            "EMA_50": [100.0], "ATRr_14": [1.5],
+        })
+        manifest = build_indicator_lineage(frame, library_version="0.11.0")
+        manifest["features"][2]["parameters"]["window"] = 999
+
+        fresh = build_indicator_lineage(frame, library_version="0.11.0")
+        ema_50 = next(item for item in fresh["features"] if item["name"] == "EMA_50")
+        self.assertEqual(ema_50["parameters"]["window"], 50)
+
     def test_missing_indicator_columns_are_explicitly_partial(self):
         frame = pd.DataFrame({"EMA_20": [101.0], "EMA_50": [100.0]})
 
