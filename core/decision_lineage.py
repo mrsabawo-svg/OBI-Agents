@@ -50,6 +50,7 @@ AGENT_SPECS = {
                 "London Open": [9, 11],
                 "New York Open": [15, 17],
             },
+            "kill_zone_end_hour_exclusive": True,
             "dead_hour": 23,
             "general_tradeable_hours_inclusive": [1, 22],
             "crypto_symbols": ["BTCUSD", "ETHUSD", "SOLUSD"],
@@ -189,7 +190,11 @@ AGENT_SPECS = {
                 "with_bos_or_kill_zone": {"win_rate_pct": 38.7, "trades": 31},
             },
         },
-        "inputs": ["HTF output", "MTF output", "Session output", "Regime output"],
+        "inputs": [
+            "HTF.bias", "HTF.confidence", "MTF.aligned", "MTF.bos",
+            "MTF.sweep", "MTF.order_block", "MTF.direction",
+            "Session.tradeable", "Session.kill_zone", "Regime.label", "Regime.confidence",
+        ],
         "outputs": ["approved", "direction", "grade", "score", "factors", "regime", "reason"],
         "market_data_timeframes": [],
         "upstream_agents": ["HTF", "MTF", "Session", "Regime"],
@@ -217,6 +222,7 @@ AGENT_SPECS = {
             "order_block_scan_range": [-15, -2],
             "htf_swing_lookback": 30,
             "target_price_buffer_fraction": 0.001,
+            "htf_swing_lookback": 30,
             "fallback_1h_target_lookback": 200,
             "target_selection": "median of sorted eligible highs/lows",
             "zone_alignment": "BUY below midpoint; SELL above midpoint",
@@ -259,11 +265,18 @@ AGENT_SPECS = {
             "confluence_components": ["trigger", "fvg", "momentum", "mtf_sweep"],
             "atr_stop_multiple": 1.2,
             "atr_fallback_fraction_of_entry": 0.001,
+            "atr_column_selection": "first column whose name contains ATR",
             "fallback_target_multiples": [3, 6, 9],
+            "price_rounding_decimals": 5,
+            "rr_rounding_decimals": 2,
             "tp3_extension_fraction": 0.5,
             "rr_target": "abs(TP1-entry)/abs(entry-SL)",
         },
-        "inputs": ["MTF.direction", "MTF.sweep", "Zone targets", "Open", "High", "Low", "Close", "ATR"],
+        "inputs": [
+            "MTF.direction", "MTF.sweep", "Zone.resistance_1h", "Zone.support_1h",
+            "Zone.htf_tp_bull", "Zone.htf_tp_bear", "Zone.htf_swing_high",
+            "Zone.htf_swing_low", "Open", "High", "Low", "Close", "first ATR column",
+        ],
         "outputs": [
             "trigger", "fvg", "momentum", "confluence", "entry", "sl",
             "tp1", "tp2", "tp3", "rr", "atr", "direction", "valid",
@@ -295,7 +308,12 @@ AGENT_SPECS = {
             },
             "tags": ["FVG", "Momentum", "OB", "Discount", "Premium"],
         },
-        "inputs": ["LTF output", "Zone output", "Bias.direction"],
+        "inputs": [
+            "LTF.valid", "LTF.rr", "LTF.confluence", "LTF.entry", "LTF.sl",
+            "LTF.tp1", "LTF.tp2", "LTF.tp3", "LTF.fvg", "LTF.momentum",
+            "Zone.zone_aligned", "Zone.ob_bull", "Zone.ob_bear",
+            "Zone.in_discount", "Zone.in_premium", "Bias.direction",
+        ],
         "outputs": [
             "fire", "direction", "grade", "entry", "sl", "tp1", "tp2",
             "tp3", "rr", "confluence", "tags", "reason",
@@ -324,6 +342,7 @@ AGENT_SPECS = {
             "winning_outcomes": ["TP1", "TP2", "TP3"],
             "grade_wr_source": "overall_wr",
             "tag_win_rate_used_by_score": False,
+            "minimum_sample_scope": "global closed archive, not per subgroup",
             "low_sample_defaults_pct": 50.0,
         },
         "inputs": ["closed signal archive", "Trigger.tags", "Bias", "Regime.label"],
@@ -336,6 +355,7 @@ AGENT_SPECS = {
         "source_files": ["agents/edge_agent.py", "core/memory.py", "core/models.py"],
         "known_limitations": [
             "tag_wr is calculated but is not used in ScoreAgent's edge formula.",
+            "The minimum sample applies to the global archive, not each symbol/regime/tag subgroup; empty subgroups return 50%.",
             "The archive snapshot must be captured separately to identify the exact historical input set.",
         ],
     },
@@ -371,7 +391,12 @@ AGENT_SPECS = {
                 "HIGH": "otherwise",
             },
         },
-        "inputs": ["BiasResult", "TriggerResult", "Regime", "EdgeResult", "Session"],
+        "inputs": [
+            "Bias.score", "Trigger.confluence", "Trigger.rr",
+            "Regime.label", "Regime.confidence", "Edge.low_sample",
+            "Edge.symbol_wr", "Edge.grade_wr", "Edge.regime_wr",
+            "Session.kill_zone", "Session.tradeable",
+        ],
         "outputs": [
             "confidence", "grade", "risk", "bias_score", "trigger_score",
             "regime_score", "edge_score", "session_score",
@@ -458,6 +483,26 @@ def _frame_fingerprint(frame: Any) -> dict | None:
         "index_start": index[0] if index else None,
         "index_end": index[-1] if index else None,
     }
+
+
+def _selected_timeframes(spec: dict, market_data: dict) -> dict:
+    parameters = spec.get("parameters", {})
+
+    def first_available(priority):
+        for timeframe in priority:
+            frame = market_data.get(timeframe)
+            if frame is not None and not getattr(frame, "empty", False):
+                return timeframe
+        return None
+
+    if "timeframe_priority" in parameters:
+        return {"selected": first_available(parameters["timeframe_priority"])}
+    if "htf_timeframe_priority" in parameters or "mtf_timeframe_priority" in parameters:
+        return {
+            "htf": first_available(parameters.get("htf_timeframe_priority", [])),
+            "mtf": first_available(parameters.get("mtf_timeframe_priority", [])),
+        }
+    return {}
 
 
 def _package_version(package: str) -> str | None:
@@ -558,6 +603,7 @@ def build_decision_lineage(
         input_snapshot = {
             "symbol": symbol,
             "market_data": market_refs,
+            "selected_timeframes": _selected_timeframes(spec, market_data),
             "upstream_outputs": upstream_refs,
             "external_inputs": external_refs,
         }
