@@ -55,6 +55,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
     if row_count == 0:
         return {
             "status": "missing",
+            "timeframe": timeframe,
             "row_count": 0,
             "canonical_candle_ids_tail": [],
             "raw_observation_ids_tail": [],
@@ -152,7 +153,7 @@ def build_data_lineage(
         overall_status = "complete"
     elif any(status in {"canonical", "partial"} for status in statuses):
         overall_status = "partial"
-    elif statuses and all(status == "missing" for status in statuses):
+    elif not statuses or all(status == "missing" for status in statuses):
         overall_status = "missing"
     else:
         overall_status = "untracked"
