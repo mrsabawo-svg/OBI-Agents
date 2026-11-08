@@ -3,6 +3,7 @@ from threading import Thread
 import time
 
 import pytest
+import numpy as np
 
 from core.mt5_connector import (
     ConnectionIdentity,
@@ -323,3 +324,93 @@ def test_reconnect_refuses_silent_switch_to_another_account_on_same_server():
     assert connector.ensure_connected() is False
     assert connector.state is ConnectionState.ERROR
     assert "fingerprint differs" in connector.last_error
+
+
+def _structured_rate_array(times):
+    dtype = [
+        ("time", "i8"), ("open", "f8"), ("high", "f8"),
+        ("low", "f8"), ("close", "f8"), ("tick_volume", "i8"),
+        ("real_volume", "i8"), ("spread", "i8"),
+    ]
+    return np.array([
+        (timestamp, 1.0, 1.2, 0.9, 1.1, 10, 0, 1)
+        for timestamp in times
+    ], dtype=dtype)
+
+
+def test_paginated_history_is_reassembled_in_chronological_order():
+    connector, adapter = make_connector()
+    page_newer = _structured_rate_array(range(2001, 4001))
+    page_older = _structured_rate_array(range(1001, 2001))
+    latest = _structured_rate_array([4000])
+
+    def paged_copy(symbol, timeframe, start, count):
+        adapter.rate_calls.append((symbol, timeframe, start, count))
+        if start == 0 and count == 1:
+            return latest
+        if start == 0:
+            return page_newer
+        if start == 2000:
+            return page_older
+        return _structured_rate_array([])
+
+    adapter.copy_rates_from_pos = paged_copy
+    assert connector.connect()
+    rates, metadata = connector.fetch_rates_detailed("EURUSD", "5m", 3000)
+
+    assert len(rates) == 3000
+    assert int(rates["time"][0]) == 1001
+    assert int(rates["time"][-1]) == 4000
+    assert metadata["requested_count"] == 3000
+    assert metadata["returned_count"] == 3000
+    assert metadata["page_count"] == 2
+    assert metadata["page_sizes"] == [2000, 1000]
+    assert metadata["page_start_positions"] == [0, 2000]
+    assert metadata["snapshot_check_performed"] is True
+    assert metadata["snapshot_stable"] is True
+
+
+def test_paginated_history_marks_snapshot_drift():
+    connector, adapter = make_connector()
+    page_newer = _structured_rate_array(range(2001, 4001))
+    page_older = _structured_rate_array(range(1001, 2001))
+    latest_values = iter([4000, 4300])
+
+    def drifting_copy(symbol, timeframe, start, count):
+        adapter.rate_calls.append((symbol, timeframe, start, count))
+        if start == 0 and count == 1:
+            return _structured_rate_array([next(latest_values)])
+        if start == 0:
+            return page_newer
+        if start == 2000:
+            return page_older
+        return _structured_rate_array([])
+
+    adapter.copy_rates_from_pos = drifting_copy
+    assert connector.connect()
+    _, metadata = connector.fetch_rates_detailed("EURUSD", "5m", 3000)
+    assert metadata["snapshot_stable"] is False
+    assert metadata["latest_bar_time_before"] == 4000
+    assert metadata["latest_bar_time_after"] == 4300
+
+
+def test_partial_paginated_history_reports_returned_count():
+    connector, adapter = make_connector()
+    partial_page = _structured_rate_array(range(1001, 2001))
+    latest = _structured_rate_array([2000])
+
+    def partial_copy(symbol, timeframe, start, count):
+        adapter.rate_calls.append((symbol, timeframe, start, count))
+        if start == 0 and count == 1:
+            return latest
+        if start == 0:
+            return partial_page
+        return _structured_rate_array([])
+
+    adapter.copy_rates_from_pos = partial_copy
+    assert connector.connect()
+    _, metadata = connector.fetch_rates_detailed("EURUSD", "5m", 3000)
+    assert metadata["requested_count"] == 3000
+    assert metadata["returned_count"] == 1000
+    assert metadata["page_count"] == 1
+    assert metadata["snapshot_stable"] is True
