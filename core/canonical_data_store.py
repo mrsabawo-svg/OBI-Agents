@@ -318,7 +318,8 @@ class CanonicalCandleStore:
                        account_environment, broker_symbol, timeframe,
                        open_time, close_time, open, high, low, close, volume,
                        volume_type, source_class, bar_status,
-                       transformation_version, derived_at, record_sha256
+                       transformation_version, validation_report_id, validation_status,
+                       derived_at, record_sha256
                 FROM canonical_candles WHERE candle_id = ?
             """, (candle_id,)).fetchone()
             if row is None:
