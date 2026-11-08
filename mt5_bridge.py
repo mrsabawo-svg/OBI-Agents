@@ -36,6 +36,34 @@ MT5_BRIDGE_HOST = os.environ.get("MT5_BRIDGE_HOST", "127.0.0.1")
 MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
 MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
 MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
+
+
+def _load_verified_session_models(raw_value):
+    if not raw_value:
+        return {}
+    try:
+        parsed = json.loads(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MT5_VERIFIED_SESSION_MODEL_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("MT5_VERIFIED_SESSION_MODEL_JSON must be an object")
+    models = {}
+    for instrument_id, model in parsed.items():
+        if not isinstance(instrument_id, str) or not instrument_id.strip():
+            raise ValueError("verified session model keys must be instrument IDs")
+        if model != "continuous_24_7":
+            raise ValueError(
+                "verified session models may only declare continuous_24_7"
+            )
+        models[instrument_id] = model
+    return models
+
+
+# Operator assertions only: never infer a 24/7 calendar from an instrument name
+# or from SessionAgent's trading eligibility rules.
+MT5_VERIFIED_SESSION_MODELS = _load_verified_session_models(
+    os.environ.get("MT5_VERIFIED_SESSION_MODEL_JSON", "")
+)
 MAX_COUNT = 20000
 CANONICAL_TRANSFORMATION_VERSION = "mt5-broker-bars-v1"
 connector = None
@@ -380,7 +408,7 @@ def get_ohlcv():
         fetch_metadata,
         start_pos=start_pos,
         retrieved_at=retrieved_at,
-        session_model="unknown",
+        session_model=MT5_VERIFIED_SESSION_MODELS.get(symbol_id, "unknown"),
     )
     history_completeness.update({
         "account_fingerprint": account_identity["account_fingerprint"],
