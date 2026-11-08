@@ -130,6 +130,13 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     assert payload["raw_persistence"]["inserted_count"] == 2
     assert payload["raw_persistence"]["quarantine_count"] == 1
     assert payload["quality_report"]["quarantined_observation_count"] == 1
+    assert payload["quality_report"]["report_id"] == payload["canonical_persistence"]["validation_report_id"]
+    assert payload["canonical_persistence"]["persisted"] is True
+    assert payload["canonical_persistence"]["inserted_count"] == 1
+    assert payload["canonical_persistence"]["source_lineage"] == [{
+        "candle_id": payload["canonical_persistence"]["candle_ids"][0],
+        "observation_id": payload["data"][0]["observation_id"],
+    }]
     assert payload["data"][0]["observation_id"] == payload["raw_persistence"]["observation_ids"][0]
     assert payload["data"][1]["quarantine_reasons"] == ["INVALID_OHLC"]
 
@@ -139,3 +146,10 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     assert len(quarantine) == 1
     assert quarantine[0]["observation_id"] == payload["data"][1]["observation_id"]
     assert quarantine[0]["reason_code"] == "INVALID_OHLC"
+
+    from core.canonical_data_store import CanonicalCandleStore
+    canonical = CanonicalCandleStore(tmp_path / "raw.sqlite3")
+    assert canonical.count() == 1
+    saved = canonical.get(payload["canonical_persistence"]["candle_ids"][0])
+    assert saved["source_observation_ids"] == [payload["data"][0]["observation_id"]]
+    assert saved["validation_report_id"] == payload["quality_report"]["report_id"]

@@ -93,3 +93,25 @@ Current reason codes:
 The API response includes `quality_report` counts and row-level `quarantine_reasons`. DataAgent verifies the raw observation IDs, quarantine IDs, batch count, reason counts, and row annotations agree. It excludes quarantined rows before calculating indicators. Forming bars are not quarantined; they remain raw evidence but are excluded from closed-candle analysis.
 
 Non-finite numeric source values are preserved in the raw JSON payload using an explicit sentinel object, so malformed broker observations remain inspectable without emitting invalid JSON numbers.
+
+
+## Canonical candle persistence and lineage
+
+The bridge writes two distinct durable layers to the same SQLite database:
+
+1. **Raw observations** retain the exact broker payload, including malformed or duplicate rows.
+2. **Canonical candles** are created only for rows that pass the bridge validator. Each canonical candle links to exactly one raw observation for broker-bar source data, preserves broker/server/account/symbol/timeframe identity, UTC open/close boundaries, OHLC, tick-volume semantics, forming/closed state, and transformation version.
+
+A validation report is persisted for every fetched batch, including batches where every row is quarantined and no canonical candles are eligible. The report is append-only and hashed. Canonical candles reference its report ID. The report and canonical rows are committed together; if canonical persistence fails, the bridge withholds the HTTP response while retaining the already-committed raw evidence for investigation.
+
+The API response includes:
+
+- `quality_report.report_id`: immutable validation report identifier.
+- `canonical_persistence.persisted`: confirms the canonical write completed.
+- `canonical_persistence.candle_ids`: canonical IDs in response order for eligible rows.
+- `canonical_persistence.source_lineage`: exact canonical-candle-to-raw-observation pairs.
+- `canonical_persistence.validation_report_sha256`: hash of the persisted report.
+
+DataAgent requires the canonical receipt and verifies that the mapping covers every non-quarantined observation exactly once. It also re-runs its independent row checks; if those checks disagree with the bridge's canonical set, the batch is withheld. Accepted analysis DataFrames retain `CanonicalCandleID` and `RawObservationID` columns so downstream OBI consumers can preserve provenance. Forming candles are persisted with their status but excluded from closed-candle analysis.
+
+This is the first direct lineage integration. It does not yet add lineage to every derived indicator/feature, resampled candle, or final signal/archive record; those remain separate follow-on work.
