@@ -90,7 +90,8 @@ def test_duplicate_timestamp_is_incomplete():
         retrieved_at=NOW,
     )
     assert report["status"] == "incomplete"
-    assert report["duplicate_timestamp_count"] == 2
+    assert report["duplicate_timestamp_count"] == 1
+    assert report["duplicate_observation_count"] == 1
     assert report["duplicate_group_count"] == 1
 
 
