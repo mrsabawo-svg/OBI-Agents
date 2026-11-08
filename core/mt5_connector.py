@@ -84,8 +84,26 @@ class MT5Connector:
             self.last_error = "connected server does not match configured server identity"
             return False
         actual_login = getattr(account, "login", None)
-        if self.login_id is not None and actual_login is not None and int(actual_login) != int(self.login_id):
-            self.last_error = "connected account does not match configured login identity"
+        if self.login_id is not None:
+            if actual_login is None or int(actual_login) != int(self.login_id):
+                self.last_error = "connected account does not match configured login identity"
+                return False
+
+        # Never trust the configured environment label by itself. MT5 exposes
+        # the actual account trade mode in account_info().trade_mode:
+        # DEMO=0, CONTEST=1, REAL=2.
+        mode_constants = {
+            "demo": getattr(self.adapter, "ACCOUNT_TRADE_MODE_DEMO", None),
+            "contest": getattr(self.adapter, "ACCOUNT_TRADE_MODE_CONTEST", None),
+            "live": getattr(self.adapter, "ACCOUNT_TRADE_MODE_REAL", None),
+        }
+        expected_mode = mode_constants.get(self.identity.environment)
+        actual_mode = getattr(account, "trade_mode", None)
+        if expected_mode is None or actual_mode is None:
+            self.last_error = "actual MT5 account trade mode is unavailable"
+            return False
+        if actual_mode != expected_mode:
+            self.last_error = "connected account environment does not match configured environment"
             return False
         return True
 
