@@ -143,7 +143,10 @@ class DataAgent:
                     or str(parsed.get("server_name")).lower() == "unknown"
                     or parsed.get("account_environment") not in {"demo", "live", "contest"}
                     or parsed.get("source_type") != "broker_bars"
+                    or parsed.get("account_identity_pinned") is not True
                     or not fingerprint_valid
+                    or not isinstance(account_identity, dict)
+                    or account_identity.get("identity_pinned") is not True
                     or not account_identity.get("broker_company")
                     or account_identity.get("server") != parsed.get("server_name")
                     or account_identity.get("environment") != parsed.get("account_environment")
@@ -161,6 +164,7 @@ class DataAgent:
                     not isinstance(quality_report, dict)
                     or not quality_report.get("report_id")
                     or quality_report.get("account_fingerprint") != fingerprint
+                    or quality_report.get("account_identity_pinned") is not True
                 ):
                     print(f"[DATA] {self.symbol} {tf}: durable validation report or account fingerprint missing")
                     continue
@@ -469,6 +473,7 @@ class DataAgent:
                     "server_name": parsed.get("server_name"),
                     "account_environment": parsed.get("account_environment"),
                     "account_fingerprint": fingerprint,
+                    "account_identity_pinned": account_identity.get("identity_pinned") is True,
                     "history_status": history_report.get("status"),
                     "history_report_id": quality_report.get("report_id"),
                     "history_session_model": history_report.get("session_model"),
