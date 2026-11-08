@@ -135,6 +135,24 @@ class DataAgent:
                     and len(fingerprint) == 64
                     and all(char in "0123456789abcdef" for char in fingerprint)
                 )
+                instrument_verification_id = parsed.get("instrument_verification_id")
+                instrument_metadata_sha256 = parsed.get("instrument_metadata_sha256")
+                verified_timeframes = parsed.get("verified_timeframes")
+                if (
+                    parsed.get("instrument_verification_status") != "verified"
+                    or parsed.get("timeframe_verified") is not True
+                    or parsed.get("analysis_eligible") is not True
+                    or not isinstance(instrument_verification_id, str)
+                    or not instrument_verification_id
+                    or not isinstance(instrument_metadata_sha256, str)
+                    or len(instrument_metadata_sha256) != 64
+                    or any(char not in "0123456789abcdef" for char in instrument_metadata_sha256)
+                    or not isinstance(verified_timeframes, list)
+                    or tf not in verified_timeframes
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: instrument is not approved for analysis on this timeframe")
+                    continue
+
                 if (
                     not parsed.get("broker_symbol")
                     or not parsed.get("server_name")
@@ -165,6 +183,12 @@ class DataAgent:
                     or not quality_report.get("report_id")
                     or quality_report.get("account_fingerprint") != fingerprint
                     or quality_report.get("account_identity_pinned") is not True
+                    or quality_report.get("instrument_verification_status") != "verified"
+                    or quality_report.get("instrument_verification_id") != instrument_verification_id
+                    or quality_report.get("instrument_metadata_sha256") != instrument_metadata_sha256
+                    or quality_report.get("timeframe_verified") is not True
+                    or quality_report.get("analysis_eligible") is not True
+                    or quality_report.get("verified_timeframes") != verified_timeframes
                 ):
                     print(f"[DATA] {self.symbol} {tf}: durable validation report or account fingerprint missing")
                     continue
@@ -474,6 +498,12 @@ class DataAgent:
                     "account_environment": parsed.get("account_environment"),
                     "account_fingerprint": fingerprint,
                     "account_identity_pinned": account_identity.get("identity_pinned") is True,
+                    "instrument_verification_status": parsed.get("instrument_verification_status"),
+                    "instrument_verification_id": instrument_verification_id,
+                    "instrument_metadata_sha256": instrument_metadata_sha256,
+                    "verified_timeframes": verified_timeframes,
+                    "timeframe_verified": parsed.get("timeframe_verified") is True,
+                    "analysis_eligible": parsed.get("analysis_eligible") is True,
                     "history_status": history_report.get("status"),
                     "history_report_id": quality_report.get("report_id"),
                     "history_session_model": history_report.get("session_model"),
