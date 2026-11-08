@@ -68,4 +68,6 @@ These issues should be prioritized in a separate formula-review and calibration 
 
 The manifest is created for fired signals after ScoreAgent runs and is persisted in the canonical signal archive. Blocked/no-trigger evaluations are not yet written to a separate decision-event archive.
 
+Each signal now carries the formula specifications as well as the hashes, so the archive grows by several kilobytes per signal. Retention/rotation of the persistent memory archive remains a separate operational requirement.
+
 This is decision provenance, not deterministic replay. The source, input, output, and dependency hashes identify the calculation context; a future replay facility would additionally need a controlled market-data snapshot loader and deterministic execution environment.
