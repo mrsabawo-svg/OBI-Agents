@@ -31,7 +31,6 @@ REQUIRED_CANONICAL_METADATA = (
     "server_name",
     "account_environment",
     "account_fingerprint",
-    "account_identity_pinned",
     "history_status",
     "history_report_id",
     "history_session_model",
