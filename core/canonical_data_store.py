@@ -204,7 +204,7 @@ class CanonicalCandleStore:
                 placeholders = ",".join("?" for _ in source_ids)
                 source_rows = connection.execute(
                     f"""SELECT observation_id, instrument_id, broker, server_name,
-                               account_environment, broker_symbol, timeframe
+                               account_environment, broker_symbol, timeframe, source_type
                         FROM raw_observations
                         WHERE observation_id IN ({placeholders})""",
                     tuple(source_ids),
@@ -225,6 +225,9 @@ class CanonicalCandleStore:
                         raise CanonicalDataError(
                             "source observation identity does not match canonical candle"
                         )
+                    expected_source_type = {"broker_bar": "broker_bars", "tick_derived": "broker_ticks", "resampled_bar": "broker_bars"}[candle["source_class"]]
+                    if source[7] != expected_source_type:
+                        raise CanonicalDataError("raw observation source type does not match canonical source class")
                     if candle["source_class"] == "broker_bar" and source[6] != candle["timeframe"]:
                         raise CanonicalDataError(
                             "broker_bar source timeframe does not match canonical timeframe"
