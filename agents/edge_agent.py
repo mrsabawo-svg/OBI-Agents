@@ -20,8 +20,18 @@ class EdgeAgent:
             memory  = load_memory()
             archive = memory.get("_archive", [])
             closed  = [t for t in archive if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"]
+            edge_inputs = [
+                {
+                    "status": record.get("status"),
+                    "symbol": record.get("symbol"),
+                    "regime": record.get("regime"),
+                    "tags": record.get("tags", []),
+                    "outcome": record.get("outcome"),
+                }
+                for record in closed
+            ]
             archive_payload = json.dumps(
-                closed, sort_keys=True, separators=(",", ":"), default=str
+                edge_inputs, sort_keys=True, separators=(",", ":"), default=str
             )
             self.archive_snapshot_sha256 = hashlib.sha256(
                 archive_payload.encode("utf-8")
