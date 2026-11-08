@@ -131,8 +131,9 @@ def get_ohlcv():
     timeframe = request.args.get("timeframe", "").lower().strip()
     try:
         count = int(request.args.get("count", "300"))
+        start_pos = int(request.args.get("start_pos", "0"))
     except (TypeError, ValueError):
-        return jsonify({"status": "error", "error": "count must be an integer"}), 400
+        return jsonify({"status": "error", "error": "count and start_pos must be integers"}), 400
 
     if not symbol_id:
         return jsonify({"status": "error", "error": "symbol is required"}), 400
@@ -152,7 +153,7 @@ def get_ohlcv():
         }), 404
 
     try:
-        rates = connector.fetch_rates(broker_symbol, timeframe, count)
+        rates = connector.fetch_rates(broker_symbol, timeframe, count, start_pos)
         symbol_info = mt5.symbol_info(broker_symbol)
     except ValueError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
@@ -196,6 +197,7 @@ def get_ohlcv():
         "platform": "MT5",
         "broker_symbol": broker_symbol,
         "timeframe": timeframe,
+        "start_pos": start_pos,
         "source_type": "broker_bars",
         "retrieved_at": datetime.now(timezone.utc).isoformat(),
         "batch_id": None,
