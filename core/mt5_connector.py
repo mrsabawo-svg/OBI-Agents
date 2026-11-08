@@ -56,6 +56,7 @@ class MT5Connector:
     ) -> None:
         self._lock = RLock()
         self.adapter = adapter
+        self._initialized = False
         self.identity = identity
         self.login_id = login
         self.password = password
@@ -79,6 +80,12 @@ class MT5Connector:
 
     def _fail(self, message: str) -> bool:
         self.last_error = str(message)
+        if self.adapter is not None and self._initialized:
+            try:
+                self.adapter.shutdown()
+            except Exception:
+                pass
+            self._initialized = False
         self.state = ConnectionState.ERROR
         return False
 
@@ -134,8 +141,12 @@ class MT5Connector:
         if self.terminal_path:
             kwargs["path"] = self.terminal_path
         try:
+            if self._initialized:
+                self.adapter.shutdown()
+                self._initialized = False
             if not self.adapter.initialize(**kwargs):
                 return self._fail("MT5 terminal initialization failed")
+            self._initialized = True
             if self.login_id or self.password or self.login_server:
                 if not (self.login_id and self.password and self.login_server):
                     return self._fail(
@@ -264,4 +275,5 @@ class MT5Connector:
             try:
                 self.adapter.shutdown()
             finally:
+                self._initialized = False
                 self.state = ConnectionState.DISCONNECTED
