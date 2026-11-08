@@ -64,6 +64,7 @@ AGENT_SPECS = {
         "source_files": ["agents/session_agent.py", "core/utils.py"],
         "known_limitations": [
             "Synthetic 24/7 eligibility is hard-coded and is not broker-session evidence.",
+            "peak mirrors any globally active kill zone, even when that zone is not preferred for the symbol.",
             "London Close is listed as a preferred session but has no kill-zone window in core.utils.",
         ],
     },
@@ -194,7 +195,7 @@ AGENT_SPECS = {
         "upstream_agents": ["HTF", "MTF", "Session", "Regime"],
         "source_files": ["agents/bias_agent.py", "core/models.py"],
         "known_limitations": [
-            "Scores below two are blocked, so the D grade branch is unreachable.",
+            "Scores below two are blocked; Grade D is therefore reachable only at exactly two factors.",
             "The embedded Grade C win-rate claims do not identify a dataset or report version.",
         ],
     },
@@ -234,6 +235,7 @@ AGENT_SPECS = {
         "known_limitations": [
             "Target selection uses a median eligible level, not the nearest level.",
             "Order-block identification is a one-candle heuristic.",
+            "Short MTF windows can fail the order-block scan and fall back to the default zone result.",
             "Zone alignment is advisory; TriggerAgent does not require it.",
         ],
     },
