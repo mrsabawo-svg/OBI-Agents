@@ -51,6 +51,17 @@ def test_synthetic_session_rules():
         assert "Dead hours" in sess_fx["reason"]
 
 
+
+def test_synthetic_session_does_not_depend_on_forex_clock_or_kill_zone():
+    with patch("agents.session_agent.now_sast", side_effect=RuntimeError("clock unavailable")), \
+         patch("agents.session_agent.is_kill_zone", side_effect=RuntimeError("kill-zone unavailable")):
+        for sym in EXPECTED_SYNTHETICS:
+            session = SessionAgent(sym).analyse()
+            assert session["tradeable"] is True
+            assert session["reason"] == "Synthetic — 24/7 tradeable"
+            assert session["kill_zone"] is False
+
+
 def test_chief_agent_synthetics_prioritisation():
     context = SymbolContext()
     # Mock context to give a synthetic top confidence so it appears in top3 of brief
