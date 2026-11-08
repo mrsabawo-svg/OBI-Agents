@@ -168,6 +168,10 @@ def test_connect_authenticates_and_verifies_broker_server():
     )
     assert connector.connect() is True
     assert connector.state is ConnectionState.AUTHENTICATED
+    identity = connector.get_account_identity()
+    assert identity["identity_pinned"] is False
+    assert identity["account_login_suffix"] == "3456"
+    assert "login" not in identity
     assert adapter.login_calls[0]["password"] == "never-log-this"
     assert "never-log-this" not in str(connector.last_error)
 
