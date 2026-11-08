@@ -15,6 +15,11 @@ REQUIRED_CANONICAL_METADATA = (
     "raw_batch_id",
     "validation_report_id",
     "canonical_validation_report_sha256",
+    "broker",
+    "server_name",
+    "account_environment",
+    "broker_symbol",
+    "source_type",
 )
 
 
@@ -83,6 +88,11 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
     metadata_complete = all(
         isinstance(metadata.get(key), str) and metadata.get(key).strip()
         for key in REQUIRED_CANONICAL_METADATA
+    )
+    report_hash = metadata.get("canonical_validation_report_sha256", "")
+    metadata_complete = metadata_complete and (
+        len(report_hash) == 64
+        and all(char in "0123456789abcdef" for char in report_hash.lower())
     )
 
     if ids_complete and metadata_complete:
