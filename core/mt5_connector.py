@@ -121,7 +121,9 @@ class MT5Connector:
             return self._fail(f"MT5 connection error: {type(exc).__name__}")
 
     def is_connected(self) -> bool:
-        if self.adapter is None:
+        # A live terminal alone is insufficient: identity verification must
+        # have succeeded during connect() before the session is trusted.
+        if self.adapter is None or self.state != ConnectionState.AUTHENTICATED:
             return False
         try:
             terminal = self.adapter.terminal_info()
@@ -133,8 +135,6 @@ class MT5Connector:
             )
             if not connected:
                 self.state = ConnectionState.DISCONNECTED
-            elif self.state != ConnectionState.AUTHENTICATED:
-                self.state = ConnectionState.CONNECTED
             return connected
         except Exception:
             self.state = ConnectionState.DISCONNECTED
