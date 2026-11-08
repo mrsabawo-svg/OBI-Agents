@@ -25,6 +25,26 @@ def envelope():
     }
 
 
+def validation_report(timeframe="5m", report_id="quality-report-001", batch_id="raw-batch-001"):
+    return {
+        "report_id": report_id,
+        "batch_id": batch_id,
+        "instrument_id": "synthetic.sfx_vol_75",
+        "broker": "Weltrade",
+        "server_name": "Weltrade-Demo",
+        "account_environment": "demo",
+        "broker_symbol": "SFX Vol 75",
+        "timeframe": timeframe,
+        "validator_version": "1",
+        "report": {
+            "received_count": 1,
+            "quarantined_observation_count": 0,
+            "quarantine_record_count": 0,
+            "reason_counts": {},
+        },
+    }
+
+
 def candle(source_id):
     return {
         "instrument_id": "synthetic.sfx_vol_75",
@@ -68,7 +88,7 @@ def test_canonical_candle_persists_with_exact_raw_lineage(tmp_path):
     path, source_id = setup_store(tmp_path)
     store = CanonicalCandleStore(path)
 
-    result = store.append_batch([candle(source_id)])
+    result = store.append_batch([candle(source_id)], validation_report())
 
     assert result["inserted_count"] == 1
     saved = store.get(result["candle_ids"][0])
@@ -87,7 +107,7 @@ def test_canonical_store_rejects_missing_source_observation(tmp_path):
     store = CanonicalCandleStore(path)
 
     with pytest.raises(CanonicalDataError, match="do not exist"):
-        store.append_batch([candle("missing-observation")])
+        store.append_batch([candle("missing-observation")], validation_report())
 
     assert store.count() == 0
 
@@ -99,7 +119,7 @@ def test_canonical_store_rejects_source_identity_mismatch(tmp_path):
     record["broker_symbol"] = "A_DIFFERENT_SYMBOL"
 
     with pytest.raises(CanonicalDataError, match="identity"):
-        store.append_batch([record])
+        store.append_batch([record], validation_report())
 
     assert store.count() == 0
 
@@ -164,7 +184,7 @@ def test_canonical_batch_is_atomic_when_later_record_is_invalid(tmp_path):
     invalid_source["source_observation_ids"] = ["not-in-the-raw-store"]
 
     with pytest.raises(CanonicalDataError, match="do not exist"):
-        store.append_batch([valid, invalid_source])
+        store.append_batch([valid, invalid_source], validation_report())
 
     assert store.count() == 0
 
@@ -178,7 +198,7 @@ def test_canonical_store_rejects_source_class_mismatch(tmp_path):
     store = CanonicalCandleStore(path)
 
     with pytest.raises(CanonicalDataError, match="source type"):
-        store.append_batch([candle(result["observation_ids"][0])])
+        store.append_batch([candle(result["observation_ids"][0])], validation_report(batch_id=result["batch_id"]))
 
     assert store.count() == 0
 
@@ -200,7 +220,7 @@ def test_canonical_hash_is_stable_across_equivalent_timezone_and_numeric_inputs(
     offset_record["close_time"] = "2026-11-08T12:05:00+02:00"
     offset_record["volume"] = 25.0
 
-    result = store.append_batch([utc_record, offset_record])
+    result = store.append_batch([utc_record, offset_record], validation_report())
 
     assert result["record_sha256"][0] == result["record_sha256"][1]
 
