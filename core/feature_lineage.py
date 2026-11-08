@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
+import math
 from typing import Any
 
 
@@ -58,9 +59,19 @@ def build_indicator_lineage(
     resolved_version = library_version or installed_calculation_library_version()
     features = []
     for definition in INDICATOR_DEFINITIONS:
+        column_present = definition["column"] in columns
+        latest_value_valid = False
+        if column_present and len(frame):
+            try:
+                latest_value = float(frame[definition["column"]].iloc[-1])
+                latest_value_valid = math.isfinite(latest_value)
+            except (TypeError, ValueError, OverflowError, KeyError, IndexError):
+                latest_value_valid = False
         features.append({
             **definition,
-            "available": definition["column"] in columns,
+            "column_present": column_present,
+            "latest_value_valid": latest_value_valid,
+            "available": bool(column_present and latest_value_valid),
         })
 
     available_count = sum(1 for feature in features if feature["available"])
