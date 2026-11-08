@@ -1,18 +1,18 @@
-"""Authenticated local MT5 bridge with raw-observation persistence.
+"""Authenticated read-only MT5 bridge with raw-observation persistence.
 
-The bridge is an adapter to an already broker-connected MetaTrader 5 terminal.
-It is not a broker and cannot supply market data without a broker session.
+This service retrieves market data only. It intentionally has no trading or
+order-management routes.
 """
-import hashlib
+import ipaddress
 import json
 import os
 import secrets
 import socket
 from datetime import datetime, timezone
 
-import pytz
 from flask import Flask, jsonify, request
 
+from core.mt5_connector import ConnectionIdentity, MT5Connector
 from core.raw_observation_store import RawObservationStore
 
 try:
@@ -32,13 +32,7 @@ MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
 MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
 MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
 MAX_COUNT = 2000
-
-TIMEFRAME_MAP = {
-    "5m": getattr(mt5, "TIMEFRAME_M5", 5) if mt5 else 5,
-    "15m": getattr(mt5, "TIMEFRAME_M15", 15) if mt5 else 15,
-    "1h": getattr(mt5, "TIMEFRAME_H1", 60) if mt5 else 60,
-    "4h": getattr(mt5, "TIMEFRAME_H4", 240) if mt5 else 240,
-}
+connector = None
 
 
 def _symbol_map():
@@ -60,30 +54,21 @@ SYMBOL_MAP = _symbol_map()
 
 def _is_loopback(host):
     try:
-        return ipaddress_is_loopback(host)
-    except ValueError:
+        return ipaddress.ip_address(socket.gethostbyname(host)).is_loopback
+    except (ValueError, OSError):
         return False
 
 
-def ipaddress_is_loopback(host):
-    import ipaddress
-    return ipaddress.ip_address(socket.gethostbyname(host)).is_loopback
-
-
 def _authorized():
-    # Loopback-only deployment is the default trust boundary. If a token is
-    # configured, enforce it even for local callers.
     if not MT5_BRIDGE_TOKEN:
         return _is_loopback(MT5_BRIDGE_HOST)
     supplied = request.headers.get("Authorization", "")
-    expected = "Bearer " + MT5_BRIDGE_TOKEN
-    return secrets.compare_digest(supplied, expected)
+    return secrets.compare_digest(supplied, "Bearer " + MT5_BRIDGE_TOKEN)
 
 
 @app.before_request
 def require_bridge_authentication():
     if request.endpoint == "health":
-        # Health reveals only process/connection status, not account metadata.
         return None
     if not _authorized():
         return jsonify({"status": "error", "error": "unauthorized"}), 401
@@ -91,44 +76,53 @@ def require_bridge_authentication():
 
 
 def init_mt5():
+    global connector
     if mt5 is None:
         return False, "MetaTrader5 package not installed"
     if not MT5_BROKER_NAME or MT5_BROKER_NAME.lower() == "unknown":
         return False, "MT5_BROKER_NAME must identify the configured broker"
     if MT5_ACCOUNT_ENVIRONMENT not in {"demo", "live", "contest"}:
         return False, "MT5_ACCOUNT_ENVIRONMENT must be demo, live, or contest"
-
-    init_kwargs = {}
-    if MT5_PATH:
-        init_kwargs["path"] = MT5_PATH
-    if not mt5.initialize(**init_kwargs):
-        return False, f"MT5 initialize failed: {mt5.last_error()}"
-
-    # Login is optional only when the terminal is already authenticated.
-    if MT5_LOGIN or MT5_PASSWORD or MT5_SERVER:
-        if not (MT5_LOGIN and MT5_PASSWORD and MT5_SERVER):
-            return False, "MT5_LOGIN, MT5_PASSWORD and MT5_SERVER must be configured together"
-        if not mt5.login(login=MT5_LOGIN, password=MT5_PASSWORD, server=MT5_SERVER):
-            return False, f"MT5 login failed: {mt5.last_error()}"
-
-    terminal = mt5.terminal_info()
-    account = mt5.account_info()
-    if terminal is None or account is None or not terminal.connected:
-        return False, "MT5 terminal is not connected to an authenticated broker account"
+    connector = MT5Connector(
+        mt5,
+        ConnectionIdentity(
+            broker=MT5_BROKER_NAME,
+            server=MT5_SERVER,
+            environment=MT5_ACCOUNT_ENVIRONMENT,
+        ),
+        login=MT5_LOGIN or None,
+        password=MT5_PASSWORD or None,
+        server=MT5_SERVER or None,
+        terminal_path=MT5_PATH or None,
+        reconnect_attempts=1,
+    )
+    if not connector.connect():
+        return False, connector.last_error or "MT5 connection failed"
     return True, "connected"
 
 
 @app.route("/health", methods=["GET"])
 def health():
-    if mt5 is None:
-        return jsonify({"status": "error", "message": "MetaTrader5 library not installed"}), 500
-    terminal = mt5.terminal_info()
-    account = mt5.account_info()
-    connected = bool(terminal and account and terminal.connected)
+    if connector is None:
+        return jsonify({"status": "disconnected", "connected": False}), 503
+    connected = connector.is_connected()
     return jsonify({
         "status": "connected" if connected else "disconnected",
         "connected": connected,
+        "state": connector.state.value,
     }), (200 if connected else 503)
+
+
+@app.route("/symbols", methods=["GET"])
+def get_symbols():
+    if connector is None:
+        return jsonify({"status": "error", "error": "MT5 connector is not initialized"}), 503
+    try:
+        symbols = connector.discover_symbols()
+    except Exception:
+        app.logger.exception("MT5 symbol discovery failed")
+        return jsonify({"status": "error", "error": "symbol discovery failed"}), 503
+    return jsonify({"status": "ok", "count": len(symbols), "symbols": symbols})
 
 
 @app.route("/ohlcv", methods=["GET"])
@@ -142,12 +136,12 @@ def get_ohlcv():
 
     if not symbol_id:
         return jsonify({"status": "error", "error": "symbol is required"}), 400
-    if timeframe not in TIMEFRAME_MAP:
+    if timeframe not in {"5m", "15m", "1h", "4h"}:
         return jsonify({"status": "error", "error": "unsupported timeframe"}), 400
     if count < 1 or count > MAX_COUNT:
         return jsonify({"status": "error", "error": f"count must be between 1 and {MAX_COUNT}"}), 400
-    if mt5 is None:
-        return jsonify({"status": "error", "error": "MetaTrader5 package not installed"}), 503
+    if connector is None:
+        return jsonify({"status": "error", "error": "MT5 connector is not initialized"}), 503
 
     broker_symbol = SYMBOL_MAP.get(symbol_id)
     if not broker_symbol:
@@ -157,32 +151,25 @@ def get_ohlcv():
             "symbol_id": symbol_id,
         }), 404
 
-    terminal = mt5.terminal_info()
-    account = mt5.account_info()
-    if terminal is None or account is None or not terminal.connected:
-        return jsonify({"status": "error", "error": "MT5 broker session disconnected"}), 503
-
-    symbol_info = mt5.symbol_info(broker_symbol)
-    if symbol_info is None or not mt5.symbol_select(broker_symbol, True):
+    try:
+        rates = connector.fetch_rates(broker_symbol, timeframe, count)
+        symbol_info = mt5.symbol_info(broker_symbol)
+    except ValueError as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 400
+    except LookupError:
         return jsonify({"status": "error", "error": "broker symbol unavailable"}), 404
-
-    rates = mt5.copy_rates_from_pos(broker_symbol, TIMEFRAME_MAP[timeframe], 0, count)
-    if rates is None or len(rates) == 0:
-        return jsonify({
-            "status": "error",
-            "error": "broker returned no rates",
-            "mt5_error": str(mt5.last_error()),
-        }), 502
+    except Exception:
+        app.logger.exception("MT5 rate retrieval failed")
+        return jsonify({"status": "error", "error": "broker rate retrieval failed"}), 503
 
     raw_rows = []
     response_rows = []
-    latest_index = max(
-        range(len(rates)),
-        key=lambda index: int(rates[index]["time"]),
-    )
+    latest_index = max(range(len(rates)), key=lambda index: int(rates[index]["time"]))
     for index, rate in enumerate(rates):
-        raw = {name: (value.item() if hasattr(value, "item") else value)
-               for name, value in zip(rates.dtype.names, rate)}
+        raw = {
+            name: (value.item() if hasattr(value, "item") else value)
+            for name, value in zip(rates.dtype.names, rate)
+        }
         raw_rows.append(raw)
         timestamp = datetime.fromtimestamp(int(raw["time"]), tz=timezone.utc)
         response_rows.append({
@@ -191,7 +178,7 @@ def get_ohlcv():
             "High": float(raw["high"]),
             "Low": float(raw["low"]),
             "Close": float(raw["close"]),
-            "Volume": float(raw["tick_volume"]),  # compatibility; explicitly tick volume
+            "Volume": float(raw["tick_volume"]),
             "tick_volume": int(raw["tick_volume"]),
             "real_volume": int(raw.get("real_volume", 0)),
             "spread": int(raw.get("spread", 0)),
@@ -199,15 +186,13 @@ def get_ohlcv():
             "bar_status": "forming" if index == latest_index else "closed",
         })
 
-    server_name = str(getattr(account, "server", "") or MT5_SERVER or "unknown")
-    if not server_name or server_name.lower() == "unknown":
-        return jsonify({"status": "error", "error": "broker server identity unavailable"}), 503
-    account_environment = MT5_ACCOUNT_ENVIRONMENT
+    account = mt5.account_info()
+    server_name = str(getattr(account, "server", "") or "")
     envelope = {
         "instrument_id": symbol_id,
         "broker": MT5_BROKER_NAME,
         "server_name": server_name,
-        "account_environment": account_environment,
+        "account_environment": MT5_ACCOUNT_ENVIRONMENT,
         "platform": "MT5",
         "broker_symbol": broker_symbol,
         "timeframe": timeframe,
@@ -218,12 +203,11 @@ def get_ohlcv():
 
     try:
         persisted = RawObservationStore(MT5_RAW_DB_PATH).append_batch(envelope, raw_rows)
-    except Exception as exc:
+    except Exception:
         app.logger.exception("Raw observation persistence failed")
         return jsonify({
             "status": "error",
             "error": "raw observation persistence failed; data withheld",
-            "detail": str(exc),
         }), 503
 
     return jsonify({
@@ -233,7 +217,7 @@ def get_ohlcv():
         "broker_symbol": broker_symbol,
         "broker_display_name": str(getattr(symbol_info, "description", "") or ""),
         "server_name": server_name,
-        "account_environment": account_environment,
+        "account_environment": MT5_ACCOUNT_ENVIRONMENT,
         "platform": "MT5",
         "timeframe": timeframe,
         "source_type": "broker_bars",
@@ -248,7 +232,6 @@ if __name__ == "__main__":
     ok, message = init_mt5()
     if not ok:
         raise SystemExit("[BRIDGE] Refusing to start: " + message)
-
     if not _is_loopback(MT5_BRIDGE_HOST) and not MT5_BRIDGE_TOKEN:
         raise SystemExit("[BRIDGE] Non-loopback binding requires MT5_BRIDGE_TOKEN")
     port = int(os.environ.get("PORT", "5000"))
