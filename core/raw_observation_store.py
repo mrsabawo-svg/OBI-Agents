@@ -154,6 +154,7 @@ class RawObservationStore:
         inserted_ids: list[str] = []
         hashes: list[str] = []
         quarantine_ids: list[str] = []
+        quarantine_links: list[dict[str, str]] = []
         quarantine_time = datetime.now(timezone.utc).isoformat()
 
         with self._connect() as connection:
@@ -201,6 +202,11 @@ class RawObservationStore:
                     quarantine_time, str(record.get("validator_version", "1")),
                 ))
                 quarantine_ids.append(quarantine_id)
+                quarantine_links.append({
+                    "quarantine_id": quarantine_id,
+                    "observation_id": observation_id,
+                    "reason_code": record["reason_code"],
+                })
 
         return {
             "batch_id": batch_id,
@@ -209,6 +215,7 @@ class RawObservationStore:
             "payload_sha256": hashes,
             "quarantine_count": len(quarantine_ids),
             "quarantine_ids": quarantine_ids,
+            "quarantine_records": quarantine_links,
             "schema_version": SCHEMA_VERSION,
             "persisted": True,
         }
