@@ -76,6 +76,8 @@ def test_registry_verified_record_requires_evidence_fields():
         "availability_status": "data_verified",
         "supported_timeframes": ["5m"],
         "account_environment": "demo",
+        "server_name": "Weltrade-Demo",
+        "account_fingerprint": "a" * 64,
         "evidence_refs": ["evidence://account-observation-001"],
         "last_verified_at": "2026-11-08T10:00:00Z",
     })
@@ -283,3 +285,12 @@ def test_instrument_registry_evidence_is_append_only(tmp_path):
             db.execute("UPDATE mt5_instrument_discoveries SET broker_symbol = 'EURUSDx'")
         with pytest.raises(sqlite3.IntegrityError, match="append-only"):
             db.execute("DELETE FROM mt5_account_observations")
+
+
+def test_raw_observations_persist_account_fingerprint(tmp_path):
+    store = RawObservationStore(tmp_path / "raw.sqlite3")
+    envelope = source_envelope()
+    envelope["account_fingerprint"] = "f" * 64
+    result = store.append_batch(envelope, [{"time": 1794132000, "open": 100.0}])
+    saved = store.get(result["observation_ids"][0])
+    assert saved["account_fingerprint"] == "f" * 64
