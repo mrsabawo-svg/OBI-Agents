@@ -164,3 +164,13 @@ Account fingerprints are also included in each immutable validation report and r
 Each OHLCV response now includes an immutable history-completeness subreport. The report is scoped to the exact requested window (count and start position); it does not claim that all older broker history exists. It records requested/returned counts, page boundaries, latest-bar anchor stability, timestamp ordering/alignment, duplicates, gaps, forming/closed bars, freshness, and a status of complete, incomplete, or unverifiable. A complete status certifies only the requested window, not the broker's entire historical archive.
 
 Unexplained gaps or stale latest data remain unverifiable when no verified broker session calendar is available. They are not silently treated as missing bars or as valid continuous-market history. A verified continuous 24/7 session model can classify those gaps as incomplete. DataAgent accepts only complete history windows; incomplete or unverifiable windows are persisted as evidence but withheld from signal generation. The archived per-timeframe data lineage now uses schema v3 and carries the history report summary alongside the account fingerprint.
+
+### Explicit session-calendar declaration
+
+The bridge defaults every instrument to the `unknown` session model. An operator may set `MT5_VERIFIED_SESSION_MODEL_JSON` only after confirming the instrument's schedule from authoritative broker documentation or an equivalent verified source. The only currently supported declaration is an explicit continuous 24/7 schedule, for example:
+
+```bash
+MT5_VERIFIED_SESSION_MODEL_JSON='{"SFX_VOL_75":"continuous_24_7"}'
+```
+
+Do not set this merely because an instrument is labelled synthetic or because SessionAgent permits trading. Without this declaration, unexplained gaps and stale latest windows remain unverifiable and DataAgent withholds signals.
