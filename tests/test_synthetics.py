@@ -175,6 +175,24 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                         "requested_count": len(rows),
                         "returned_count": len(rows),
                         "missing_interval_count": 0,
+                        "gap_segment_count": 0,
+                        "duplicate_timestamp_count": 0,
+                        "out_of_order_count": 0,
+                        "timeframe_alignment_error_count": 0,
+                        "future_bar_count": 0,
+                        "latest_bar_stale": False,
+                        "snapshot_stable": True,
+                        "snapshot_check_performed": False,
+                        "forming_observation_indexes": [
+                            index for index, row in enumerate(rows)
+                            if row.get("bar_status") == "forming"
+                        ],
+                        "pagination": {
+                            "page_count": 1,
+                            "page_sizes": [len(rows)],
+                            "page_start_positions": [0],
+                        },
+                        "reasons": [],
                         "forming_count": 0,
                         "closed_count": len(rows),
                     },
@@ -252,6 +270,24 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                         "requested_count": len(rows),
                         "returned_count": len(rows),
                         "missing_interval_count": 0,
+                        "gap_segment_count": 0,
+                        "duplicate_timestamp_count": 0,
+                        "out_of_order_count": 0,
+                        "timeframe_alignment_error_count": 0,
+                        "future_bar_count": 0,
+                        "latest_bar_stale": False,
+                        "snapshot_stable": True,
+                        "snapshot_check_performed": False,
+                        "forming_observation_indexes": [
+                            index for index, row in enumerate(rows)
+                            if row.get("bar_status") == "forming"
+                        ],
+                        "pagination": {
+                            "page_count": 1,
+                            "page_sizes": [len(rows)],
+                            "page_start_positions": [0],
+                        },
+                        "reasons": [],
                         "forming_count": 0,
                         "closed_count": len(rows),
                     }, "received_count": 1,
@@ -326,6 +362,24 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                         "requested_count": len(rows),
                         "returned_count": len(rows),
                         "missing_interval_count": 0,
+                        "gap_segment_count": 0,
+                        "duplicate_timestamp_count": 0,
+                        "out_of_order_count": 0,
+                        "timeframe_alignment_error_count": 0,
+                        "future_bar_count": 0,
+                        "latest_bar_stale": False,
+                        "snapshot_stable": True,
+                        "snapshot_check_performed": False,
+                        "forming_observation_indexes": [
+                            index for index, row in enumerate(rows)
+                            if row.get("bar_status") == "forming"
+                        ],
+                        "pagination": {
+                            "page_count": 1,
+                            "page_sizes": [len(rows)],
+                            "page_start_positions": [0],
+                        },
+                        "reasons": [],
                         "forming_count": 0,
                         "closed_count": len(rows),
                     },
@@ -394,6 +448,24 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                         "requested_count": len(rows),
                         "returned_count": len(rows),
                         "missing_interval_count": 0,
+                        "gap_segment_count": 0,
+                        "duplicate_timestamp_count": 0,
+                        "out_of_order_count": 0,
+                        "timeframe_alignment_error_count": 0,
+                        "future_bar_count": 0,
+                        "latest_bar_stale": False,
+                        "snapshot_stable": True,
+                        "snapshot_check_performed": False,
+                        "forming_observation_indexes": [
+                            index for index, row in enumerate(rows)
+                            if row.get("bar_status") == "forming"
+                        ],
+                        "pagination": {
+                            "page_count": 1,
+                            "page_sizes": [len(rows)],
+                            "page_start_positions": [0],
+                        },
+                        "reasons": [],
                         "forming_count": 1,
                         "closed_count": len(rows) - 1,
                     },
@@ -521,6 +593,24 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                         "requested_count": len(rows),
                         "returned_count": len(rows),
                         "missing_interval_count": 0,
+                        "gap_segment_count": 0,
+                        "duplicate_timestamp_count": 0,
+                        "out_of_order_count": 0,
+                        "timeframe_alignment_error_count": 0,
+                        "future_bar_count": 0,
+                        "latest_bar_stale": False,
+                        "snapshot_stable": True,
+                        "snapshot_check_performed": False,
+                        "forming_observation_indexes": [
+                            index for index, row in enumerate(rows)
+                            if row.get("bar_status") == "forming"
+                        ],
+                        "pagination": {
+                            "page_count": 1,
+                            "page_sizes": [len(rows)],
+                            "page_start_positions": [0],
+                        },
+                        "reasons": [],
                         "forming_count": 0,
                         "closed_count": len(rows),
                     },
@@ -586,6 +676,24 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                         "requested_count": len(rows),
                         "returned_count": len(rows),
                         "missing_interval_count": 0,
+                        "gap_segment_count": 0,
+                        "duplicate_timestamp_count": 0,
+                        "out_of_order_count": 0,
+                        "timeframe_alignment_error_count": 0,
+                        "future_bar_count": 0,
+                        "latest_bar_stale": False,
+                        "snapshot_stable": True,
+                        "snapshot_check_performed": False,
+                        "forming_observation_indexes": [
+                            index for index, row in enumerate(rows)
+                            if row.get("bar_status") == "forming"
+                        ],
+                        "pagination": {
+                            "page_count": 1,
+                            "page_sizes": [len(rows)],
+                            "page_start_positions": [0],
+                        },
+                        "reasons": [],
                         "forming_count": 0,
                         "closed_count": len(rows),
                     },
