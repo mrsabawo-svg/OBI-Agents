@@ -111,6 +111,7 @@ class DataLineageManifestTest(unittest.TestCase):
             "broker": "Weltrade",
             "server_name": "Weltrade-Demo",
             "account_environment": "demo",
+            "account_fingerprint": "a" * 64,
             "broker_symbol": "SFX Vol 75",
             "source_type": "broker_bars",
         }
