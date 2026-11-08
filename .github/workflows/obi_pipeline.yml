@@ -53,4 +53,5 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           MT5_BRIDGE_URL: ${{ secrets.MT5_BRIDGE_URL }}
+          MT5_BRIDGE_TOKEN: ${{ secrets.MT5_BRIDGE_TOKEN }}
         run: python main.py
