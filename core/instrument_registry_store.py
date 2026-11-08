@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-REGISTRY_VERSION = "obi-instrument-registry-v1"
+REGISTRY_VERSION = "obi-instrument-registry-v2"
 
 
 def _json(value: Any) -> str:
@@ -87,6 +87,37 @@ class InstrumentRegistryStore:
                 ON mt5_instrument_discoveries(
                     account_fingerprint, broker_symbol, discovered_at
                 )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS mt5_instrument_verifications (
+                    verification_id TEXT PRIMARY KEY,
+                    account_fingerprint TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    broker_symbol TEXT NOT NULL,
+                    metadata_sha256 TEXT NOT NULL,
+                    verified_timeframes_json TEXT NOT NULL,
+                    evidence_refs_json TEXT NOT NULL,
+                    reviewer TEXT NOT NULL,
+                    verification_status TEXT NOT NULL,
+                    verified_at TEXT NOT NULL,
+                    registry_version TEXT NOT NULL
+                )
+            """)
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_mt5_instrument_verification_lookup
+                ON mt5_instrument_verifications(
+                    account_fingerprint, instrument_id, broker_symbol, verified_at
+                )
+            """)
+            db.execute("""
+                CREATE TRIGGER IF NOT EXISTS mt5_instrument_verifications_no_update
+                BEFORE UPDATE ON mt5_instrument_verifications
+                BEGIN SELECT RAISE(ABORT, 'instrument verification evidence is append-only'); END
+            """)
+            db.execute("""
+                CREATE TRIGGER IF NOT EXISTS mt5_instrument_verifications_no_delete
+                BEFORE DELETE ON mt5_instrument_verifications
+                BEGIN SELECT RAISE(ABORT, 'instrument verification evidence is append-only'); END
             """)
             for table in ("mt5_account_observations", "mt5_instrument_discoveries"):
                 db.execute(f"""
@@ -233,6 +264,132 @@ class InstrumentRegistryStore:
         )
         result["mapping_conflict"] = bool(result["mapping_conflict"])
         return result
+
+
+    def record_verification(
+        self,
+        account_identity: dict[str, Any],
+        instrument_id: str,
+        broker_symbol: str,
+        metadata_sha256: str,
+        evidence_refs: list[dict[str, Any]],
+        reviewer: str,
+    ) -> dict[str, Any]:
+        """Append an explicit operator approval backed by persisted canonical evidence."""
+        if not isinstance(account_identity, dict) or account_identity.get("identity_pinned") is not True:
+            raise ValueError("a pinned account identity is required for instrument verification")
+        account_fingerprint = account_identity.get("account_fingerprint")
+        if (
+            not isinstance(account_fingerprint, str)
+            or len(account_fingerprint) != 64
+            or any(char not in "0123456789abcdef" for char in account_fingerprint)
+        ):
+            raise ValueError("account_fingerprint must be a lowercase SHA-256 hex digest")
+        if not isinstance(instrument_id, str) or not instrument_id.strip():
+            raise ValueError("instrument_id must be a non-empty string")
+        if not isinstance(broker_symbol, str) or not broker_symbol.strip():
+            raise ValueError("broker_symbol must be a non-empty string")
+        if (
+            not isinstance(metadata_sha256, str)
+            or len(metadata_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in metadata_sha256)
+        ):
+            raise ValueError("metadata_sha256 must be a lowercase SHA-256 hex digest")
+        if not isinstance(reviewer, str) or not reviewer.strip():
+            raise ValueError("reviewer must be a non-empty string")
+        if not isinstance(evidence_refs, list) or not evidence_refs:
+            raise ValueError("at least one canonical evidence reference is required")
+
+        normalized_refs = []
+        seen_reports = set()
+        seen_timeframes = set()
+        for item in evidence_refs:
+            if not isinstance(item, dict):
+                raise ValueError("each evidence reference must be an object")
+            report_id = item.get("report_id")
+            report_hash = item.get("report_sha256")
+            timeframe = item.get("timeframe")
+            candle_count = item.get("closed_candle_count")
+            if not isinstance(report_id, str) or not report_id.strip():
+                raise ValueError("evidence report_id must be a non-empty string")
+            if (
+                not isinstance(report_hash, str)
+                or len(report_hash) != 64
+                or any(char not in "0123456789abcdef" for char in report_hash)
+            ):
+                raise ValueError("evidence report_sha256 must be a lowercase SHA-256 hex digest")
+            if timeframe not in {"5m", "15m", "1h", "4h"}:
+                raise ValueError("evidence timeframe is unsupported")
+            if isinstance(candle_count, bool) or not isinstance(candle_count, int) or candle_count < 1:
+                raise ValueError("evidence must contain at least one valid closed canonical candle")
+            if report_id in seen_reports or timeframe in seen_timeframes:
+                raise ValueError("evidence report IDs and timeframes must be unique")
+            seen_reports.add(report_id)
+            seen_timeframes.add(timeframe)
+            normalized_refs.append({
+                "report_id": report_id,
+                "report_sha256": report_hash,
+                "timeframe": timeframe,
+                "closed_candle_count": candle_count,
+            })
+
+        verified_timeframes = sorted(seen_timeframes)
+        verified_at = datetime.now(timezone.utc).isoformat()
+        verification_id = str(uuid.uuid4())
+        with self._connect() as db:
+            db.execute("""
+                INSERT INTO mt5_instrument_verifications (
+                    verification_id, account_fingerprint, instrument_id,
+                    broker_symbol, metadata_sha256, verified_timeframes_json,
+                    evidence_refs_json, reviewer, verification_status,
+                    verified_at, registry_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                verification_id, account_fingerprint, instrument_id,
+                broker_symbol, metadata_sha256, _json(verified_timeframes),
+                _json(normalized_refs), reviewer.strip(), "verified",
+                verified_at, REGISTRY_VERSION,
+            ))
+        return {
+            "verification_id": verification_id,
+            "account_fingerprint": account_fingerprint,
+            "instrument_id": instrument_id,
+            "broker_symbol": broker_symbol,
+            "metadata_sha256": metadata_sha256,
+            "verified_timeframes": verified_timeframes,
+            "evidence_refs": normalized_refs,
+            "reviewer": reviewer.strip(),
+            "verification_status": "verified",
+            "verified_at": verified_at,
+            "registry_version": REGISTRY_VERSION,
+        }
+
+    def latest_verification(
+        self,
+        account_fingerprint: str,
+        instrument_id: str,
+        broker_symbol: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute("""
+                SELECT * FROM mt5_instrument_verifications
+                WHERE account_fingerprint = ?
+                  AND instrument_id = ?
+                  AND broker_symbol = ?
+                ORDER BY verified_at DESC, rowid DESC LIMIT 1
+            """, (account_fingerprint, instrument_id, broker_symbol)).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["verified_timeframes"] = json.loads(result.pop("verified_timeframes_json"))
+        result["evidence_refs"] = json.loads(result.pop("evidence_refs_json"))
+        return result
+
+    def instrument_verification_count(self) -> int:
+        with self._connect() as db:
+            return int(db.execute(
+                "SELECT COUNT(*) FROM mt5_instrument_verifications"
+            ).fetchone()[0])
 
     def account_observation_count(self) -> int:
         with self._connect() as db:
