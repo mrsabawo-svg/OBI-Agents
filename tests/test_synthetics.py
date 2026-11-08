@@ -181,6 +181,8 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                 "raw_persistence": {
                     "persisted": True, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
+                    "observation_ids": [f"obs-{i}" for i in range(len(rows))],
+                    "quarantine_ids": [], "quarantine_records": [],
                 },
                 "quality_report": {
                     "received_count": len(rows), "quarantined_observation_count": 0,
@@ -204,12 +206,11 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
         price = 5000 + index
         rows.append({
             "observation_id": f"obs-{index}",
-            "observation_id": f"obs-{index}",
             "timestamp": timestamp.isoformat(), "Open": price,
             "High": price + 2, "Low": price - 2, "Close": price + 1,
             "Volume": 100, "volume_type": "tick_volume",
             "bar_status": "forming" if index == 79 else "closed",
-            "quarantine_reasons": [], "quarantine_reasons": [],
+            "quarantine_reasons": [],
         })
 
     class FakeResponse:
