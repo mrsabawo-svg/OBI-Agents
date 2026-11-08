@@ -45,26 +45,26 @@ class SessionAgent:
 
             # Weekends: crypto trades 24/7; forex/indices are closed.
             if weekday >= 5 and not is_always_on:
-                return self._build(False, "Weekend — market closed", kill_zone)
+                return self._build(False, "Weekend — market closed", kill_zone, now)
 
             # Dead hours block: only applies to traditional forex/indices.
             if hour == 23 and not is_always_on:
-                return self._build(False, "Dead hours — no liquidity", kill_zone)
+                return self._build(False, "Dead hours — no liquidity", kill_zone, now)
 
             preferred = SYMBOL_SESSIONS.get(self.symbol, ["London Open", "New York Open"])
 
             if kill_zone["active"] and kill_zone["name"] in preferred:
                 reason = f"{kill_zone['name']} — optimal for {self.symbol}"
-                return self._build(True, reason, kill_zone)
+                return self._build(True, reason, kill_zone, now)
 
             if self.symbol in CRYPTO_SYMBOLS:
-                return self._build(True, "Crypto — 24/7 tradeable", kill_zone)
+                return self._build(True, "Crypto — 24/7 tradeable", kill_zone, now)
 
             # Forex/indices: tradeable during active hours
             if 1 <= hour <= 22:
-                return self._build(True, "Active session — not peak kill zone", kill_zone)
+                return self._build(True, "Active session — not peak kill zone", kill_zone, now)
 
-            return self._build(False, "Outside tradeable hours", kill_zone)
+            return self._build(False, "Outside tradeable hours", kill_zone, now)
 
         except Exception as e:
             print(f"[SESSION] Error: {e}")
