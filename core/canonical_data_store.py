@@ -405,6 +405,41 @@ class CanonicalCandleStore:
                 "SELECT COUNT(*) FROM canonical_candles"
             ).fetchone()[0])
 
+
+    def get_validation_report(self, report_id: str) -> dict[str, Any] | None:
+        """Return an immutable validation report after checking its stored hash."""
+        if not isinstance(report_id, str) or not report_id.strip():
+            raise CanonicalDataError("report_id must be a non-empty string")
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT report_json, report_sha256 FROM canonical_validation_reports WHERE report_id = ?",
+                (report_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        report_json, report_sha256 = row
+        actual_hash = hashlib.sha256(report_json.encode("utf-8")).hexdigest()
+        if actual_hash != report_sha256:
+            raise CanonicalDataError("stored validation report hash mismatch")
+        return {
+            "report": json.loads(report_json),
+            "report_sha256": report_sha256,
+        }
+
+    def count_closed_for_report(self, report_id: str) -> int:
+        """Count valid closed canonical candles backed by one validation report."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) FROM canonical_candles
+                WHERE validation_report_id = ?
+                  AND bar_status = 'closed'
+                  AND validation_status = 'valid'
+                """,
+                (report_id,),
+            ).fetchone()
+        return int(row[0]) if row else 0
+
     def get(self, candle_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute("""
