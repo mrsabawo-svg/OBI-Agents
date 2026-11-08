@@ -160,6 +160,10 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
             return SimpleNamespace(description="SFX Vol 75")
 
     monkeypatch.setattr(mt5_bridge, "datetime", FrozenDateTime)
+    monkeypatch.setattr(
+        mt5_bridge, "MT5_VERIFIED_SESSION_MODELS",
+        {"SFX_VOL_75": "continuous_24_7"},
+    )
     monkeypatch.setattr(mt5_bridge, "connector", FakeConnector())
     monkeypatch.setattr(mt5_bridge, "mt5", FakeMT5())
     monkeypatch.setattr(mt5_bridge, "SYMBOL_MAP", {"SFX_VOL_75": "SFX Vol 75"})
@@ -179,6 +183,7 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     assert response.status_code == 200
     assert payload["account_identity"]["account_fingerprint"] == "e" * 64
     assert payload["history_completeness"]["status"] == "complete"
+    assert payload["history_completeness"]["session_model"] == "continuous_24_7"
     assert payload["history_completeness"]["requested_count"] == 2
     assert payload["history_completeness"]["returned_count"] == 2
     assert payload["history_completeness"]["forming_count"] == 1
