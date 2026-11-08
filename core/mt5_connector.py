@@ -7,7 +7,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from functools import wraps
+from threading import RLock
 from typing import Any, Optional
+
+
+def _serialized(method):
+    """Serialize access to the process-wide MT5 terminal connection."""
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
 
 
 class ConnectionState(str, Enum):
@@ -43,6 +54,7 @@ class MT5Connector:
         terminal_path: Optional[str] = None,
         reconnect_attempts: int = 1,
     ) -> None:
+        self._lock = RLock()
         self.adapter = adapter
         self.identity = identity
         self.login_id = login
@@ -107,6 +119,7 @@ class MT5Connector:
             return False
         return True
 
+    @_serialized
     def connect(self) -> bool:
         self.state = ConnectionState.INITIALIZING
         self.last_error = None
@@ -150,6 +163,7 @@ class MT5Connector:
         except Exception as exc:
             return self._fail(f"MT5 connection error: {type(exc).__name__}")
 
+    @_serialized
     def is_connected(self) -> bool:
         # A live terminal alone is insufficient: identity verification must
         # have succeeded during connect() before the session is trusted.
@@ -171,6 +185,7 @@ class MT5Connector:
             self.state = ConnectionState.DISCONNECTED
             return False
 
+    @_serialized
     def ensure_connected(self) -> bool:
         if self.is_connected():
             return True
@@ -179,6 +194,7 @@ class MT5Connector:
                 return True
         return False
 
+    @_serialized
     def discover_symbols(self, *, selected_only: bool = False) -> list[dict]:
         if not self.ensure_connected():
             raise RuntimeError("MT5 broker session is disconnected")
@@ -202,6 +218,7 @@ class MT5Connector:
             })
         return sorted(discovered, key=lambda row: row["name"].casefold())
 
+    @_serialized
     def select_symbol(self, exact_symbol: str) -> dict:
         if not exact_symbol or exact_symbol.strip() != exact_symbol:
             raise ValueError("an exact broker symbol is required")
@@ -222,6 +239,7 @@ class MT5Connector:
             "visible": bool(getattr(refreshed, "visible", True)),
         }
 
+    @_serialized
     def fetch_rates(
         self, exact_symbol: str, timeframe: str, count: int, start_pos: int = 0
     ):
@@ -240,6 +258,7 @@ class MT5Connector:
             raise RuntimeError(f"broker returned no rates: {error}")
         return rates
 
+    @_serialized
     def close(self) -> None:
         if self.adapter is not None:
             try:
