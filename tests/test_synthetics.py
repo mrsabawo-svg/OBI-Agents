@@ -162,6 +162,40 @@ def test_data_agent_refuses_simulated_synthetic_fallback(monkeypatch):
     assert data == {}
 
 
+def test_data_agent_refuses_unpinned_account_identity(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ok",
+                "symbol_id": "SFX_VOL_75",
+                "timeframe": "5m",
+                "broker": "Weltrade",
+                "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo",
+                "account_environment": "demo",
+                "source_type": "broker_bars",
+                "platform": "MT5",
+                "account_identity_pinned": False,
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "identity_pinned": False,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
+                "raw_persistence": {"persisted": True},
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        assert DataAgent("SFX_VOL_75").fetch(["5m"]) == {}
+
+
 def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
 
