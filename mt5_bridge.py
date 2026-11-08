@@ -241,6 +241,7 @@ def require_bridge_authentication():
 
 def init_mt5():
     global connector
+    connector = None
     if mt5 is None:
         return False, "MetaTrader5 package not installed"
     if not MT5_BROKER_NAME or MT5_BROKER_NAME.lower() == "unknown":
