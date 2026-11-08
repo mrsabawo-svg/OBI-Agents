@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+from threading import Thread
+import time
 
 import pytest
 
@@ -231,3 +233,29 @@ def test_missing_account_trade_mode_fails_closed():
     )
     assert connector.connect() is False
     assert "trade mode is unavailable" in connector.last_error
+
+
+def test_mt5_api_calls_are_serialized_across_threads():
+    connector, adapter = make_connector()
+    assert connector.connect()
+    active = 0
+    maximum_active = 0
+
+    def concurrent_copy(symbol, timeframe, start, count):
+        nonlocal active, maximum_active
+        active += 1
+        maximum_active = max(maximum_active, active)
+        time.sleep(0.02)
+        active -= 1
+        return [{"time": start + 1}]
+
+    adapter.copy_rates_from_pos = concurrent_copy
+    threads = [
+        Thread(target=connector.fetch_rates, args=("EURUSD", "5m", 10)),
+        Thread(target=connector.fetch_rates, args=("EURUSD", "5m", 10)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert maximum_active == 1
