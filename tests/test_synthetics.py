@@ -225,6 +225,8 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                 "raw_persistence": {
                     "persisted": True, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
+                    "observation_ids": [f"obs-{i}" for i in range(len(rows))],
+                    "quarantine_ids": [], "quarantine_records": [],
                 },
                 "quality_report": {
                     "received_count": len(rows), "quarantined_observation_count": 0,
