@@ -1,3 +1,8 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+import pytest
+
 import mt5_bridge
 
 
@@ -77,12 +82,6 @@ def test_response_row_handles_invalid_timestamp_and_non_finite_prices():
 
 
 def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkeypatch, tmp_path):
-    from types import SimpleNamespace
-
-import pytest
-
-    from datetime import datetime, timezone
-
     frozen_now = datetime.now(timezone.utc)
     current_bucket = int(frozen_now.timestamp() // 300) * 300
 
