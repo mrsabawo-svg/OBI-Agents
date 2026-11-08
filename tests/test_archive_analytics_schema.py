@@ -97,11 +97,6 @@ class ArchiveAnalyticsSchemaTest(unittest.TestCase):
         self.assertEqual(by_score["70+"], {"wr": 80.0, "n": 5})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-
 class DataLineageManifestTest(unittest.TestCase):
     def test_builds_bounded_canonical_lineage_and_marks_missing_timeframe(self):
         index = pd.date_range("2026-11-08T00:00:00Z", periods=4, freq="5min")
@@ -168,3 +163,8 @@ class DataLineageManifestTest(unittest.TestCase):
         self.assertEqual(manifest["status"], "partial")
         self.assertEqual(manifest["timeframes"]["5m"]["status"], "partial")
         self.assertEqual(manifest["timeframes"]["5m"]["canonical_candle_ids_tail"], [])
+
+
+
+if __name__ == "__main__":
+    unittest.main()
