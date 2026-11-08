@@ -468,6 +468,8 @@ class MT5Connector:
                 import numpy as np
                 # MT5 position zero is newest; older pages must precede newer
                 # pages in the returned chronological sequence.
+                if not all(isinstance(page, np.ndarray) for page in ordered_pages):
+                    raise TypeError("test adapter pages are not NumPy arrays")
                 rates = np.concatenate(ordered_pages, axis=0)
             except (ImportError, TypeError, ValueError):
                 rates = _CombinedRateBatch(ordered_pages)
