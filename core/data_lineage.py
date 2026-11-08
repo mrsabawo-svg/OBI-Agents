@@ -123,6 +123,10 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         isinstance(metadata.get(key), str) and metadata.get(key).strip()
         for key in REQUIRED_CANONICAL_METADATA
     )
+    verified_timeframes = metadata.get("verified_timeframes")
+    timeframe_verified = (
+        isinstance(verified_timeframes, list) and timeframe in verified_timeframes
+    )
     fingerprint = metadata.get("account_fingerprint", "")
     metadata_complete = metadata_complete and (
         len(fingerprint) == 64
@@ -131,7 +135,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         and metadata.get("instrument_verification_status") == "verified"
         and metadata.get("timeframe_verified") is True
         and metadata.get("analysis_eligible") is True
-        and timeframe in metadata.get("verified_timeframes", [])
+        and timeframe_verified
         and metadata.get("history_status") == "complete"
     )
     instrument_metadata_hash = metadata.get("instrument_metadata_sha256", "")
@@ -173,7 +177,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "instrument_verification_status": metadata.get("instrument_verification_status"),
         "instrument_verification_id": metadata.get("instrument_verification_id"),
         "instrument_metadata_sha256": metadata.get("instrument_metadata_sha256"),
-        "verified_timeframes": metadata.get("verified_timeframes", []),
+        "verified_timeframes": verified_timeframes if isinstance(verified_timeframes, list) else [],
         "timeframe_verified": metadata.get("timeframe_verified") is True,
         "analysis_eligible": metadata.get("analysis_eligible") is True,
         "history_completeness": {
