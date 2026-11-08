@@ -600,20 +600,24 @@ def build_decision_lineage(
                 "symbol": symbol,
             }
 
+        selected_timeframes = _selected_timeframes(spec, market_data)
+        unavailable_candidates = [
+            timeframe for timeframe, digest in market_refs.items() if digest is None
+        ]
         input_snapshot = {
             "symbol": symbol,
             "market_data": market_refs,
-            "selected_timeframes": _selected_timeframes(spec, market_data),
+            "selected_timeframes": selected_timeframes,
+            "unavailable_candidate_timeframes": unavailable_candidates,
             "upstream_outputs": upstream_refs,
             "external_inputs": external_refs,
         }
-        missing_timeframes = [
-            timeframe for timeframe, digest in market_refs.items() if digest is None
-        ]
-        if missing_timeframes:
-            warnings.append(
-                f"{agent_name}: missing market-data timeframes {missing_timeframes}"
-            )
+        if "selected" in selected_timeframes and selected_timeframes["selected"] is None:
+            warnings.append(f"{agent_name}: no usable candidate timeframe was available")
+        if "mtf" in selected_timeframes and selected_timeframes["mtf"] is None:
+            warnings.append("Zone: no usable MTF timeframe was available")
+        if "htf" in selected_timeframes and selected_timeframes["htf"] is None:
+            warnings.append("Zone: HTF context unavailable; MTF swing fallback is in use")
         if agent_name == "Edge":
             archive_hash = (
                 external_refs.get("archive_snapshot_sha256")
