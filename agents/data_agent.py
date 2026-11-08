@@ -95,7 +95,10 @@ class DataAgent:
             print(f"[DATA] {self.symbol}: MT5_BRIDGE_URL is not configured; refusing synthetic fallback")
             return data
 
-        required = {"Open", "High", "Low", "Close", "Volume", "bar_status", "volume_type"}
+        required = {
+            "Open", "High", "Low", "Close", "Volume",
+            "bar_status", "volume_type", "quarantine_reasons",
+        }
         headers = {}
         bridge_token = os.environ.get("MT5_BRIDGE_TOKEN")
         if bridge_token:
@@ -137,13 +140,44 @@ class DataAgent:
                 if not isinstance(rows, list) or not rows:
                     print(f"[DATA] {self.symbol} {tf}: bridge returned no candle rows")
                     continue
+                quality_report = parsed.get("quality_report")
+                if not isinstance(quality_report, dict):
+                    print(f"[DATA] {self.symbol} {tf}: durable quarantine report missing")
+                    continue
+                if (
+                    persistence.get("inserted_count") != len(rows)
+                    or quality_report.get("received_count") != len(rows)
+                    or persistence.get("quarantine_count") != quality_report.get("quarantine_record_count")
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: raw persistence/quarantine counts mismatch")
+                    continue
+
                 df = pd.DataFrame(rows)
                 if "timestamp" not in df.columns or not required.issubset(df.columns):
                     print(f"[DATA] {self.symbol} {tf}: invalid bridge schema")
                     continue
+                if not df["quarantine_reasons"].apply(
+                    lambda value: isinstance(value, list)
+                    and all(isinstance(reason, str) for reason in value)
+                ).all():
+                    print(f"[DATA] {self.symbol} {tf}: invalid quarantine reason schema")
+                    continue
+
+                durable_quarantine = df["quarantine_reasons"].apply(bool)
+                durable_quarantine_record_count = int(
+                    df["quarantine_reasons"].apply(len).sum()
+                )
+                if (
+                    int(durable_quarantine.sum()) != quality_report.get("quarantined_observation_count")
+                    or durable_quarantine_record_count != quality_report.get("quarantine_record_count")
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: durable quarantine detail mismatch")
+                    continue
 
                 quality = {
                     "received_count": int(len(df)),
+                    "durable_quarantined_count": int(durable_quarantine.sum()),
+                    "durable_quarantine_record_count": durable_quarantine_record_count,
                     "invalid_timestamp_count": 0,
                     "invalid_numeric_count": 0,
                     "invalid_ohlc_count": 0,
@@ -152,6 +186,7 @@ class DataAgent:
                     "invalid_bar_status_count": 0,
                     "invalid_volume_type_count": 0,
                 }
+                df = df.loc[~durable_quarantine].copy()
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
                 invalid_timestamp = df["timestamp"].isna()
                 quality["invalid_timestamp_count"] = int(invalid_timestamp.sum())
