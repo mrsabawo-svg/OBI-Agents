@@ -128,3 +128,15 @@ Manifest status is explicit. These labels describe provenance coverage for the d
 - `missing`: no expected timeframe supplied market data.
 
 Archive entries deep-copy the manifest so later in-memory changes cannot rewrite the recorded provenance. This is signal-level provenance, not yet a complete feature-level dependency graph: individual indicator formulas and derived/resampled outputs still need their own versioned lineage records.
+
+
+## Derived indicator feature lineage
+
+DataAgent attaches an `obi-feature-lineage-v1` manifest to every frame after indicator calculation. The current versioned feature set is `data-agent-indicators-v1` and records the exact formula, inputs, parameters, output column availability, calculation library, and installed library version for:
+
+- ADX(14): `ta.trend.adx(High, Low, Close)`
+- EMA(20): `ta.trend.ema_indicator(Close)`
+- EMA(50): `ta.trend.ema_indicator(Close)`
+- ATR(14): `ta.volatility.average_true_range(High, Low, Close)`, stored as `ATRr_14`
+
+Feature lineage status is independent of source lineage status. A frame may have canonical raw-data provenance while its feature manifest is partial if an indicator output or calculation-library version is unavailable. The feature manifest is included in the per-timeframe signal archive lineage. This does not yet version the structural logic inside HTFAgent, MTFAgent, ZoneAgent, LTFAgent, RegimeAgent, BiasAgent, TriggerAgent, or ScoreAgent.
