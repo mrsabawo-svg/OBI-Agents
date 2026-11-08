@@ -30,12 +30,12 @@ class SessionAgent:
         self.symbol = symbol
 
     def analyse(self) -> dict:
-        now = now_sast()
         # Synthetics are continuously available and must not depend on
         # forex session clocks or kill-zone calculation.
         if self.symbol in SYNTHETIC_SYMBOLS:
-            return self._build(True, "Synthetic — 24/7 tradeable", {}, now)
+            return self._build(True, "Synthetic — 24/7 tradeable", {}, None)
 
+        now = now_sast()
         try:
             kill_zone = is_kill_zone(now)
             hour      = now.hour
