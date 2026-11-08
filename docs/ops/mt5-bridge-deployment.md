@@ -114,7 +114,7 @@ The API response includes:
 
 DataAgent requires the canonical receipt and verifies that the mapping covers every non-quarantined observation exactly once. It also re-runs its independent row checks; if those checks disagree with the bridge's canonical set, the batch is withheld. Accepted analysis DataFrames retain `CanonicalCandleID` and `RawObservationID` columns so downstream OBI consumers can preserve provenance. Forming candles are persisted with their status but excluded from closed-candle analysis.
 
-This is the first direct lineage integration. It does not yet add lineage to every derived indicator/feature, resampled candle, or final signal/archive record; those remain separate follow-on work.
+This is the first direct lineage integration. Derived indicator/feature dependency graphs and resampled-candle lineage remain separate follow-on work; signal-level archive provenance is described below.
 
 
 ## Signal archive lineage manifest
