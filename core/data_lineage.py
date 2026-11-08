@@ -11,6 +11,16 @@ from typing import Any
 
 LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v1"
 DEFAULT_ID_WINDOW = 50
+QUALITY_SUMMARY_FIELDS = (
+    "received_count",
+    "durable_quarantined_count",
+    "durable_quarantine_record_count",
+    "invalid_timestamp_count",
+    "invalid_numeric_count",
+    "invalid_ohlc_count",
+    "duplicate_timestamp_count",
+    "forming_excluded_count",
+)
 REQUIRED_CANONICAL_METADATA = (
     "raw_batch_id",
     "validation_report_id",
@@ -70,6 +80,16 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
     metadata = attrs.get("source_metadata", {})
     if not isinstance(metadata, dict):
         metadata = {}
+    quality_report = attrs.get("quality_report", {})
+    if not isinstance(quality_report, dict):
+        quality_report = {}
+    quality_summary = {
+        key: value for key, value in quality_report.items()
+        if key in QUALITY_SUMMARY_FIELDS
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+    }
 
     columns = set(getattr(frame, "columns", []))
     has_lineage_columns = {
@@ -120,6 +140,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "account_environment": metadata.get("account_environment"),
         "broker_symbol": metadata.get("broker_symbol"),
         "source_type": metadata.get("source_type"),
+        "quality_summary": quality_summary,
         "canonical_candle_ids_tail": canonical_ids[-window:] if ids_complete else [],
         "raw_observation_ids_tail": raw_ids[-window:] if ids_complete else [],
         "id_window_count": min(row_count, window) if ids_complete else 0,
