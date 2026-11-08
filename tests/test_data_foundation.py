@@ -129,3 +129,80 @@ def test_raw_store_requires_source_identity(tmp_path):
     store = RawObservationStore(tmp_path / "raw.sqlite3")
     with pytest.raises(ValueError, match="broker_symbol"):
         store.append_batch({"instrument_id": "x"}, [{"time": 1}])
+
+
+def test_raw_store_persists_row_level_quarantine_with_source_link(tmp_path):
+    store = RawObservationStore(tmp_path / "raw.sqlite3")
+    observations = [
+        {"time": 1794132000, "open": 100, "high": 102, "low": 99, "close": 101},
+        {"time": 1794132300, "open": 100, "high": 98, "low": 99, "close": 101},
+    ]
+    result = store.append_batch(
+        source_envelope(),
+        observations,
+        quarantine_records=[{
+            "observation_index": 1,
+            "reason_code": "INVALID_OHLC",
+            "reason_detail": "high below close",
+            "validator_version": "1",
+        }],
+    )
+
+    assert result["inserted_count"] == 2
+    assert result["quarantine_count"] == 1
+    record = store.get_quarantine_records()[0]
+    assert record["observation_id"] == result["observation_ids"][1]
+    assert record["batch_id"] == result["batch_id"]
+    assert record["reason_code"] == "INVALID_OHLC"
+    assert store.quarantine_count() == 1
+
+
+def test_quarantine_records_are_append_only(tmp_path):
+    path = tmp_path / "raw.sqlite3"
+    store = RawObservationStore(path)
+    result = store.append_batch(
+        source_envelope(),
+        [{"time": 1794132000, "open": 1}],
+        quarantine_records=[{
+            "observation_index": 0,
+            "reason_code": "INVALID_OHLC",
+        }],
+    )
+    quarantine_id = store.get_quarantine_records()[0]["quarantine_id"]
+
+    with sqlite3.connect(path) as connection:
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            connection.execute(
+                "UPDATE quarantine_records SET reason_code = ? WHERE quarantine_id = ?",
+                ("INVALID_TIMESTAMP", quarantine_id),
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            connection.execute(
+                "DELETE FROM quarantine_records WHERE quarantine_id = ?",
+                (quarantine_id,),
+            )
+
+
+def test_invalid_quarantine_record_is_rejected_before_raw_insert(tmp_path):
+    store = RawObservationStore(tmp_path / "raw.sqlite3")
+    with pytest.raises(ValueError, match="unknown quarantine reason_code"):
+        store.append_batch(
+            source_envelope(),
+            [{"time": 1794132000, "open": 1}],
+            quarantine_records=[{
+                "observation_index": 0,
+                "reason_code": "MADE_UP_REASON",
+            }],
+        )
+    assert store.count() == 0
+    assert store.quarantine_count() == 0
+
+
+def test_non_finite_raw_values_are_preserved_as_explicit_json_sentinels(tmp_path):
+    store = RawObservationStore(tmp_path / "raw.sqlite3")
+    result = store.append_batch(
+        source_envelope(),
+        [{"time": 1794132000, "open": float("nan")}],
+    )
+    saved = store.get(result["observation_ids"][0])
+    assert saved["payload"]["open"] == {"__non_finite_float__": "nan"}
