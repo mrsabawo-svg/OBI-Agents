@@ -9,6 +9,7 @@ import requests
 import yfinance as yf
 import pandas as pd
 import ta as ta_lib
+from core.feature_lineage import build_indicator_lineage
 
 yf.set_tz_cache_location("/tmp/yfinance_cache")
 
@@ -384,4 +385,5 @@ class DataAgent:
             df["ATRr_14"] = ta_lib.volatility.average_true_range(high, low, close, window=14)
         except Exception as exc:
             print("[DATA] Indicator error: " + str(exc))
+        df.attrs["feature_lineage"] = build_indicator_lineage(df)
         return df
