@@ -10,6 +10,10 @@ from copy import deepcopy
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
+from core.decision_lineage import (
+    DECISION_LINEAGE_SCHEMA_VERSION,
+    verify_decision_lineage,
+)
 
 SAST = pytz.timezone("Africa/Johannesburg")
 
@@ -137,6 +141,23 @@ class ArchiveAgent:
         else:
             data_lineage = deepcopy(data_lineage)
 
+        decision_lineage = signal.get("decision_lineage")
+        if (
+            isinstance(decision_lineage, dict)
+            and decision_lineage.get("status") == "complete"
+            and verify_decision_lineage(decision_lineage)
+        ):
+            decision_lineage = deepcopy(decision_lineage)
+        else:
+            decision_lineage = {
+                "schema_version": DECISION_LINEAGE_SCHEMA_VERSION,
+                "status": "unavailable",
+                "agent_order": [],
+                "agent_specs": {},
+                "agent_traces": {},
+                "manifest_sha256": None,
+            }
+
         return {
             "id": signal_id,
             "symbol": signal.get("symbol"),
@@ -172,4 +193,7 @@ class ArchiveAgent:
             "closed": None,
             "data_lineage": data_lineage,
             "data_lineage_status": data_lineage.get("status", "unavailable"),
+            "decision_lineage": decision_lineage,
+            "decision_lineage_status": decision_lineage.get("status", "unavailable"),
+            "decision_lineage_sha256": decision_lineage.get("manifest_sha256"),
         }
