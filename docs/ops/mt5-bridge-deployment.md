@@ -77,3 +77,19 @@ This release is market-data only. The connector has no order_send, order modific
 ## Live verification status
 
 Automated tests use a fake MT5 adapter. They validate connector lifecycle, authentication configuration, broker/server identity rejection, symbol discovery and selection, timeframe/count validation, empty-history handling, and bounded reconnect behavior. They do not establish that a real Weltrade terminal, account, server, or SyntX instrument has connected successfully. The bridge is served through Waitress rather than Flask's development server. Live acceptance still requires deployment on a Windows host with the actual MT5 terminal and account.
+
+
+## Durable row-level quarantine
+
+Every MT5 rate row is appended to the raw-observation table before normalization or analysis. The bridge then records validation failures in a separate append-only `quarantine_records` table in the same SQLite transaction. Each quarantine record links to the exact raw `observation_id`, batch, reason code, validator version, and quarantine timestamp. Updates and deletes are blocked by SQLite triggers; this is an application-level guard, not protection against direct database-file tampering.
+
+Current reason codes:
+- `INVALID_TIMESTAMP`: missing, non-finite, non-positive, unrepresentable, or non-integer Unix timestamp.
+- `INVALID_NUMERIC`: non-finite/non-numeric OHLC or non-integer tick-volume, real-volume, or spread values.
+- `INVALID_VOLUME`: negative tick volume, real volume, or spread.
+- `INVALID_OHLC`: non-positive prices or candle-boundary violations.
+- `DUPLICATE_TIMESTAMP`: timestamp repeated within the retrieved batch; every conflicting row is quarantined.
+
+The API response includes `quality_report` counts and row-level `quarantine_reasons`. DataAgent verifies the raw observation IDs, quarantine IDs, batch count, reason counts, and row annotations agree. It excludes quarantined rows before calculating indicators. Forming bars are not quarantined; they remain raw evidence but are excluded from closed-candle analysis.
+
+Non-finite numeric source values are preserved in the raw JSON payload using an explicit sentinel object, so malformed broker observations remain inspectable without emitting invalid JSON numbers.

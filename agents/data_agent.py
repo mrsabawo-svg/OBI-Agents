@@ -95,7 +95,10 @@ class DataAgent:
             print(f"[DATA] {self.symbol}: MT5_BRIDGE_URL is not configured; refusing synthetic fallback")
             return data
 
-        required = {"Open", "High", "Low", "Close", "Volume", "bar_status", "volume_type"}
+        required = {
+            "Open", "High", "Low", "Close", "Volume",
+            "bar_status", "volume_type", "quarantine_reasons", "observation_id",
+        }
         headers = {}
         bridge_token = os.environ.get("MT5_BRIDGE_TOKEN")
         if bridge_token:
@@ -137,13 +140,86 @@ class DataAgent:
                 if not isinstance(rows, list) or not rows:
                     print(f"[DATA] {self.symbol} {tf}: bridge returned no candle rows")
                     continue
+                quality_report = parsed.get("quality_report")
+                if not isinstance(quality_report, dict):
+                    print(f"[DATA] {self.symbol} {tf}: durable quarantine report missing")
+                    continue
+                observation_ids = persistence.get("observation_ids")
+                quarantine_ids = persistence.get("quarantine_ids")
+                quarantine_links = persistence.get("quarantine_records")
+                if (
+                    persistence.get("inserted_count") != len(rows)
+                    or not isinstance(observation_ids, list)
+                    or len(observation_ids) != len(rows)
+                    or any(not isinstance(item, str) or not item for item in observation_ids)
+                    or len(set(observation_ids)) != len(observation_ids)
+                    or not isinstance(quarantine_ids, list)
+                    or len(quarantine_ids) != persistence.get("quarantine_count")
+                    or len(set(quarantine_ids)) != len(quarantine_ids)
+                    or not isinstance(quarantine_links, list)
+                    or len(quarantine_links) != len(quarantine_ids)
+                    or not persistence.get("batch_id")
+                    or quality_report.get("received_count") != len(rows)
+                    or persistence.get("quarantine_count") != quality_report.get("quarantine_record_count")
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: raw persistence/quarantine counts mismatch")
+                    continue
+
                 df = pd.DataFrame(rows)
                 if "timestamp" not in df.columns or not required.issubset(df.columns):
                     print(f"[DATA] {self.symbol} {tf}: invalid bridge schema")
                     continue
+                if df["observation_id"].tolist() != observation_ids:
+                    print(f"[DATA] {self.symbol} {tf}: row-to-raw-observation identity mismatch")
+                    continue
+                if not df["quarantine_reasons"].apply(
+                    lambda value: isinstance(value, list)
+                    and all(isinstance(reason, str) for reason in value)
+                ).all():
+                    print(f"[DATA] {self.symbol} {tf}: invalid quarantine reason schema")
+                    continue
+
+                durable_quarantine = df["quarantine_reasons"].apply(bool)
+                durable_quarantine_record_count = int(
+                    df["quarantine_reasons"].apply(len).sum()
+                )
+                observed_reason_counts = {}
+                expected_reasons_by_observation = {}
+                link_ids = set()
+                valid_links = True
+                for link in quarantine_links:
+                    if (
+                        not isinstance(link, dict)
+                        or link.get("quarantine_id") not in quarantine_ids
+                        or link.get("observation_id") not in observation_ids
+                        or not isinstance(link.get("reason_code"), str)
+                    ):
+                        valid_links = False
+                        break
+                    link_ids.add(link["quarantine_id"])
+                    observation_id = link["observation_id"]
+                    expected_reasons_by_observation.setdefault(observation_id, []).append(link["reason_code"])
+                    reason = link["reason_code"]
+                    observed_reason_counts[reason] = observed_reason_counts.get(reason, 0) + 1
+                annotations_match_links = all(
+                    row["quarantine_reasons"] == expected_reasons_by_observation.get(row["observation_id"], [])
+                    for _, row in df.iterrows()
+                )
+                if (
+                    not valid_links
+                    or link_ids != set(quarantine_ids)
+                    or not annotations_match_links
+                    or int(durable_quarantine.sum()) != quality_report.get("quarantined_observation_count")
+                    or durable_quarantine_record_count != quality_report.get("quarantine_record_count")
+                    or observed_reason_counts != quality_report.get("reason_counts")
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: durable quarantine detail mismatch")
+                    continue
 
                 quality = {
                     "received_count": int(len(df)),
+                    "durable_quarantined_count": int(durable_quarantine.sum()),
+                    "durable_quarantine_record_count": durable_quarantine_record_count,
                     "invalid_timestamp_count": 0,
                     "invalid_numeric_count": 0,
                     "invalid_ohlc_count": 0,
@@ -152,6 +228,7 @@ class DataAgent:
                     "invalid_bar_status_count": 0,
                     "invalid_volume_type_count": 0,
                 }
+                df = df.loc[~durable_quarantine].copy()
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
                 invalid_timestamp = df["timestamp"].isna()
                 quality["invalid_timestamp_count"] = int(invalid_timestamp.sum())
@@ -207,6 +284,11 @@ class DataAgent:
 
                 # Preserve volume semantics; Volume remains for existing OBI consumers.
                 df["VolumeType"] = df["volume_type"].astype(str)
+                df.drop(
+                    columns=["bar_status", "volume_type", "quarantine_reasons", "observation_id"],
+                    inplace=True,
+                    errors="ignore",
+                )
                 df.attrs["source_metadata"] = {
                     "broker": parsed.get("broker"),
                     "server_name": parsed.get("server_name"),

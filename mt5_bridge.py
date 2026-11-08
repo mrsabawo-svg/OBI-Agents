@@ -5,6 +5,7 @@ order-management routes.
 """
 import ipaddress
 import json
+import math
 import os
 import secrets
 import socket
@@ -69,6 +70,126 @@ def _authorized():
 def _bar_status(index, latest_index, start_pos):
     """Only position-zero requests include MT5's current, still-forming bar."""
     return "forming" if start_pos == 0 and index == latest_index else "closed"
+
+
+def _finite_number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _quarantine_reasons(raw_rows):
+    """Return durable reason records for malformed broker observations."""
+    reasons = []
+    timestamp_indexes = {}
+    for index, raw in enumerate(raw_rows):
+        timestamp = _finite_number(raw.get("time"))
+        timestamp_valid = timestamp is not None and timestamp > 0 and timestamp.is_integer()
+        if timestamp_valid:
+            try:
+                datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                timestamp_valid = False
+        if not timestamp_valid:
+            reasons.append({
+                "observation_index": index,
+                "reason_code": "INVALID_TIMESTAMP",
+                "reason_detail": "MT5 time must be a positive, representable Unix-second integer",
+            })
+        else:
+            timestamp_indexes.setdefault(int(timestamp), []).append(index)
+
+        fields = {
+            "open": _finite_number(raw.get("open")),
+            "high": _finite_number(raw.get("high")),
+            "low": _finite_number(raw.get("low")),
+            "close": _finite_number(raw.get("close")),
+            "tick_volume": _finite_number(raw.get("tick_volume")),
+            "real_volume": _finite_number(raw.get("real_volume", 0)),
+            "spread": _finite_number(raw.get("spread", 0)),
+        }
+        integer_fields_valid = all(
+            fields[key] is not None and fields[key].is_integer()
+            for key in ("tick_volume", "real_volume", "spread")
+        )
+        if any(value is None for value in fields.values()) or not integer_fields_valid:
+            reasons.append({
+                "observation_index": index,
+                "reason_code": "INVALID_NUMERIC",
+                "reason_detail": "One or more MT5 numeric fields are non-finite, non-numeric, or not integer-valued",
+            })
+
+        volume_values = (fields["tick_volume"], fields["real_volume"], fields["spread"])
+        if any(value is not None and value < 0 for value in volume_values):
+            reasons.append({
+                "observation_index": index,
+                "reason_code": "INVALID_VOLUME",
+                "reason_detail": "Volume and spread fields must be non-negative",
+            })
+
+        o, h, l, close = fields["open"], fields["high"], fields["low"], fields["close"]
+        if (
+            all(value is not None for value in (o, h, l, close))
+            and (
+                min(o, h, l, close) <= 0
+                or h < max(o, close)
+                or l > min(o, close)
+                or h < l
+            )
+        ):
+            reasons.append({
+                "observation_index": index,
+                "reason_code": "INVALID_OHLC",
+                "reason_detail": "OHLC values violate positive-price or candle-boundary constraints",
+            })
+
+    for timestamp, indexes in timestamp_indexes.items():
+        if len(indexes) > 1:
+            for index in indexes:
+                reasons.append({
+                    "observation_index": index,
+                    "reason_code": "DUPLICATE_TIMESTAMP",
+                    "reason_detail": f"Timestamp {timestamp} occurs {len(indexes)} times in this batch",
+                })
+    return reasons
+
+
+def _response_row(raw, index, latest_index, start_pos, quarantine_codes, observation_id):
+    timestamp_value = _finite_number(raw.get("time"))
+    timestamp = None
+    if timestamp_value is not None and timestamp_value > 0 and timestamp_value.is_integer():
+        try:
+            timestamp = datetime.fromtimestamp(int(timestamp_value), tz=timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            timestamp = None
+
+    def safe_int(key):
+        value = _finite_number(raw.get(key, 0))
+        return int(value) if value is not None and value.is_integer() else None
+
+    open_value = _finite_number(raw.get("open"))
+    high_value = _finite_number(raw.get("high"))
+    low_value = _finite_number(raw.get("low"))
+    close_value = _finite_number(raw.get("close"))
+    tick_volume = _finite_number(raw.get("tick_volume"))
+
+    return {
+        "observation_id": observation_id,
+        "timestamp": timestamp,
+        "Open": open_value,
+        "High": high_value,
+        "Low": low_value,
+        "Close": close_value,
+        "Volume": tick_volume,
+        "tick_volume": safe_int("tick_volume"),
+        "real_volume": safe_int("real_volume"),
+        "spread": safe_int("spread"),
+        "volume_type": "tick_volume",
+        "bar_status": _bar_status(index, latest_index, start_pos),
+        "quarantine_reasons": quarantine_codes,
+    }
 
 
 @app.before_request
@@ -169,28 +290,32 @@ def get_ohlcv():
         return jsonify({"status": "error", "error": "broker rate retrieval failed"}), 503
 
     raw_rows = []
-    response_rows = []
-    latest_index = max(range(len(rates)), key=lambda index: int(rates[index]["time"]))
-    for index, rate in enumerate(rates):
-        raw = {
+    field_names = getattr(getattr(rates, "dtype", None), "names", None)
+    if not field_names:
+        return jsonify({
+            "status": "error",
+            "error": "MT5 returned an unsupported rate payload; data withheld",
+        }), 503
+    for rate in rates:
+        raw_rows.append({
             name: (value.item() if hasattr(value, "item") else value)
-            for name, value in zip(rates.dtype.names, rate)
-        }
-        raw_rows.append(raw)
-        timestamp = datetime.fromtimestamp(int(raw["time"]), tz=timezone.utc)
-        response_rows.append({
-            "timestamp": timestamp.isoformat(),
-            "Open": float(raw["open"]),
-            "High": float(raw["high"]),
-            "Low": float(raw["low"]),
-            "Close": float(raw["close"]),
-            "Volume": float(raw["tick_volume"]),
-            "tick_volume": int(raw["tick_volume"]),
-            "real_volume": int(raw.get("real_volume", 0)),
-            "spread": int(raw.get("spread", 0)),
-            "volume_type": "tick_volume",
-            "bar_status": _bar_status(index, latest_index, start_pos),
+            for name, value in zip(field_names, rate)
         })
+
+    quarantine_records = _quarantine_reasons(raw_rows)
+    reasons_by_index = {}
+    reason_counts = {}
+    for record in quarantine_records:
+        index = record["observation_index"]
+        reasons_by_index.setdefault(index, []).append(record["reason_code"])
+        reason_counts[record["reason_code"]] = reason_counts.get(record["reason_code"], 0) + 1
+
+    valid_timestamp_indexes = []
+    for index, raw in enumerate(raw_rows):
+        value = _finite_number(raw.get("time"))
+        if value is not None and value > 0 and value.is_integer():
+            valid_timestamp_indexes.append((int(value), index))
+    latest_index = max(valid_timestamp_indexes)[1] if valid_timestamp_indexes else None
 
     # Re-check the authenticated account after rate retrieval. If the
     # terminal/account changed or disconnected mid-request, withhold the batch.
@@ -221,13 +346,24 @@ def get_ohlcv():
     }
 
     try:
-        persisted = RawObservationStore(MT5_RAW_DB_PATH).append_batch(envelope, raw_rows)
+        persisted = RawObservationStore(MT5_RAW_DB_PATH).append_batch(
+            envelope, raw_rows, quarantine_records=quarantine_records
+        )
     except Exception:
         app.logger.exception("Raw observation persistence failed")
         return jsonify({
             "status": "error",
             "error": "raw observation persistence failed; data withheld",
         }), 503
+
+    response_rows = [
+        _response_row(
+            raw, index, latest_index, start_pos,
+            reasons_by_index.get(index, []),
+            persisted["observation_ids"][index],
+        )
+        for index, raw in enumerate(raw_rows)
+    ]
 
     return jsonify({
         "status": "ok",
@@ -244,6 +380,15 @@ def get_ohlcv():
         "volume_type": "tick_volume",
         "retrieved_at": envelope["retrieved_at"],
         "raw_persistence": persisted,
+        "quality_report": {
+            "received_count": len(raw_rows),
+            "quarantined_observation_count": len({
+                record["observation_index"] for record in quarantine_records
+            }),
+            "quarantine_record_count": len(quarantine_records),
+            "reason_counts": reason_counts,
+            "validator_version": "1",
+        },
         "data": response_rows,
     })
 
