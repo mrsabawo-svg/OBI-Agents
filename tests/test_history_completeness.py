@@ -71,7 +71,7 @@ def test_gap_is_incomplete_for_verified_continuous_market():
         rows(1794138600, 1794139200),
         "5m",
         2,
-        fetch(2),
+        fetch(2, start_pos=1),
         start_pos=1,
         retrieved_at=NOW,
         session_model="continuous_24_7",
@@ -100,7 +100,7 @@ def test_out_of_order_timestamps_are_incomplete():
         rows(1794138900, 1794138600, 1794139200),
         "5m",
         3,
-        fetch(3),
+        fetch(3, start_pos=1),
         start_pos=1,
         retrieved_at=NOW,
     )
@@ -113,7 +113,7 @@ def test_timeframe_misalignment_is_incomplete():
         rows(1794132301, 1794132601),
         "5m",
         2,
-        fetch(2),
+        fetch(2, start_pos=1),
         start_pos=1,
         retrieved_at=NOW,
     )
@@ -126,7 +126,7 @@ def test_future_bars_are_incomplete():
         rows(1794139200, 1794139500),
         "5m",
         2,
-        fetch(2),
+        fetch(2, start_pos=1),
         start_pos=1,
         retrieved_at=NOW,
     )
