@@ -421,6 +421,7 @@ def get_ohlcv():
     validation_report_id = str(uuid.uuid4())
     quality_report = {
         "report_id": validation_report_id,
+        "account_fingerprint": account_identity["account_fingerprint"],
         "received_count": len(raw_rows),
         "quarantined_observation_count": len({
             record["observation_index"] for record in quarantine_records
