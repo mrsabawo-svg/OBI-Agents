@@ -113,6 +113,7 @@ class DataLineageManifestTest(unittest.TestCase):
             "account_environment": "demo",
             "account_fingerprint": "a" * 64,
             "history_status": "complete",
+            "history_session_model": "unknown",
             "history_report_id": "history-report-001",
             "history_requested_count": 300,
             "history_returned_count": 300,
