@@ -40,3 +40,39 @@ def test_historical_pagination_marks_every_returned_bar_closed():
     assert mt5_bridge._bar_status(0, 2, 300) == "closed"
     assert mt5_bridge._bar_status(1, 2, 300) == "closed"
     assert mt5_bridge._bar_status(2, 2, 300) == "closed"
+
+
+def test_quarantine_detects_invalid_timestamp_numeric_ohlc_and_duplicates():
+    rows = [
+        {"time": 100, "open": 10, "high": 12, "low": 9, "close": 11,
+         "tick_volume": 10, "real_volume": 0, "spread": 1},
+        {"time": 0, "open": 10, "high": 12, "low": 9, "close": 11,
+         "tick_volume": 10, "real_volume": 0, "spread": 1},
+        {"time": 200, "open": float("nan"), "high": 12, "low": 9, "close": 11,
+         "tick_volume": 10, "real_volume": 0, "spread": 1},
+        {"time": 300, "open": 10, "high": 8, "low": 9, "close": 11,
+         "tick_volume": 10, "real_volume": 0, "spread": 1},
+        {"time": 100, "open": 10, "high": 12, "low": 9, "close": 11,
+         "tick_volume": 10, "real_volume": 0, "spread": 1},
+    ]
+    reasons = mt5_bridge._quarantine_reasons(rows)
+    reason_pairs = {(item["observation_index"], item["reason_code"]) for item in reasons}
+
+    assert (1, "INVALID_TIMESTAMP") in reason_pairs
+    assert (2, "INVALID_NUMERIC") in reason_pairs
+    assert (3, "INVALID_OHLC") in reason_pairs
+    assert (0, "DUPLICATE_TIMESTAMP") in reason_pairs
+    assert (4, "DUPLICATE_TIMESTAMP") in reason_pairs
+
+
+def test_response_row_handles_invalid_timestamp_and_non_finite_prices():
+    row = {
+        "time": float("nan"), "open": float("inf"), "high": 12,
+        "low": 9, "close": 11, "tick_volume": 10,
+        "real_volume": 0, "spread": 1,
+    }
+    response = mt5_bridge._response_row(row, 0, None, 0, ["INVALID_TIMESTAMP", "INVALID_NUMERIC"])
+    assert response["timestamp"] is None
+    assert response["Open"] is None
+    assert response["bar_status"] == "closed"
+    assert response["quarantine_reasons"] == ["INVALID_TIMESTAMP", "INVALID_NUMERIC"]
