@@ -198,6 +198,8 @@ def test_history_pagination_rejects_out_of_range_start_position():
     assert connector.connect()
     with pytest.raises(ValueError, match="start_pos"):
         connector.fetch_rates("EURUSD", "1h", 100, start_pos=1000001)
+    with pytest.raises(ValueError, match="start_pos"):
+        connector.fetch_rates("EURUSD", "1h", 2, start_pos=999999)
 
 
 def test_demo_configuration_rejects_actual_live_account():
