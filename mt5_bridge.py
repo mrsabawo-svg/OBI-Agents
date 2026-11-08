@@ -153,7 +153,7 @@ def _quarantine_reasons(raw_rows):
     return reasons
 
 
-def _response_row(raw, index, latest_index, start_pos, quarantine_codes):
+def _response_row(raw, index, latest_index, start_pos, quarantine_codes, observation_id):
     timestamp_value = _finite_number(raw.get("time"))
     timestamp = None
     if timestamp_value is not None and timestamp_value > 0 and timestamp_value.is_integer():
@@ -173,6 +173,7 @@ def _response_row(raw, index, latest_index, start_pos, quarantine_codes):
     tick_volume = _finite_number(raw.get("tick_volume"))
 
     return {
+        "observation_id": observation_id,
         "timestamp": timestamp,
         "Open": open_value,
         "High": high_value,
@@ -356,6 +357,7 @@ def get_ohlcv():
         _response_row(
             raw, index, latest_index, start_pos,
             reasons_by_index.get(index, []),
+            persisted["observation_ids"][index],
         )
         for index, raw in enumerate(raw_rows)
     ]
