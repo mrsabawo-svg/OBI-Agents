@@ -233,7 +233,14 @@ class DataAgent:
                     or len(canonical_lineage) != len(expected_canonical_observations)
                     or not isinstance(canonical_ids, list)
                     or len(canonical_ids) != len(expected_canonical_observations)
+                    or any(not isinstance(item, str) or not item for item in canonical_ids)
                     or len(set(canonical_ids)) != len(canonical_ids)
+                    or not isinstance(canonical_persistence.get("validation_report_sha256"), str)
+                    or len(canonical_persistence.get("validation_report_sha256")) != 64
+                    or any(
+                        char not in "0123456789abcdef"
+                        for char in canonical_persistence.get("validation_report_sha256", "").lower()
+                    )
                 ):
                     print(f"[DATA] {self.symbol} {tf}: canonical persistence counts/report mismatch")
                     continue
@@ -254,7 +261,7 @@ class DataAgent:
                 if (
                     not valid_canonical_lineage
                     or list(canonical_by_observation.keys()) != expected_canonical_observations
-                    or set(canonical_by_observation.values()) != set(canonical_ids)
+                    or list(canonical_by_observation.values()) != canonical_ids
                 ):
                     print(f"[DATA] {self.symbol} {tf}: canonical-to-raw lineage mismatch")
                     continue
