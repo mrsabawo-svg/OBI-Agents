@@ -147,6 +147,14 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
+                "platform": "MT5",
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
                 "raw_persistence": {
                     "persisted": True, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
@@ -156,6 +164,7 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                 },
                 "quality_report": {
                     "report_id": "accepted-report",
+                    "account_fingerprint": "a" * 64,
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
@@ -175,6 +184,7 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     lineage = build_data_lineage(data, "SFX_VOL_75", expected_timeframes=["5m"])
     assert lineage["status"] == "complete"
     assert lineage["timeframes"]["5m"]["validation_report_id"] == "accepted-report"
+    assert lineage["timeframes"]["5m"]["account_fingerprint"] == "a" * 64
     assert lineage["timeframes"]["5m"]["quality_summary"]["received_count"] == 80
     assert lineage["timeframes"]["5m"]["quality_summary"]["durable_quarantined_count"] == 0
     assert lineage["timeframes"]["5m"]["feature_lineage_status"] == "complete"
@@ -202,6 +212,14 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
+                "platform": "MT5",
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
                 "raw_persistence": {
                     "persisted": True, "batch_id": "lineage-test",
                     "inserted_count": 1, "quarantine_count": 0,
@@ -209,7 +227,8 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                     "quarantine_records": [],
                 },
                 "quality_report": {
-                    "report_id": "lineage-report", "received_count": 1,
+                    "report_id": "lineage-report",
+                    "account_fingerprint": "a" * 64, "received_count": 1,
                     "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
@@ -254,6 +273,14 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
+                "platform": "MT5",
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
                 "raw_persistence": {
                     "persisted": True, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
@@ -262,6 +289,7 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                 },
                 "quality_report": {
                     "report_id": "invalid-report",
+                    "account_fingerprint": "a" * 64,
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
@@ -300,6 +328,14 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
+                "platform": "MT5",
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
                 "raw_persistence": {
                     "persisted": True, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
@@ -308,6 +344,7 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                 },
                 "quality_report": {
                     "report_id": "forming-report",
+                    "account_fingerprint": "a" * 64,
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
@@ -333,7 +370,15 @@ def test_data_agent_withholds_data_without_raw_persistence(monkeypatch):
                 "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
-                "source_type": "broker_bars", "data": [],
+                "source_type": "broker_bars", "platform": "MT5",
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
+                "data": [],
             }
 
     with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
@@ -392,6 +437,14 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
+                "platform": "MT5",
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
                 "raw_persistence": {
                     "persisted": True, "batch_id": "quarantine-test",
                     "inserted_count": len(rows), "quarantine_count": 1,
@@ -405,6 +458,7 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                 },
                 "quality_report": {
                     "report_id": "quarantine-report",
+                    "account_fingerprint": "a" * 64,
                     "received_count": len(rows), "quarantined_observation_count": 1,
                     "quarantine_record_count": 1, "reason_counts": {"INVALID_OHLC": 1},
                 },
@@ -440,6 +494,14 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
+                "platform": "MT5",
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
                 "raw_persistence": {
                     "persisted": True, "batch_id": "mismatch-test",
                     "inserted_count": 1, "quarantine_count": 0,
@@ -448,6 +510,7 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                 },
                 "quality_report": {
                     "report_id": "mismatch-report",
+                    "account_fingerprint": "a" * 64,
                     "received_count": 1, "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
