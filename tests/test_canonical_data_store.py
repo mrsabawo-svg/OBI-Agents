@@ -131,7 +131,7 @@ def test_broker_bar_requires_matching_source_timeframe(tmp_path):
     record["timeframe"] = "15m"
 
     with pytest.raises(CanonicalDataError, match="timeframe"):
-        store.append_batch([record])
+        store.append_batch([record], validation_report(timeframe="15m"))
 
 
 def test_canonical_candle_rejects_naive_timestamps():
@@ -159,7 +159,7 @@ def test_canonical_candle_rejects_non_finite_and_invalid_ohlc():
 def test_canonical_records_and_source_links_are_append_only(tmp_path):
     path, source_id = setup_store(tmp_path)
     store = CanonicalCandleStore(path)
-    result = store.append_batch([candle(source_id)])
+    result = store.append_batch([candle(source_id)], validation_report())
     candle_id = result["candle_ids"][0]
 
     with sqlite3.connect(path) as connection:
