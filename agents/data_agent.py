@@ -141,9 +141,10 @@ class DataAgent:
                     print(f"[DATA] {self.symbol} {tf}: bridge returned no candle rows")
                     continue
                 quality_report = parsed.get("quality_report")
-                if not isinstance(quality_report, dict):
-                    print(f"[DATA] {self.symbol} {tf}: durable quarantine report missing")
+                if not isinstance(quality_report, dict) or not quality_report.get("report_id"):
+                    print(f"[DATA] {self.symbol} {tf}: durable validation report missing")
                     continue
+                canonical_persistence = parsed.get("canonical_persistence")
                 observation_ids = persistence.get("observation_ids")
                 quarantine_ids = persistence.get("quarantine_ids")
                 quarantine_links = persistence.get("quarantine_records")
@@ -216,6 +217,55 @@ class DataAgent:
                     print(f"[DATA] {self.symbol} {tf}: durable quarantine detail mismatch")
                     continue
 
+                if not isinstance(canonical_persistence, dict):
+                    print(f"[DATA] {self.symbol} {tf}: canonical persistence receipt missing")
+                    continue
+                canonical_lineage = canonical_persistence.get("source_lineage")
+                canonical_ids = canonical_persistence.get("candle_ids")
+                expected_canonical_observations = df.loc[
+                    ~durable_quarantine, "observation_id"
+                ].tolist()
+                if (
+                    canonical_persistence.get("persisted") is not True
+                    or canonical_persistence.get("validation_report_id") != quality_report.get("report_id")
+                    or canonical_persistence.get("inserted_count") != len(expected_canonical_observations)
+                    or not isinstance(canonical_lineage, list)
+                    or len(canonical_lineage) != len(expected_canonical_observations)
+                    or not isinstance(canonical_ids, list)
+                    or len(canonical_ids) != len(expected_canonical_observations)
+                    or any(not isinstance(item, str) or not item for item in canonical_ids)
+                    or len(set(canonical_ids)) != len(canonical_ids)
+                    or not isinstance(canonical_persistence.get("validation_report_sha256"), str)
+                    or len(canonical_persistence.get("validation_report_sha256")) != 64
+                    or any(
+                        char not in "0123456789abcdef"
+                        for char in canonical_persistence.get("validation_report_sha256", "").lower()
+                    )
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: canonical persistence counts/report mismatch")
+                    continue
+                canonical_by_observation = {}
+                valid_canonical_lineage = True
+                for link in canonical_lineage:
+                    if (
+                        not isinstance(link, dict)
+                        or not isinstance(link.get("observation_id"), str)
+                        or not isinstance(link.get("candle_id"), str)
+                        or not link["observation_id"]
+                        or not link["candle_id"]
+                        or link["observation_id"] in canonical_by_observation
+                    ):
+                        valid_canonical_lineage = False
+                        break
+                    canonical_by_observation[link["observation_id"]] = link["candle_id"]
+                if (
+                    not valid_canonical_lineage
+                    or list(canonical_by_observation.keys()) != expected_canonical_observations
+                    or list(canonical_by_observation.values()) != canonical_ids
+                ):
+                    print(f"[DATA] {self.symbol} {tf}: canonical-to-raw lineage mismatch")
+                    continue
+
                 quality = {
                     "received_count": int(len(df)),
                     "durable_quarantined_count": int(durable_quarantine.sum()),
@@ -272,6 +322,14 @@ class DataAgent:
                 volume_type_valid = volume_types.eq("tick_volume")
                 quality["invalid_volume_type_count"] = int((~volume_type_valid).sum())
                 df = df.loc[volume_type_valid].copy()
+                if len(df) != len(canonical_by_observation):
+                    print(f"[DATA] {self.symbol} {tf}: local validation disagrees with persisted canonical rows")
+                    continue
+                df["RawObservationID"] = df["observation_id"]
+                df["CanonicalCandleID"] = df["observation_id"].map(canonical_by_observation)
+                if df["CanonicalCandleID"].isna().any():
+                    print(f"[DATA] {self.symbol} {tf}: canonical candle ID missing for an accepted row")
+                    continue
                 forming = df["bar_status"].astype(str).str.lower().eq("forming")
                 quality["forming_excluded_count"] = int(forming.sum())
                 df = df.loc[~forming].sort_index().copy()
@@ -296,6 +354,8 @@ class DataAgent:
                     "broker_symbol": parsed.get("broker_symbol"),
                     "source_type": parsed.get("source_type"),
                     "raw_batch_id": persistence.get("batch_id"),
+                    "validation_report_id": quality_report.get("report_id"),
+                    "canonical_validation_report_sha256": canonical_persistence.get("validation_report_sha256"),
                 }
                 df.attrs["quality_report"] = quality
                 df = self._add_indicators(df)
