@@ -340,7 +340,7 @@ def test_init_mt5_requires_stable_fingerprint_key_and_exact_server(monkeypatch):
     monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_FINGERPRINT_KEY", "short")
     ok, message = mt5_bridge.init_mt5()
     assert ok is False
-    assert "fingerprint key" in message
+    assert "fingerprint_key" in message.lower()
 
 
 def test_init_mt5_uses_prelogged_terminal_without_triggering_partial_login(monkeypatch):
