@@ -25,6 +25,8 @@ HARD_FAILURE_REASONS = {
     "TIMEFRAME_ALIGNMENT_ERROR",
     "FUTURE_BAR",
     "PAGINATION_SNAPSHOT_CHANGED",
+    "PAGINATION_METADATA_INVALID",
+    "PAGINATION_BOUNDARY_INVALID",
 }
 
 
@@ -98,7 +100,7 @@ def assess_history_completeness(
 
     if not raw_rows:
         reasons.append("EMPTY_HISTORY")
-    if returned_count != requested_count:
+    if returned_count != requested_count or fetch_metadata.get("requested_count", requested_count) != requested_count:
         reasons.append("REQUESTED_COUNT_MISMATCH")
     if returned_count != len(raw_rows):
         reasons.append("RAW_COUNT_MISMATCH")
@@ -160,11 +162,41 @@ def assess_history_completeness(
 
     snapshot_stable = fetch_metadata.get("snapshot_stable", True)
     snapshot_check_performed = bool(fetch_metadata.get("snapshot_check_performed", False))
+    page_count = fetch_metadata.get("page_count", 1)
+    page_sizes = fetch_metadata.get("page_sizes", [len(raw_rows)])
+    page_starts = fetch_metadata.get("page_start_positions", [start_pos])
+    pagination_valid = (
+        isinstance(page_count, int)
+        and not isinstance(page_count, bool)
+        and page_count >= 1
+        and isinstance(page_sizes, list)
+        and isinstance(page_starts, list)
+        and page_count == len(page_sizes) == len(page_starts)
+        and all(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0
+            for value in page_sizes
+        )
+        and all(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            for value in page_starts
+        )
+        and sum(page_sizes) == returned_count
+    )
+    if not pagination_valid:
+        reasons.append("PAGINATION_METADATA_INVALID")
+    else:
+        expected_starts = []
+        cursor = start_pos
+        for page_size in page_sizes:
+            expected_starts.append(cursor)
+            cursor += page_size
+        if page_starts != expected_starts:
+            reasons.append("PAGINATION_BOUNDARY_INVALID")
     if snapshot_stable is False:
         reasons.append("PAGINATION_SNAPSHOT_CHANGED")
     elif snapshot_check_performed and snapshot_stable is not True:
         reasons.append("PAGINATION_SNAPSHOT_UNVERIFIABLE")
-    elif fetch_metadata.get("page_count", 1) > 1 and not snapshot_check_performed:
+    elif isinstance(page_count, int) and not isinstance(page_count, bool) and page_count > 1 and not snapshot_check_performed:
         reasons.append("PAGINATION_SNAPSHOT_UNVERIFIABLE")
 
     first_timestamp = min(valid_timestamps) if valid_timestamps else None
@@ -246,9 +278,9 @@ def assess_history_completeness(
         "snapshot_stable": snapshot_stable,
         "snapshot_check_performed": snapshot_check_performed,
         "pagination": {
-            "page_count": fetch_metadata.get("page_count", 1),
-            "page_sizes": fetch_metadata.get("page_sizes", [len(raw_rows)]),
-            "page_start_positions": fetch_metadata.get("page_start_positions", [start_pos]),
+            "page_count": page_count,
+            "page_sizes": page_sizes,
+            "page_start_positions": page_starts,
         },
         "reasons": list(dict.fromkeys(reasons)),
     }
