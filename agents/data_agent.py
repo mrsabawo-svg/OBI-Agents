@@ -470,6 +470,7 @@ class DataAgent:
                     "account_fingerprint": fingerprint,
                     "history_status": history_report.get("status"),
                     "history_report_id": quality_report.get("report_id"),
+                    "history_session_model": history_report.get("session_model"),
                     "history_requested_count": history_report.get("requested_count"),
                     "history_returned_count": history_report.get("returned_count"),
                     "history_gap_count": history_report.get("missing_interval_count"),
