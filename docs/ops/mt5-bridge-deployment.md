@@ -114,4 +114,17 @@ The API response includes:
 
 DataAgent requires the canonical receipt and verifies that the mapping covers every non-quarantined observation exactly once. It also re-runs its independent row checks; if those checks disagree with the bridge's canonical set, the batch is withheld. Accepted analysis DataFrames retain `CanonicalCandleID` and `RawObservationID` columns so downstream OBI consumers can preserve provenance. Forming candles are persisted with their status but excluded from closed-candle analysis.
 
-This is the first direct lineage integration. It does not yet add lineage to every derived indicator/feature, resampled candle, or final signal/archive record; those remain separate follow-on work.
+This is the first direct lineage integration. Derived indicator/feature dependency graphs and resampled-candle lineage remain separate follow-on work; signal-level archive provenance is described below.
+
+
+## Signal archive lineage manifest
+
+Each scan builds a bounded `obi-data-lineage-v1` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
+
+Manifest status is explicit. These labels describe provenance coverage for the data frames used by the scan, not broker-history completeness, data quality approval, or trading eligibility:
+- `complete`: every expected timeframe has canonical IDs and a complete immutable source/report reference.
+- `partial`: at least one timeframe is canonical or partially traced, but one or more expected timeframes are missing or incomplete.
+- `untracked`: market data exists but no canonical source lineage is available (for example, third-party Yahoo Finance data).
+- `missing`: no expected timeframe supplied market data.
+
+Archive entries deep-copy the manifest so later in-memory changes cannot rewrite the recorded provenance. This is signal-level provenance, not yet a complete feature-level dependency graph: individual indicator formulas and derived/resampled outputs still need their own versioned lineage records.

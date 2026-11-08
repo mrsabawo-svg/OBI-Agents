@@ -11,6 +11,7 @@ from agents.session_agent import SessionAgent, SYNTHETIC_SYMBOLS
 from agents.chief_agent import ChiefAgent, SYNTHETICS, SYMBOLS
 from agents.data_agent import DataAgent
 from agents.lifecycle_agent import LifecycleAgent
+from core.data_lineage import build_data_lineage
 from core.models import SymbolContext
 
 SAST = pytz.timezone("Africa/Johannesburg")
@@ -171,6 +172,11 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     assert {"CanonicalCandleID", "RawObservationID"}.issubset(data["5m"].columns)
     assert data["5m"]["CanonicalCandleID"].notna().all()
     assert data["5m"]["RawObservationID"].notna().all()
+    lineage = build_data_lineage(data, "SFX_VOL_75", expected_timeframes=["5m"])
+    assert lineage["status"] == "complete"
+    assert lineage["timeframes"]["5m"]["validation_report_id"] == "accepted-report"
+    assert lineage["timeframes"]["5m"]["quality_summary"]["received_count"] == 80
+    assert lineage["timeframes"]["5m"]["quality_summary"]["durable_quarantined_count"] == 0
 
 
 def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
