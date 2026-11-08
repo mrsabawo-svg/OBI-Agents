@@ -12,13 +12,13 @@ def rows(*timestamps):
     return [{"time": value} for value in timestamps]
 
 
-def fetch(count, *, stable=True, page_sizes=None, starts=None):
+def fetch(count, *, start_pos=0, stable=True, page_sizes=None, starts=None):
     return {
         "requested_count": count,
         "returned_count": count,
         "page_count": len(page_sizes or [count]),
         "page_sizes": page_sizes or [count],
-        "page_start_positions": starts or [0],
+        "page_start_positions": starts or [start_pos],
         "snapshot_stable": stable,
         "snapshot_check_performed": len(page_sizes or [count]) > 1,
     }
@@ -57,7 +57,7 @@ def test_unexplained_gap_is_unverifiable_without_a_session_model():
         rows(1794138600, 1794139200),
         "5m",
         2,
-        fetch(2),
+        fetch(2, start_pos=1),
         start_pos=1,
         retrieved_at=NOW,
     )
@@ -85,7 +85,7 @@ def test_duplicate_timestamp_is_incomplete():
         rows(1794138600, 1794138600, 1794138900),
         "5m",
         3,
-        fetch(3),
+        fetch(3, start_pos=1),
         start_pos=1,
         retrieved_at=NOW,
     )
@@ -177,7 +177,7 @@ def test_historical_window_does_not_apply_latest_bar_freshness_check():
         rows(1794120000, 1794120300),
         "5m",
         2,
-        fetch(2),
+        fetch(2, start_pos=500),
         start_pos=500,
         retrieved_at=NOW,
     )
