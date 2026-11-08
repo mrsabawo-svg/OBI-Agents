@@ -80,6 +80,13 @@ def validate_instrument_record(record: dict[str, Any]) -> dict[str, Any]:
             raise RegistryValidationError("verified records require data_verified availability")
         if not timeframes:
             raise RegistryValidationError("verified records require verified timeframes")
+        if record["account_environment"] == "unknown":
+            raise RegistryValidationError("verified records require a known account environment")
+        evidence_refs = record.get("evidence_refs")
+        if not isinstance(evidence_refs, list) or not evidence_refs:
+            raise RegistryValidationError("verified records require evidence_refs")
+        if not record.get("last_verified_at"):
+            raise RegistryValidationError("verified records require last_verified_at")
 
     fingerprint = record.get("account_fingerprint")
     if fingerprint is not None and (
