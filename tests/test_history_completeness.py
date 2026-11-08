@@ -203,7 +203,7 @@ def test_noncontiguous_pagination_boundaries_are_incomplete():
     assert "PAGINATION_BOUNDARY_INVALID" in report["reasons"]
 
 
-def test_multpage_history_without_snapshot_check_is_unverifiable():
+def test_multi_page_history_without_snapshot_check_is_unverifiable():
     metadata = fetch(3, page_sizes=[2, 1], starts=[0, 2])
     metadata["snapshot_check_performed"] = False
     report = assess_history_completeness(
