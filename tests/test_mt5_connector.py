@@ -3,7 +3,6 @@ from threading import Thread
 import time
 
 import pytest
-from types import SimpleNamespace
 
 from core.mt5_connector import (
     ConnectionIdentity,
