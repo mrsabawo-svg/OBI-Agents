@@ -223,6 +223,7 @@ class DataAgent:
                     not isinstance(history_report, dict)
                     or history_report.get("schema_version") != "obi-history-completeness-v1"
                     or history_report.get("status") != "complete"
+                    or history_report.get("session_model") not in {"unknown", "continuous_24_7"}
                     or history_report.get("coverage_scope") != "requested_window"
                     or history_report.get("requested_start_pos") != parsed.get("start_pos", 0)
                     or history_report.get("timeframe") != tf
