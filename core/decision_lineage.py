@@ -58,8 +58,8 @@ AGENT_SPECS = {
                 "PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"
             ],
         },
-        "inputs": ["instrument_id", "captured SAST datetime", "kill-zone clock"],
-        "outputs": ["tradeable", "reason", "kill_zone", "zone_name", "peak", "evaluated_at_sast"],
+        "inputs": ["instrument_id", "captured SAST datetime when required", "kill-zone clock"],
+        "outputs": ["tradeable", "reason", "kill_zone", "zone_name", "peak", "evaluated_at_sast (null for synthetic bypass)"],
         "market_data_timeframes": [],
         "upstream_agents": [],
         "source_files": ["agents/session_agent.py", "core/utils.py"],
