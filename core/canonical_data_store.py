@@ -202,6 +202,15 @@ class CanonicalCandleStore:
                 CREATE INDEX IF NOT EXISTS idx_canonical_identity_time
                 ON canonical_candles(instrument_id, timeframe, open_time)
             """)
+            connection.execute("""
+                CREATE TRIGGER IF NOT EXISTS canonical_candles_require_report
+                BEFORE INSERT ON canonical_candles
+                WHEN NOT EXISTS (
+                    SELECT 1 FROM canonical_validation_reports
+                    WHERE report_id = NEW.validation_report_id
+                )
+                BEGIN SELECT RAISE(ABORT, 'canonical validation report is required'); END
+            """)
             for table in ("canonical_validation_reports", "canonical_candles", "canonical_candle_sources"):
                 connection.execute(f"""
                     CREATE TRIGGER IF NOT EXISTS {table}_no_update
