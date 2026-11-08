@@ -144,8 +144,15 @@ class DataAgent:
                 if not isinstance(quality_report, dict):
                     print(f"[DATA] {self.symbol} {tf}: durable quarantine report missing")
                     continue
+                observation_ids = persistence.get("observation_ids")
+                quarantine_ids = persistence.get("quarantine_ids")
                 if (
                     persistence.get("inserted_count") != len(rows)
+                    or not isinstance(observation_ids, list)
+                    or len(observation_ids) != len(rows)
+                    or not isinstance(quarantine_ids, list)
+                    or len(quarantine_ids) != persistence.get("quarantine_count")
+                    or not persistence.get("batch_id")
                     or quality_report.get("received_count") != len(rows)
                     or persistence.get("quarantine_count") != quality_report.get("quarantine_record_count")
                 ):
@@ -167,9 +174,14 @@ class DataAgent:
                 durable_quarantine_record_count = int(
                     df["quarantine_reasons"].apply(len).sum()
                 )
+                observed_reason_counts = {}
+                for reasons in df["quarantine_reasons"]:
+                    for reason in reasons:
+                        observed_reason_counts[reason] = observed_reason_counts.get(reason, 0) + 1
                 if (
                     int(durable_quarantine.sum()) != quality_report.get("quarantined_observation_count")
                     or durable_quarantine_record_count != quality_report.get("quarantine_record_count")
+                    or observed_reason_counts != quality_report.get("reason_counts")
                 ):
                     print(f"[DATA] {self.symbol} {tf}: durable quarantine detail mismatch")
                     continue
