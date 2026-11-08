@@ -247,9 +247,15 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
 
     from core.canonical_data_store import CanonicalCandleStore
     canonical = CanonicalCandleStore(tmp_path / "raw.sqlite3")
-    assert canonical.count() == 1
+    # Both requests persist a separate canonical record because each has its
+    # own raw observation and validation report. Canonical lineage is append-only.
+    assert canonical.count() == 2
+    first_saved = canonical.get(first_payload["canonical_persistence"]["candle_ids"][0])
     saved = canonical.get(payload["canonical_persistence"]["candle_ids"][0])
+    assert first_saved["source_observation_ids"] == [first_payload["data"][0]["observation_id"]]
     assert saved["source_observation_ids"] == [payload["data"][0]["observation_id"]]
+    assert first_saved["candle_id"] != saved["candle_id"]
+    assert first_saved["validation_report_id"] == first_payload["quality_report"]["report_id"]
     assert saved["validation_report_id"] == payload["quality_report"]["report_id"]
 
 
