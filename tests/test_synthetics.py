@@ -193,8 +193,10 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
+                    "identity_pinned": True,
                     "broker_company": "Weltrade Ltd",
                     "server": "Weltrade-Demo",
                     "environment": "demo",
@@ -210,6 +212,7 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                 "quality_report": {
                     "report_id": "accepted-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -259,8 +262,10 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
+                    "identity_pinned": True,
                     "broker_company": "Weltrade Ltd",
                     "server": "Weltrade-Demo",
                     "environment": "demo",
@@ -321,8 +326,10 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
+                    "identity_pinned": True,
                     "broker_company": "Weltrade Ltd",
                     "server": "Weltrade-Demo",
                     "environment": "demo",
@@ -377,8 +384,10 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
+                    "identity_pinned": True,
                     "broker_company": "Weltrade Ltd",
                     "server": "Weltrade-Demo",
                     "environment": "demo",
@@ -393,6 +402,7 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                 "quality_report": {
                     "report_id": "forming-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -487,8 +497,10 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
+                    "identity_pinned": True,
                     "broker_company": "Weltrade Ltd",
                     "server": "Weltrade-Demo",
                     "environment": "demo",
@@ -508,6 +520,7 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                 "quality_report": {
                     "report_id": "quarantine-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": len(rows), "quarantined_observation_count": 1,
                     "quarantine_record_count": 1, "reason_counts": {"INVALID_OHLC": 1},
@@ -545,8 +558,10 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
+                    "identity_pinned": True,
                     "broker_company": "Weltrade Ltd",
                     "server": "Weltrade-Demo",
                     "environment": "demo",
