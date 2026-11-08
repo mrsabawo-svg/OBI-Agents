@@ -6,6 +6,9 @@ order submission, position modification, or account-trading methods.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
+import math
 from enum import Enum
 from functools import wraps
 from threading import RLock
@@ -66,6 +69,7 @@ class MT5Connector:
         self.state = ConnectionState.DISCONNECTED
         self.last_error = None
         self._timeframes = self._build_timeframes(adapter)
+        self._authenticated_fingerprint = None
 
     @staticmethod
     def _build_timeframes(adapter: Any) -> dict:
@@ -103,6 +107,9 @@ class MT5Connector:
             self.last_error = "connected server does not match configured server identity"
             return False
         actual_login = getattr(account, "login", None)
+        if actual_login is None:
+            self.last_error = "connected account login identity is unavailable"
+            return False
         if self.login_id is not None:
             if actual_login is None or int(actual_login) != int(self.login_id):
                 self.last_error = "connected account does not match configured login identity"
@@ -126,10 +133,76 @@ class MT5Connector:
             return False
         return True
 
+    @staticmethod
+    def _fingerprint_for_account(account: Any) -> str:
+        """Create a stable opaque account key without storing the account login."""
+        identity = {
+            "company": str(getattr(account, "company", "") or "").strip().casefold(),
+            "server": str(getattr(account, "server", "") or "").strip().casefold(),
+            "login": str(getattr(account, "login", "")),
+            "trade_mode": int(getattr(account, "trade_mode")),
+        }
+        if not all(identity.values()):
+            raise ValueError("account identity is incomplete")
+        canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(("obi-mt5-account-v1:" + canonical).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _symbol_metadata(info: Any) -> dict:
+        """Return JSON-safe contract metadata, retaining unavailable fields as null."""
+        fields = (
+            "name", "description", "path", "digits", "point", "trade_mode",
+            "trade_contract_size", "trade_tick_size", "trade_tick_value",
+            "currency_base", "currency_profit", "currency_margin",
+            "volume_min", "volume_max", "volume_step",
+        )
+        metadata = {}
+        for field in fields:
+            value = getattr(info, field, None)
+            if value is None:
+                metadata[field] = None
+            elif isinstance(value, (str, bool, int)):
+                metadata[field] = value
+            else:
+                try:
+                    number = float(value)
+                    metadata[field] = number if math.isfinite(number) else None
+                except (TypeError, ValueError, OverflowError):
+                    metadata[field] = str(value)
+        metadata["selected"] = bool(getattr(info, "select", False))
+        metadata["visible"] = bool(getattr(info, "visible", False))
+        return metadata
+
+    @_serialized
+    def get_account_identity(self) -> dict:
+        """Return verified broker identity and an opaque, account-specific fingerprint."""
+        if self.adapter is None or self.state != ConnectionState.AUTHENTICATED:
+            raise RuntimeError("MT5 account is not authenticated")
+        account = self.adapter.account_info()
+        if account is None or not self._identity_matches(account):
+            self.state = ConnectionState.DISCONNECTED
+            raise RuntimeError("MT5 account identity verification failed")
+        fingerprint = self._fingerprint_for_account(account)
+        if self._authenticated_fingerprint and fingerprint != self._authenticated_fingerprint:
+            self.state = ConnectionState.DISCONNECTED
+            raise RuntimeError("MT5 account fingerprint changed")
+        return {
+            "account_fingerprint": fingerprint,
+            "broker_company": str(getattr(account, "company", "") or "").strip(),
+            "server": str(getattr(account, "server", "") or "").strip(),
+            "environment": self.identity.environment,
+            "platform": self.identity.platform,
+            "currency": str(getattr(account, "currency", "") or ""),
+            "leverage": getattr(account, "leverage", None),
+            "trade_allowed": bool(getattr(account, "trade_allowed", False)),
+            "trade_expert": bool(getattr(account, "trade_expert", False)),
+        }
+
     @_serialized
     def connect(self) -> bool:
         self.state = ConnectionState.INITIALIZING
         self.last_error = None
+        self._authenticated_fingerprint = None
         if self.adapter is None:
             return self._fail("MetaTrader5 adapter is unavailable")
         if self.identity.environment not in {"demo", "live", "contest"}:
@@ -168,6 +241,7 @@ class MT5Connector:
 
             if not self._identity_matches(account):
                 return self._fail(self.last_error or "connected account identity rejected")
+            self._authenticated_fingerprint = self._fingerprint_for_account(account)
 
             self.state = ConnectionState.AUTHENTICATED
             return True
@@ -188,6 +262,7 @@ class MT5Connector:
                 and account is not None
                 and getattr(terminal, "connected", False)
                 and self._identity_matches(account)
+                and self._fingerprint_for_account(account) == self._authenticated_fingerprint
             )
             if not connected:
                 self.state = ConnectionState.DISCONNECTED
@@ -226,6 +301,7 @@ class MT5Connector:
                 "description": str(getattr(item, "description", "") or ""),
                 "selected": selected,
                 "visible": visible,
+                "metadata": self._symbol_metadata(item),
             })
         return sorted(discovered, key=lambda row: row["name"].casefold())
 
@@ -248,6 +324,7 @@ class MT5Connector:
             "description": str(getattr(refreshed, "description", "") or ""),
             "selected": bool(getattr(refreshed, "select", True)),
             "visible": bool(getattr(refreshed, "visible", True)),
+            "metadata": self._symbol_metadata(refreshed),
         }
 
     @_serialized
