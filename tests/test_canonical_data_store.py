@@ -76,6 +76,8 @@ def test_canonical_candle_persists_with_exact_raw_lineage(tmp_path):
     assert saved["source_class"] == "broker_bar"
     assert saved["volume_type"] == "tick_volume"
     assert saved["bar_status"] == "closed"
+    assert saved["validation_report_id"] == "quality-report-001"
+    assert saved["validation_status"] == "valid"
     assert len(saved["record_sha256"]) == 64
     assert result["record_sha256"] == [saved["record_sha256"]]
 
