@@ -19,7 +19,7 @@ python -m pip install Flask MetaTrader5 pytz
 Set these on the Windows machine or VPS that runs the MT5 terminal:
 
 - `MT5_BROKER_NAME`: broker name, e.g. `Weltrade`.
-- `MT5_ACCOUNT_ENVIRONMENT`: `demo`, `live`, `contest`, or `unknown`.
+- `MT5_ACCOUNT_ENVIRONMENT`: `demo`, `live`, or `contest`; unknown environments are not eligible for OBI analysis.
 - `MT5_SYMBOL_MAP_JSON`: JSON mapping from OBI's internal instrument IDs to exact symbols visible in this account.
 - `MT5_RAW_DB_PATH`: durable SQLite file path. Default: `data/raw_observations.sqlite3`.
 - `MT5_BRIDGE_HOST`: defaults to `127.0.0.1`.
