@@ -175,6 +175,12 @@ class DataAgent:
                     if isinstance(pagination, dict) else None
                 )
                 page_count = pagination.get("page_count") if isinstance(pagination, dict) else None
+                forming_count = history_report.get("forming_count") if isinstance(history_report, dict) else None
+                closed_count = history_report.get("closed_count") if isinstance(history_report, dict) else None
+                if isinstance(forming_count, bool) or not isinstance(forming_count, int):
+                    forming_count = -1
+                if isinstance(closed_count, bool) or not isinstance(closed_count, int):
+                    closed_count = -1
                 forming_indexes = (
                     history_report.get("forming_observation_indexes")
                     if isinstance(history_report, dict) else None
@@ -186,10 +192,10 @@ class DataAgent:
                 pagination_valid = (
                     isinstance(page_sizes, list)
                     and isinstance(page_starts, list)
-                    and isinstance(page_count, int)
+                    and isinstance(page_count, int) and not isinstance(page_count, bool)
                     and page_count == len(page_sizes) == len(page_starts)
-                    and all(isinstance(value, int) and value > 0 for value in page_sizes)
-                    and all(isinstance(value, int) and value >= 0 for value in page_starts)
+                    and all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in page_sizes)
+                    and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in page_starts)
                     and sum(page_sizes) == len(rows)
                 )
                 forming_valid = (
@@ -207,9 +213,9 @@ class DataAgent:
                     or history_report.get("account_fingerprint") != fingerprint
                     or history_report.get("requested_count") != history_report.get("returned_count")
                     or history_report.get("returned_count") != len(rows)
-                    or history_report.get("closed_count") != len(rows) - history_report.get("forming_count", -1)
-                    or history_report.get("closed_count", 0) < 1
-                    or history_report.get("forming_count") != len(expected_forming_indexes)
+                    or closed_count != len(rows) - forming_count
+                    or closed_count < 1
+                    or forming_count != len(expected_forming_indexes)
                     or not forming_valid
                     or not pagination_valid
                     or history_report.get("snapshot_stable") is not True
@@ -219,7 +225,7 @@ class DataAgent:
                     or history_report.get("out_of_order_count") != 0
                     or history_report.get("timeframe_alignment_error_count") != 0
                     or history_report.get("future_bar_count") != 0
-                    or history_report.get("latest_bar_stale") is True
+                    or history_report.get("latest_bar_stale") is not False
                     or history_report.get("reasons") != []
                 ):
                     status = history_report.get("status") if isinstance(history_report, dict) else "missing"
