@@ -239,14 +239,24 @@ class CanonicalCandleStore:
                         )
 
                 payload = {
-                    key: candle[key] for key in (
-                        "instrument_id", "broker", "server_name",
-                        "account_environment", "broker_symbol", "timeframe",
-                        "open_time", "close_time", "open", "high", "low",
-                        "close", "volume", "volume_type", "source_class",
-                        "bar_status", "source_observation_ids",
-                        "transformation_version",
-                    )
+                    "instrument_id": candle["instrument_id"],
+                    "broker": candle["broker"],
+                    "server_name": candle["server_name"],
+                    "account_environment": candle["account_environment"],
+                    "broker_symbol": candle["broker_symbol"],
+                    "timeframe": candle["timeframe"],
+                    "open_time": _utc_datetime(candle["open_time"], "open_time").isoformat(),
+                    "close_time": _utc_datetime(candle["close_time"], "close_time").isoformat(),
+                    "open": float(candle["open"]),
+                    "high": float(candle["high"]),
+                    "low": float(candle["low"]),
+                    "close": float(candle["close"]),
+                    "volume": float(candle["volume"]),
+                    "volume_type": candle["volume_type"],
+                    "source_class": candle["source_class"],
+                    "bar_status": candle["bar_status"],
+                    "source_observation_ids": list(candle["source_observation_ids"]),
+                    "transformation_version": candle["transformation_version"],
                 }
                 serialized = _canonical_json(payload)
                 record_hash = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
