@@ -18,6 +18,22 @@ SAST = pytz.timezone("Africa/Johannesburg")
 EXPECTED_SYNTHETICS = {"PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"}
 
 
+def canonical_receipt(rows, report_id):
+    eligible = [row for row in rows if not row.get("quarantine_reasons")]
+    lineage = [
+        {"observation_id": row["observation_id"], "candle_id": f"candle-{row['observation_id']}"}
+        for row in eligible
+    ]
+    return {
+        "persisted": True,
+        "inserted_count": len(lineage),
+        "candle_ids": [link["candle_id"] for link in lineage],
+        "source_lineage": lineage,
+        "validation_report_id": report_id,
+        "validation_report_sha256": "a" * 64,
+    }
+
+
 def test_synthetic_symbols_registered():
     assert EXPECTED_SYNTHETICS == SYNTHETIC_SYMBOLS
     assert EXPECTED_SYNTHETICS == SYNTHETICS
@@ -138,9 +154,11 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                     "quarantine_records": [],
                 },
                 "quality_report": {
+                    "report_id": "accepted-report",
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
+                "canonical_persistence": canonical_receipt(rows, "accepted-report"),
                 "data": rows,
             }
 
@@ -150,6 +168,55 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     assert "5m" in data
     assert not data["5m"].empty
     assert {"Open", "High", "Low", "Close", "Volume"}.issubset(data["5m"].columns)
+    assert {"CanonicalCandleID", "RawObservationID"}.issubset(data["5m"].columns)
+    assert data["5m"]["CanonicalCandleID"].notna().all()
+    assert data["5m"]["RawObservationID"].notna().all()
+
+
+def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+    rows = [{
+        "observation_id": "obs-1",
+        "timestamp": "2026-11-08T00:00:00Z",
+        "Open": 5000, "High": 5002, "Low": 4998, "Close": 5001,
+        "Volume": 100, "volume_type": "tick_volume",
+        "bar_status": "closed", "quarantine_reasons": [],
+    }]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
+                "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo", "account_environment": "demo",
+                "source_type": "broker_bars",
+                "raw_persistence": {
+                    "persisted": True, "batch_id": "lineage-test",
+                    "inserted_count": 1, "quarantine_count": 0,
+                    "observation_ids": ["obs-1"], "quarantine_ids": [],
+                    "quarantine_records": [],
+                },
+                "quality_report": {
+                    "report_id": "lineage-report", "received_count": 1,
+                    "quarantined_observation_count": 0,
+                    "quarantine_record_count": 0, "reason_counts": {},
+                },
+                "canonical_persistence": {
+                    "persisted": True, "inserted_count": 0,
+                    "candle_ids": [], "source_lineage": [],
+                    "validation_report_id": "lineage-report",
+                    "validation_report_sha256": "a" * 64,
+                },
+                "data": rows,
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
+
+    assert data == {}
 
 
 def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
@@ -185,9 +252,11 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                     "quarantine_ids": [], "quarantine_records": [],
                 },
                 "quality_report": {
+                    "report_id": "invalid-report",
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
+                "canonical_persistence": canonical_receipt(rows, "invalid-report"),
                 "data": rows,
             }
 
@@ -229,9 +298,11 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                     "quarantine_ids": [], "quarantine_records": [],
                 },
                 "quality_report": {
+                    "report_id": "forming-report",
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
+                "canonical_persistence": canonical_receipt(rows, "forming-report"),
                 "data": rows,
             }
 
@@ -324,9 +395,11 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                     }],
                 },
                 "quality_report": {
+                    "report_id": "quarantine-report",
                     "received_count": len(rows), "quarantined_observation_count": 1,
                     "quarantine_record_count": 1, "reason_counts": {"INVALID_OHLC": 1},
                 },
+                "canonical_persistence": canonical_receipt(rows, "quarantine-report"),
                 "data": rows,
             }
 
@@ -341,6 +414,7 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
 def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
     rows = [{
+        "observation_id": "obs-0",
         "timestamp": "2026-11-08T00:00:00Z", "Open": 5000,
         "High": 5002, "Low": 4998, "Close": 5001, "Volume": 100,
         "volume_type": "tick_volume", "bar_status": "closed",
@@ -364,9 +438,11 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                     "quarantine_records": [],
                 },
                 "quality_report": {
+                    "report_id": "mismatch-report",
                     "received_count": 1, "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
+                "canonical_persistence": canonical_receipt(rows, "mismatch-report"),
                 "data": rows,
             }
 
