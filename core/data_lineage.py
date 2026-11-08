@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 
-LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v1"
+LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v2"
 DEFAULT_ID_WINDOW = 50
 QUALITY_SUMMARY_FIELDS = (
     "received_count",
