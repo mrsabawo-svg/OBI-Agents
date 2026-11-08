@@ -164,6 +164,21 @@ class DataAgent:
                 ):
                     print(f"[DATA] {self.symbol} {tf}: durable validation report or account fingerprint missing")
                     continue
+                history_report = quality_report.get("history_completeness")
+                if (
+                    not isinstance(history_report, dict)
+                    or history_report.get("status") != "complete"
+                    or history_report.get("timeframe") != tf
+                    or history_report.get("instrument_id") != self.symbol
+                    or history_report.get("broker_symbol") != parsed.get("broker_symbol")
+                    or history_report.get("account_fingerprint") != fingerprint
+                    or history_report.get("requested_count") != history_report.get("returned_count")
+                    or history_report.get("returned_count") != len(rows)
+                    or history_report.get("closed_count", 0) < 1
+                ):
+                    status = history_report.get("status") if isinstance(history_report, dict) else "missing"
+                    print(f"[DATA] {self.symbol} {tf}: history completeness is {status}; withholding signal data")
+                    continue
                 canonical_persistence = parsed.get("canonical_persistence")
                 observation_ids = persistence.get("observation_ids")
                 quarantine_ids = persistence.get("quarantine_ids")
@@ -373,6 +388,13 @@ class DataAgent:
                     "server_name": parsed.get("server_name"),
                     "account_environment": parsed.get("account_environment"),
                     "account_fingerprint": fingerprint,
+                    "history_status": history_report.get("status"),
+                    "history_report_id": quality_report.get("report_id"),
+                    "history_requested_count": history_report.get("requested_count"),
+                    "history_returned_count": history_report.get("returned_count"),
+                    "history_gap_count": history_report.get("missing_interval_count"),
+                    "history_forming_count": history_report.get("forming_count"),
+                    "history_closed_count": history_report.get("closed_count"),
                     "broker_symbol": parsed.get("broker_symbol"),
                     "source_type": parsed.get("source_type"),
                     "raw_batch_id": persistence.get("batch_id"),
