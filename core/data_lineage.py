@@ -31,6 +31,7 @@ REQUIRED_CANONICAL_METADATA = (
     "server_name",
     "account_environment",
     "account_fingerprint",
+    "account_identity_pinned",
     "history_status",
     "history_report_id",
     "history_session_model",
@@ -124,6 +125,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
     metadata_complete = metadata_complete and (
         len(fingerprint) == 64
         and all(char in "0123456789abcdef" for char in fingerprint)
+        and metadata.get("account_identity_pinned") is True
         and metadata.get("history_status") == "complete"
     )
     report_hash = metadata.get("canonical_validation_report_sha256", "")
@@ -156,6 +158,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "server_name": metadata.get("server_name"),
         "account_environment": metadata.get("account_environment"),
         "account_fingerprint": metadata.get("account_fingerprint"),
+        "account_identity_pinned": metadata.get("account_identity_pinned") is True,
         "history_completeness": {
             "report_id": metadata.get("history_report_id"),
             "status": metadata.get("history_status"),
