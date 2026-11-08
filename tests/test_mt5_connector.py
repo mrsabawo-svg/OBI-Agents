@@ -310,3 +310,16 @@ def test_symbol_discovery_includes_contract_metadata():
     assert symbol["metadata"]["digits"] == 2
     assert symbol["metadata"]["trade_tick_size"] == 0.01
     assert symbol["metadata"]["path"] == "Synthetics\\SFX"
+
+
+def test_reconnect_refuses_silent_switch_to_another_account_on_same_server():
+    connector, adapter = make_connector(reconnect_attempts=1)
+    assert connector.connect()
+    adapter.account_info = lambda: SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Demo",
+        login=999999, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_DEMO,
+    )
+    adapter.connected = False
+    assert connector.ensure_connected() is False
+    assert connector.state is ConnectionState.ERROR
+    assert "fingerprint differs" in connector.last_error
