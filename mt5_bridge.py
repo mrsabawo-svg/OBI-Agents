@@ -176,6 +176,10 @@ def get_ohlcv():
 
     raw_rows = []
     response_rows = []
+    latest_index = max(
+        range(len(rates)),
+        key=lambda index: int(rates[index]["time"]),
+    )
     for index, rate in enumerate(rates):
         raw = {name: (value.item() if hasattr(value, "item") else value)
                for name, value in zip(rates.dtype.names, rate)}
@@ -192,10 +196,12 @@ def get_ohlcv():
             "real_volume": int(raw.get("real_volume", 0)),
             "spread": int(raw.get("spread", 0)),
             "volume_type": "tick_volume",
-            "bar_status": "forming" if index == len(rates) - 1 else "closed",
+            "bar_status": "forming" if index == latest_index else "closed",
         })
 
     server_name = str(getattr(account, "server", "") or MT5_SERVER or "unknown")
+    if not server_name or server_name.lower() == "unknown":
+        return jsonify({"status": "error", "error": "broker server identity unavailable"}), 503
     account_environment = MT5_ACCOUNT_ENVIRONMENT
     envelope = {
         "instrument_id": symbol_id,
