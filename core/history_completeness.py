@@ -281,6 +281,8 @@ def assess_history_completeness(
             "page_count": page_count,
             "page_sizes": page_sizes,
             "page_start_positions": page_starts,
+            "latest_bar_time_before": fetch_metadata.get("latest_bar_time_before"),
+            "latest_bar_time_after": fetch_metadata.get("latest_bar_time_after"),
         },
         "reasons": list(dict.fromkeys(reasons)),
     }
