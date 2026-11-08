@@ -66,6 +66,11 @@ def _authorized():
     return secrets.compare_digest(supplied, "Bearer " + MT5_BRIDGE_TOKEN)
 
 
+def _bar_status(index, latest_index, start_pos):
+    """Only position-zero requests include MT5's current, still-forming bar."""
+    return "forming" if start_pos == 0 and index == latest_index else "closed"
+
+
 @app.before_request
 def require_bridge_authentication():
     if request.endpoint == "health":
@@ -184,7 +189,7 @@ def get_ohlcv():
             "real_volume": int(raw.get("real_volume", 0)),
             "spread": int(raw.get("spread", 0)),
             "volume_type": "tick_volume",
-            "bar_status": "forming" if index == latest_index else "closed",
+            "bar_status": _bar_status(index, latest_index, start_pos),
         })
 
     account = mt5.account_info()
