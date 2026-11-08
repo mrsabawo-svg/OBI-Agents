@@ -555,7 +555,6 @@ def build_decision_lineage(
 
         input_snapshot = {
             "symbol": symbol,
-            "data_lineage_sha256": data_lineage_hash,
             "market_data": market_refs,
             "upstream_outputs": upstream_refs,
             "external_inputs": external_refs,
@@ -584,18 +583,24 @@ def build_decision_lineage(
             "implementation_sha256": implementation_hash,
             "input_snapshot": input_snapshot,
             "input_snapshot_sha256": _sha256(input_snapshot),
+            "data_lineage_sha256": data_lineage_hash,
             "output": output,
             "output_sha256": output_hash,
         }
 
+    data_lineage_status = (data_lineage or {}).get("status", "unavailable")
+    if data_lineage_status != "complete":
+        warnings.append("pipeline data lineage is " + str(data_lineage_status))
+
     manifest = {
         "schema_version": DECISION_LINEAGE_SCHEMA_VERSION,
         "status": "complete",
+        "provenance_status": "partial" if warnings else "complete",
         "pipeline_version": PIPELINE_VERSION,
         "instrument_id": symbol,
         "evaluated_at": evaluated_at_iso,
         "agent_order": list(AGENT_ORDER),
-        "data_lineage_status": (data_lineage or {}).get("status", "unavailable"),
+        "data_lineage_status": data_lineage_status,
         "data_lineage_sha256": data_lineage_hash,
         "market_data": market_fingerprints,
         "runtime_versions": _runtime_versions(),
@@ -604,6 +609,7 @@ def build_decision_lineage(
         "agent_traces": traces,
         "warnings": warnings,
     }
+    manifest["manifest_size_bytes"] = len(_canonical_json(manifest).encode("utf-8"))
     manifest["manifest_sha256"] = _sha256(manifest)
     return manifest
 
