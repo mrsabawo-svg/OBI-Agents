@@ -117,6 +117,7 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
         def get_account_identity(self):
             return {
                 "account_fingerprint": "e" * 64,
+                "identity_pinned": True,
                 "broker_company": "Weltrade Ltd",
                 "server": "Weltrade-Demo",
                 "environment": "demo",
@@ -224,6 +225,7 @@ def test_ohlcv_requires_account_scoped_symbol_discovery(monkeypatch, tmp_path):
         def get_account_identity(self):
             return {
                 "account_fingerprint": "f" * 64,
+                "identity_pinned": True,
                 "broker_company": "Weltrade Ltd",
                 "server": "Weltrade-Demo",
                 "environment": "demo",
@@ -256,6 +258,7 @@ def test_ohlcv_blocks_metadata_drift_after_symbol_discovery(monkeypatch, tmp_pat
         def get_account_identity(self):
             return {
                 "account_fingerprint": "1" * 64,
+                "identity_pinned": True,
                 "broker_company": "Weltrade Ltd",
                 "server": "Weltrade-Demo",
                 "environment": "demo",
@@ -285,6 +288,42 @@ def test_ohlcv_blocks_metadata_drift_after_symbol_discovery(monkeypatch, tmp_pat
     response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
     assert response.status_code == 409
     assert "metadata changed" in response.get_json()["error"]
+
+
+def test_ohlcv_refuses_unpinned_account_even_after_symbol_discovery(monkeypatch, tmp_path):
+    class FakeConnector:
+        def get_account_identity(self):
+            return {
+                "account_fingerprint": "2" * 64,
+                "identity_pinned": False,
+                "broker_company": "Weltrade Ltd",
+                "server": "Weltrade-Demo",
+                "environment": "demo",
+                "platform": "MT5",
+            }
+
+        def discover_symbols(self):
+            return [{
+                "name": "SFX Vol 75",
+                "description": "SFX Vol 75",
+                "selected": True,
+                "visible": True,
+                "metadata": {"name": "SFX Vol 75"},
+            }]
+
+    monkeypatch.setattr(mt5_bridge, "connector", FakeConnector())
+    monkeypatch.setattr(mt5_bridge, "SYMBOL_MAP", {"SFX_VOL_75": "SFX Vol 75"})
+    monkeypatch.setattr(mt5_bridge, "MT5_RAW_DB_PATH", str(tmp_path / "registry.sqlite3"))
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_HOST", "127.0.0.1")
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_TOKEN", "")
+    client = mt5_bridge.app.test_client()
+    discovery = client.get("/symbols")
+    assert discovery.status_code == 200
+    assert discovery.get_json()["account_identity_pinned"] is False
+
+    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
+    assert response.status_code == 409
+    assert "identity is not pinned" in response.get_json()["error"]
 
 
 def test_verified_session_model_configuration_is_explicit_and_strict():
