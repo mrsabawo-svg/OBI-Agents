@@ -20,6 +20,7 @@ class FakeMT5:
         self.connected = True
         self.login_calls = []
         self.selected = []
+        self.rate_calls = []
         self.rates = [{"time": 1}]
         self.symbols = [
             SimpleNamespace(name="SFX Vol 75", description="SFX Vol 75", select=True, visible=True),
@@ -57,6 +58,7 @@ class FakeMT5:
         return self.symbol_info(name) is not None
 
     def copy_rates_from_pos(self, symbol, timeframe, start, count):
+        self.rate_calls.append((symbol, timeframe, start, count))
         return self.rates
 
     def last_error(self):
@@ -175,3 +177,17 @@ def test_connected_account_switch_is_detected():
     )
     assert connector.is_connected() is False
     assert connector.state is ConnectionState.DISCONNECTED
+
+
+def test_history_pagination_uses_requested_start_position():
+    connector, adapter = make_connector()
+    assert connector.connect()
+    connector.fetch_rates("EURUSD", "1h", 500, start_pos=2000)
+    assert adapter.rate_calls == [("EURUSD", FakeMT5.TIMEFRAME_H1, 2000, 500)]
+
+
+def test_history_pagination_rejects_out_of_range_start_position():
+    connector, _ = make_connector()
+    assert connector.connect()
+    with pytest.raises(ValueError, match="start_pos"):
+        connector.fetch_rates("EURUSD", "1h", 100, start_pos=1000001)
