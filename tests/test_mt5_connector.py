@@ -3,7 +3,7 @@ from threading import Thread
 import time
 
 import pytest
-import numpy as np
+from types import SimpleNamespace
 
 from core.mt5_connector import (
     ConnectionIdentity,
@@ -328,16 +328,32 @@ def test_reconnect_refuses_silent_switch_to_another_account_on_same_server():
     assert "fingerprint differs" in connector.last_error
 
 
+class _FakeStructuredRates:
+    dtype = SimpleNamespace(names=(
+        "time", "open", "high", "low", "close",
+        "tick_volume", "real_volume", "spread",
+    ))
+
+    def __init__(self, times):
+        self.rows = [
+            (timestamp, 1.0, 1.2, 0.9, 1.1, 10, 0, 1)
+            for timestamp in times
+        ]
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __getitem__(self, key):
+        if key == "time":
+            return [row[0] for row in self.rows]
+        return self.rows[key]
+
+
 def _structured_rate_array(times):
-    dtype = [
-        ("time", "i8"), ("open", "f8"), ("high", "f8"),
-        ("low", "f8"), ("close", "f8"), ("tick_volume", "i8"),
-        ("real_volume", "i8"), ("spread", "i8"),
-    ]
-    return np.array([
-        (timestamp, 1.0, 1.2, 0.9, 1.1, 10, 0, 1)
-        for timestamp in times
-    ], dtype=dtype)
+    return _FakeStructuredRates(times)
 
 
 def test_paginated_history_is_reassembled_in_chronological_order():
