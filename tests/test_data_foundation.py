@@ -294,3 +294,33 @@ def test_raw_observations_persist_account_fingerprint(tmp_path):
     result = store.append_batch(envelope, [{"time": 1794132000, "open": 100.0}])
     saved = store.get(result["observation_ids"][0])
     assert saved["account_fingerprint"] == "f" * 64
+
+
+def test_raw_store_additively_migrates_existing_database_for_account_fingerprint(tmp_path):
+    path = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("""
+            CREATE TABLE raw_observations (
+                observation_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                instrument_id TEXT NOT NULL,
+                broker TEXT NOT NULL,
+                server_name TEXT,
+                account_environment TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                broker_symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_timestamp TEXT,
+                retrieved_at TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                payload_sha256 TEXT NOT NULL,
+                schema_version TEXT NOT NULL
+            )
+        """)
+    store = RawObservationStore(path)
+    envelope = source_envelope()
+    envelope["account_fingerprint"] = "9" * 64
+    result = store.append_batch(envelope, [{"time": 1794132000, "open": 100.0}])
+    saved = store.get(result["observation_ids"][0])
+    assert saved["account_fingerprint"] == "9" * 64
