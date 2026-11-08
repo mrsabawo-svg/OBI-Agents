@@ -178,10 +178,40 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     discovery_response = client.get("/symbols")
     assert discovery_response.status_code == 200
     assert discovery_response.get_json()["discovery"]["symbol_count"] == 1
+    first_response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
+    first_payload = first_response.get_json()
+
+    assert first_response.status_code == 200
+    assert first_payload["instrument_verification_status"] == "partially_verified"
+    assert first_payload["timeframe_verified"] is False
+    assert first_payload["analysis_eligible"] is False
+    invalid_verification = client.post("/instruments/verify", json={
+        "instrument_id": "SFX_VOL_75",
+        "broker_symbol": "SFX Vol 75",
+        "reviewer": "test-operator",
+        "evidence_report_ids": ["not-a-persisted-report"],
+    })
+    assert invalid_verification.status_code == 422
+
+    verification_response = client.post("/instruments/verify", json={
+        "instrument_id": "SFX_VOL_75",
+        "broker_symbol": "SFX Vol 75",
+        "reviewer": "test-operator",
+        "evidence_report_ids": [first_payload["quality_report"]["report_id"]],
+    })
+    verification_payload = verification_response.get_json()
+    assert verification_response.status_code == 201
+    assert verification_payload["instrument_verification_status"] == "verified"
+    assert verification_payload["analysis_eligible_timeframes"] == ["5m"]
+
     response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
     payload = response.get_json()
 
     assert response.status_code == 200
+    assert payload["instrument_verification_status"] == "verified"
+    assert payload["instrument_verification_id"] == verification_payload["verification"]["verification_id"]
+    assert payload["timeframe_verified"] is True
+    assert payload["analysis_eligible"] is True
     assert payload["account_identity"]["account_fingerprint"] == "e" * 64
     assert payload["history_completeness"]["status"] == "complete"
     assert payload["history_completeness"]["session_model"] == "continuous_24_7"
