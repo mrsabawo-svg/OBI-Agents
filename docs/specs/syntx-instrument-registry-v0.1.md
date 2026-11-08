@@ -67,7 +67,7 @@ The registry MUST use stable internal IDs and retain broker identity separately.
 | `broker_symbol` | string/null | Exact symbol returned by the connected broker; null until observed |
 | `broker_display_name` | string/null | Broker-provided description, retained verbatim |
 | `account_environment` | enum | `demo`, `live`, `contest`, `unknown` |
-| `account_fingerprint` | string/null | Non-secret stable fingerprint; MUST NOT contain password, token, or full credentials |
+| `account_fingerprint` | string/null | Stable HMAC-SHA256 pseudonymous fingerprint derived from broker/server/login/trade mode; MUST NOT contain password, token, or full credentials. The HMAC key remains a host secret and is never persisted in the registry |
 | `platform` | enum/string | e.g. MT5; `unknown` until verified |
 | `server_name` | string/null | Exact broker server name, if available |
 | `availability_status` | enum | `unverified`, `visible_in_market_watch`, `selectable`, `data_verified`, `disabled`, `unavailable` |
@@ -87,11 +87,12 @@ The registry MUST use stable internal IDs and retain broker identity separately.
 ### 5.2 Evidence required to advance verification
 
 - `unverified → visible_in_market_watch`: exact broker symbol and broker description captured from the target account's Market Watch or equivalent symbol catalogue.
+- Account identity remains observed-but-unpinned until an operator reviews the broker, exact server, environment, and masked login suffix, then configures the expected HMAC account fingerprint. Market-data requests are blocked until this pin matches on startup and reconnect.
 - `visible_in_market_watch → selectable`: broker API successfully selects the exact symbol and returns symbol metadata.
 - `selectable → data_verified`: non-empty broker data returned for a stated timeframe, timestamps and OHLCV pass validation, and raw source evidence is persisted.
 - `verified`: all required evidence for the intended use case is present, reviewed, and recent enough for the declared verification policy.
 
-A symbol verified in demo MUST NOT automatically be treated as verified in live. Account environment and broker server are part of instrument identity.
+A symbol verified in demo MUST NOT automatically be treated as verified in live. Account environment and broker server are part of instrument identity. The HMAC fingerprint key must remain stable across restarts and be backed up separately from the SQLite evidence store; losing it invalidates existing fingerprints and requires explicit re-pinning.
 
 ## 6. Family behaviour profiles
 
