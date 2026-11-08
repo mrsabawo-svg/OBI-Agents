@@ -108,9 +108,10 @@ def assess_history_completeness(
     counts: dict[int, int] = {}
     for value in valid_timestamps:
         counts[value] = counts.get(value, 0) + 1
-    duplicate_timestamp_count = sum(count for count in counts.values() if count > 1)
-    duplicate_group_count = sum(1 for count in counts.values() if count > 1)
-    if duplicate_timestamp_count:
+    duplicate_timestamp_count = sum(1 for count in counts.values() if count > 1)
+    duplicate_observation_count = sum(count - 1 for count in counts.values() if count > 1)
+    duplicate_group_count = duplicate_timestamp_count
+    if duplicate_observation_count:
         reasons.append("DUPLICATE_TIMESTAMP")
 
     out_of_order_count = 0
@@ -161,10 +162,14 @@ def assess_history_completeness(
     snapshot_check_performed = bool(fetch_metadata.get("snapshot_check_performed", False))
     if snapshot_stable is False:
         reasons.append("PAGINATION_SNAPSHOT_CHANGED")
+    elif snapshot_check_performed and snapshot_stable is not True:
+        reasons.append("PAGINATION_SNAPSHOT_UNVERIFIABLE")
+    elif fetch_metadata.get("page_count", 1) > 1 and not snapshot_check_performed:
+        reasons.append("PAGINATION_SNAPSHOT_UNVERIFIABLE")
 
-    first_timestamp = timestamps[0] if timestamps else None
-    last_timestamp = timestamps[-1] if timestamps else None
-    latest_timestamp = max(valid_timestamps) if valid_timestamps else None
+    first_timestamp = min(valid_timestamps) if valid_timestamps else None
+    last_timestamp = max(valid_timestamps) if valid_timestamps else None
+    latest_timestamp = last_timestamp
 
     stale_latest_bar = False
     freshness_status = "not_applicable_historical" if start_pos > 0 else "fresh"
@@ -189,7 +194,11 @@ def assess_history_completeness(
         for reason in reasons
     )
     unverifiable = any(
-        reason in {"GAP_CONTEXT_UNKNOWN", "FRESHNESS_CONTEXT_UNKNOWN"}
+        reason in {
+            "GAP_CONTEXT_UNKNOWN",
+            "FRESHNESS_CONTEXT_UNKNOWN",
+            "PAGINATION_SNAPSHOT_UNVERIFIABLE",
+        }
         for reason in reasons
     )
     if hard_failure:
@@ -217,6 +226,7 @@ def assess_history_completeness(
         "valid_timestamp_count": len(valid_timestamps),
         "invalid_timestamp_count": invalid_timestamp_count,
         "duplicate_timestamp_count": duplicate_timestamp_count,
+        "duplicate_observation_count": duplicate_observation_count,
         "duplicate_group_count": duplicate_group_count,
         "out_of_order_count": out_of_order_count,
         "timeframe_alignment_error_count": alignment_error_count,
