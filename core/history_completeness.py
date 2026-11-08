@@ -31,6 +31,8 @@ HARD_FAILURE_REASONS = {
 
 
 def _timestamp(value: Any) -> int | None:
+    if isinstance(value, (str, bytes, bool)):
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError):
