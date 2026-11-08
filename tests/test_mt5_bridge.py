@@ -220,3 +220,44 @@ def test_ohlcv_requires_account_scoped_symbol_discovery(monkeypatch, tmp_path):
     )
     assert response.status_code == 409
     assert "call /symbols first" in response.get_json()["error"]
+
+
+def test_ohlcv_blocks_metadata_drift_after_symbol_discovery(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    import mt5_bridge
+
+    metadata = {"name": "SFX Vol 75", "digits": 2, "point": 0.01}
+
+    class FakeConnector:
+        def get_account_identity(self):
+            return {
+                "account_fingerprint": "1" * 64,
+                "broker_company": "Weltrade Ltd",
+                "server": "Weltrade-Demo",
+                "environment": "demo",
+                "platform": "MT5",
+            }
+
+        def discover_symbols(self):
+            return [{
+                "name": "SFX Vol 75", "description": "SFX Vol 75",
+                "selected": True, "visible": True, "metadata": metadata,
+            }]
+
+        def select_symbol(self, symbol):
+            return {
+                "name": symbol, "description": symbol,
+                "metadata": {"name": "SFX Vol 75", "digits": 3, "point": 0.001},
+            }
+
+    monkeypatch.setattr(mt5_bridge, "connector", FakeConnector())
+    monkeypatch.setattr(mt5_bridge, "SYMBOL_MAP", {"SFX_VOL_75": "SFX Vol 75"})
+    monkeypatch.setattr(mt5_bridge, "MT5_RAW_DB_PATH", str(tmp_path / "registry.sqlite3"))
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_HOST", "127.0.0.1")
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_TOKEN", "")
+    client = mt5_bridge.app.test_client()
+    assert client.get("/symbols").status_code == 200
+
+    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
+    assert response.status_code == 409
+    assert "metadata changed" in response.get_json()["error"]
