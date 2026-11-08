@@ -365,6 +365,7 @@ def test_init_mt5_uses_prelogged_terminal_without_triggering_partial_login(monke
     monkeypatch.setattr(mt5_bridge, "MT5_PATH", "")
     monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_FINGERPRINT_KEY", "k" * 40)
     monkeypatch.setattr(mt5_bridge, "MT5_EXPECTED_ACCOUNT_FINGERPRINT", None)
+    monkeypatch.setattr(mt5_bridge, "connector", None)
 
     ok, message = mt5_bridge.init_mt5()
     assert (ok, message) == (True, "connected")
