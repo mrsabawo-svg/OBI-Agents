@@ -185,3 +185,17 @@ def test_canonical_candle_rejects_timeframe_boundary_mismatch():
 
     with pytest.raises(CanonicalDataError, match="timeframe"):
         validate_canonical_candle(record)
+
+
+def test_canonical_hash_is_stable_across_equivalent_timezone_and_numeric_inputs(tmp_path):
+    path, source_id = setup_store(tmp_path)
+    store = CanonicalCandleStore(path)
+    utc_record = candle(source_id)
+    offset_record = candle(source_id)
+    offset_record["open_time"] = "2026-11-08T12:00:00+02:00"
+    offset_record["close_time"] = "2026-11-08T12:05:00+02:00"
+    offset_record["volume"] = 25.0
+
+    result = store.append_batch([utc_record, offset_record])
+
+    assert result["record_sha256"][0] == result["record_sha256"][1]
