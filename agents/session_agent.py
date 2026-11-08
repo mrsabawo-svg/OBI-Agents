@@ -35,8 +35,9 @@ class SessionAgent:
         if self.symbol in SYNTHETIC_SYMBOLS:
             return self._build(True, "Synthetic — 24/7 tradeable", {}, None)
 
-        now = now_sast()
+        now = None
         try:
+            now = now_sast()
             kill_zone = is_kill_zone(now)
             hour      = now.hour
             weekday   = now.weekday()
