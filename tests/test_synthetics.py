@@ -132,6 +132,8 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                 "raw_persistence": {
                     "persisted": True, "batch_id": "test-batch",
                     "inserted_count": len(rows), "quarantine_count": 0,
+                    "observation_ids": [f"obs-{i}" for i in range(len(rows))],
+                    "quarantine_ids": [],
                 },
                 "quality_report": {
                     "received_count": len(rows), "quarantined_observation_count": 0,
@@ -304,6 +306,8 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                 "raw_persistence": {
                     "persisted": True, "batch_id": "quarantine-test",
                     "inserted_count": len(rows), "quarantine_count": 1,
+                    "observation_ids": [f"obs-{i}" for i in range(len(rows))],
+                    "quarantine_ids": ["quarantine-0"],
                 },
                 "quality_report": {
                     "received_count": len(rows), "quarantined_observation_count": 1,
@@ -342,6 +346,7 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                 "raw_persistence": {
                     "persisted": True, "batch_id": "mismatch-test",
                     "inserted_count": 1, "quarantine_count": 0,
+                    "observation_ids": ["obs-0"], "quarantine_ids": [],
                 },
                 "quality_report": {
                     "received_count": 1, "quarantined_observation_count": 0,
