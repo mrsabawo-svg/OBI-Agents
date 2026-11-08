@@ -6,6 +6,14 @@ The bridge is an HTTP adapter to a running MetaTrader 5 terminal. It is **not a 
 
 OBI receives broker rates only after the terminal is connected, the exact broker symbol is mapped, and the original MT5 rates have been persisted to the raw-observation database.
 
+## Install the bridge runtime
+
+Run this on the Windows host where the MT5 terminal is installed. The MetaTrader5 Python package is platform-specific and is intentionally not installed in the Linux GitHub Actions test runner.
+
+```powershell
+python -m pip install Flask MetaTrader5 pytz
+```
+
 ## Required environment
 
 Set these on the Windows machine or VPS that runs the MT5 terminal:
