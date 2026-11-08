@@ -271,3 +271,42 @@ def test_failed_broker_identity_shuts_down_mt5_api_session():
     connector, _ = make_connector(adapter)
     assert connector.connect() is False
     assert adapter.initialized is False
+
+
+def test_account_fingerprint_is_stable_opaque_and_bound_to_login():
+    connector, _ = make_connector()
+    assert connector.connect()
+    identity = connector.get_account_identity()
+    assert len(identity["account_fingerprint"]) == 64
+    assert "login" not in identity
+    assert "123456" not in str(identity)
+    assert identity["server"] == "Weltrade-Demo"
+    assert identity["environment"] == "demo"
+
+
+def test_same_server_account_switch_is_detected_by_fingerprint():
+    connector, adapter = make_connector()
+    assert connector.connect()
+    adapter.account_info = lambda: SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Demo",
+        login=999999, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_DEMO,
+    )
+    assert connector.is_connected() is False
+    assert connector.state is ConnectionState.DISCONNECTED
+
+
+def test_symbol_discovery_includes_contract_metadata():
+    connector, adapter = make_connector()
+    adapter.symbols = [SimpleNamespace(
+        name="SFX Vol 75", description="SFX Vol 75", select=True,
+        visible=True, path="Synthetics\\SFX", digits=2, point=0.01,
+        trade_mode=4, trade_contract_size=1.0, trade_tick_size=0.01,
+        trade_tick_value=0.01, currency_base="", currency_profit="USD",
+        currency_margin="USD", volume_min=0.01, volume_max=100.0,
+        volume_step=0.01,
+    )]
+    assert connector.connect()
+    symbol = connector.discover_symbols()[0]
+    assert symbol["metadata"]["digits"] == 2
+    assert symbol["metadata"]["trade_tick_size"] == 0.01
+    assert symbol["metadata"]["path"] == "Synthetics\\SFX"
