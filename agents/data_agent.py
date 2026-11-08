@@ -97,7 +97,7 @@ class DataAgent:
 
         required = {
             "Open", "High", "Low", "Close", "Volume",
-            "bar_status", "volume_type", "quarantine_reasons",
+            "bar_status", "volume_type", "quarantine_reasons", "observation_id",
         }
         headers = {}
         bridge_token = os.environ.get("MT5_BRIDGE_TOKEN")
@@ -146,12 +146,18 @@ class DataAgent:
                     continue
                 observation_ids = persistence.get("observation_ids")
                 quarantine_ids = persistence.get("quarantine_ids")
+                quarantine_links = persistence.get("quarantine_records")
                 if (
                     persistence.get("inserted_count") != len(rows)
                     or not isinstance(observation_ids, list)
                     or len(observation_ids) != len(rows)
+                    or any(not isinstance(item, str) or not item for item in observation_ids)
+                    or len(set(observation_ids)) != len(observation_ids)
                     or not isinstance(quarantine_ids, list)
                     or len(quarantine_ids) != persistence.get("quarantine_count")
+                    or len(set(quarantine_ids)) != len(quarantine_ids)
+                    or not isinstance(quarantine_links, list)
+                    or len(quarantine_links) != len(quarantine_ids)
                     or not persistence.get("batch_id")
                     or quality_report.get("received_count") != len(rows)
                     or persistence.get("quarantine_count") != quality_report.get("quarantine_record_count")
@@ -162,6 +168,9 @@ class DataAgent:
                 df = pd.DataFrame(rows)
                 if "timestamp" not in df.columns or not required.issubset(df.columns):
                     print(f"[DATA] {self.symbol} {tf}: invalid bridge schema")
+                    continue
+                if df["observation_id"].tolist() != observation_ids:
+                    print(f"[DATA] {self.symbol} {tf}: row-to-raw-observation identity mismatch")
                     continue
                 if not df["quarantine_reasons"].apply(
                     lambda value: isinstance(value, list)
@@ -175,11 +184,32 @@ class DataAgent:
                     df["quarantine_reasons"].apply(len).sum()
                 )
                 observed_reason_counts = {}
-                for reasons in df["quarantine_reasons"]:
-                    for reason in reasons:
-                        observed_reason_counts[reason] = observed_reason_counts.get(reason, 0) + 1
+                expected_reasons_by_observation = {}
+                link_ids = set()
+                valid_links = True
+                for link in quarantine_links:
+                    if (
+                        not isinstance(link, dict)
+                        or link.get("quarantine_id") not in quarantine_ids
+                        or link.get("observation_id") not in observation_ids
+                        or not isinstance(link.get("reason_code"), str)
+                    ):
+                        valid_links = False
+                        break
+                    link_ids.add(link["quarantine_id"])
+                    observation_id = link["observation_id"]
+                    expected_reasons_by_observation.setdefault(observation_id, []).append(link["reason_code"])
+                    reason = link["reason_code"]
+                    observed_reason_counts[reason] = observed_reason_counts.get(reason, 0) + 1
+                annotations_match_links = all(
+                    row["quarantine_reasons"] == expected_reasons_by_observation.get(row["observation_id"], [])
+                    for _, row in df.iterrows()
+                )
                 if (
-                    int(durable_quarantine.sum()) != quality_report.get("quarantined_observation_count")
+                    not valid_links
+                    or link_ids != set(quarantine_ids)
+                    or not annotations_match_links
+                    or int(durable_quarantine.sum()) != quality_report.get("quarantined_observation_count")
                     or durable_quarantine_record_count != quality_report.get("quarantine_record_count")
                     or observed_reason_counts != quality_report.get("reason_counts")
                 ):
