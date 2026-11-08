@@ -98,9 +98,12 @@ def run(symbol: str, news: dict = None) -> dict:
             },
             data_lineage=data_lineage,
             external_inputs={
+                "Session": {
+                    "evaluated_at_sast": session.get("evaluated_at_sast"),
+                },
                 "Edge": {
                     "archive_snapshot_sha256": edge_agent.archive_snapshot_sha256,
-                }
+                },
             },
         )
 
