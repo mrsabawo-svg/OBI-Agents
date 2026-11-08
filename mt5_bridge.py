@@ -86,11 +86,17 @@ def _quarantine_reasons(raw_rows):
     timestamp_indexes = {}
     for index, raw in enumerate(raw_rows):
         timestamp = _finite_number(raw.get("time"))
-        if timestamp is None or timestamp <= 0 or not timestamp.is_integer():
+        timestamp_valid = timestamp is not None and timestamp > 0 and timestamp.is_integer()
+        if timestamp_valid:
+            try:
+                datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                timestamp_valid = False
+        if not timestamp_valid:
             reasons.append({
                 "observation_index": index,
                 "reason_code": "INVALID_TIMESTAMP",
-                "reason_detail": "MT5 time must be a positive finite Unix-second integer",
+                "reason_detail": "MT5 time must be a positive, representable Unix-second integer",
             })
         else:
             timestamp_indexes.setdefault(int(timestamp), []).append(index)
@@ -104,7 +110,11 @@ def _quarantine_reasons(raw_rows):
             "real_volume": _finite_number(raw.get("real_volume", 0)),
             "spread": _finite_number(raw.get("spread", 0)),
         }
-        if any(value is None for value in fields.values()):
+        integer_fields_valid = all(
+            fields[key] is not None and fields[key].is_integer()
+            for key in ("tick_volume", "real_volume", "spread")
+        )
+        if any(value is None for value in fields.values()) or not integer_fields_valid:
             reasons.append({
                 "observation_index": index,
                 "reason_code": "INVALID_NUMERIC",
