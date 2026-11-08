@@ -1,3 +1,8 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+import pytest
+
 import mt5_bridge
 
 
@@ -10,9 +15,9 @@ def test_bridge_rejects_unsupported_timeframe():
 
 def test_bridge_rejects_unbounded_count():
     client = mt5_bridge.app.test_client()
-    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2001")
+    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=20001")
     assert response.status_code == 400
-    assert "between 1 and 2000" in response.get_json()["error"]
+    assert "between 1 and 20000" in response.get_json()["error"]
 
 
 def test_bridge_rejects_non_integer_count():
@@ -30,16 +35,10 @@ def test_bridge_requires_token_for_non_loopback_binding(monkeypatch):
     assert response.status_code == 401
 
 
-def test_position_zero_marks_only_latest_returned_bar_forming():
-    assert mt5_bridge._bar_status(0, 2, 0) == "closed"
-    assert mt5_bridge._bar_status(1, 2, 0) == "closed"
-    assert mt5_bridge._bar_status(2, 2, 0) == "forming"
-
-
-def test_historical_pagination_marks_every_returned_bar_closed():
-    assert mt5_bridge._bar_status(0, 2, 300) == "closed"
-    assert mt5_bridge._bar_status(1, 2, 300) == "closed"
-    assert mt5_bridge._bar_status(2, 2, 300) == "closed"
+def test_bar_status_uses_history_completeness_forming_indexes():
+    assert mt5_bridge._bar_status(0, set()) == "closed"
+    assert mt5_bridge._bar_status(1, {1}) == "forming"
+    assert mt5_bridge._bar_status(2, {1}) == "closed"
 
 
 def test_quarantine_detects_invalid_timestamp_numeric_ohlc_and_duplicates():
@@ -73,7 +72,7 @@ def test_response_row_handles_invalid_timestamp_and_non_finite_prices():
         "real_volume": 0, "spread": 1,
     }
     response = mt5_bridge._response_row(
-        row, 0, None, 0, ["INVALID_TIMESTAMP", "INVALID_NUMERIC"], "raw-observation-001"
+        row, 0, set(), ["INVALID_TIMESTAMP", "INVALID_NUMERIC"], "raw-observation-001"
     )
     assert response["observation_id"] == "raw-observation-001"
     assert response["timestamp"] is None
@@ -83,7 +82,13 @@ def test_response_row_handles_invalid_timestamp_and_non_finite_prices():
 
 
 def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkeypatch, tmp_path):
-    from types import SimpleNamespace
+    frozen_now = datetime.now(timezone.utc)
+    current_bucket = int(frozen_now.timestamp() // 300) * 300
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen_now
 
     class FakeRates:
         dtype = SimpleNamespace(names=(
@@ -93,8 +98,8 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
 
         def __iter__(self):
             return iter([
-                (100, 10.0, 12.0, 9.0, 11.0, 10, 0, 1),
-                (200, 10.0, 8.0, 9.0, 11.0, 10, 0, 1),
+                (current_bucket - 300, 10.0, 12.0, 9.0, 11.0, 10, 0, 1),
+                (current_bucket, 10.0, 8.0, 9.0, 11.0, 10, 0, 1),
             ])
 
     class FakeConnector:
@@ -132,9 +137,17 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
             assert symbol == "SFX Vol 75"
             return {"name": symbol, "description": symbol, "metadata": self.metadata}
 
-        def fetch_rates(self, symbol, timeframe, count, start_pos):
+        def fetch_rates_detailed(self, symbol, timeframe, count, start_pos):
             assert (symbol, timeframe, count, start_pos) == ("SFX Vol 75", "5m", 2, 0)
-            return FakeRates()
+            return FakeRates(), {
+                "requested_count": count,
+                "returned_count": 2,
+                "page_count": 1,
+                "page_sizes": [2],
+                "page_start_positions": [start_pos],
+                "snapshot_check_performed": False,
+                "snapshot_stable": True,
+            }
 
         def is_connected(self):
             return True
@@ -146,6 +159,11 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
         def symbol_info(self, symbol):
             return SimpleNamespace(description="SFX Vol 75")
 
+    monkeypatch.setattr(mt5_bridge, "datetime", FrozenDateTime)
+    monkeypatch.setattr(
+        mt5_bridge, "MT5_VERIFIED_SESSION_MODELS",
+        {"SFX_VOL_75": "continuous_24_7"},
+    )
     monkeypatch.setattr(mt5_bridge, "connector", FakeConnector())
     monkeypatch.setattr(mt5_bridge, "mt5", FakeMT5())
     monkeypatch.setattr(mt5_bridge, "SYMBOL_MAP", {"SFX_VOL_75": "SFX Vol 75"})
@@ -164,6 +182,12 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
 
     assert response.status_code == 200
     assert payload["account_identity"]["account_fingerprint"] == "e" * 64
+    assert payload["history_completeness"]["status"] == "complete"
+    assert payload["history_completeness"]["session_model"] == "continuous_24_7"
+    assert payload["history_completeness"]["requested_count"] == 2
+    assert payload["history_completeness"]["returned_count"] == 2
+    assert payload["history_completeness"]["forming_count"] == 1
+    assert payload["data"][1]["bar_status"] == "forming"
     assert payload["raw_persistence"]["inserted_count"] == 2
     assert payload["raw_persistence"]["quarantine_count"] == 1
     assert payload["quality_report"]["quarantined_observation_count"] == 1
@@ -261,3 +285,16 @@ def test_ohlcv_blocks_metadata_drift_after_symbol_discovery(monkeypatch, tmp_pat
     response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
     assert response.status_code == 409
     assert "metadata changed" in response.get_json()["error"]
+
+
+def test_verified_session_model_configuration_is_explicit_and_strict():
+    assert mt5_bridge._load_verified_session_models("") == {}
+    assert mt5_bridge._load_verified_session_models(
+        '{"SFX_VOL_75":"continuous_24_7"}'
+    ) == {"SFX_VOL_75": "continuous_24_7"}
+    with pytest.raises(ValueError, match="valid JSON"):
+        mt5_bridge._load_verified_session_models("{invalid")
+    with pytest.raises(ValueError, match="continuous_24_7"):
+        mt5_bridge._load_verified_session_models(
+            '{"EURUSD":"assumed_24_5"}'
+        )

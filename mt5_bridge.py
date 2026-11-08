@@ -18,6 +18,7 @@ from core.mt5_connector import ConnectionIdentity, MT5Connector
 from core.raw_observation_store import RawObservationStore
 from core.canonical_data_store import CanonicalCandleStore
 from core.instrument_registry_store import InstrumentRegistryStore, metadata_fingerprint
+from core.history_completeness import assess_history_completeness, TIMEFRAME_SECONDS
 
 try:
     import MetaTrader5 as mt5
@@ -35,8 +36,35 @@ MT5_BRIDGE_HOST = os.environ.get("MT5_BRIDGE_HOST", "127.0.0.1")
 MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
 MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
 MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
-MAX_COUNT = 2000
-TIMEFRAME_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}
+
+
+def _load_verified_session_models(raw_value):
+    if not raw_value:
+        return {}
+    try:
+        parsed = json.loads(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MT5_VERIFIED_SESSION_MODEL_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("MT5_VERIFIED_SESSION_MODEL_JSON must be an object")
+    models = {}
+    for instrument_id, model in parsed.items():
+        if not isinstance(instrument_id, str) or not instrument_id.strip():
+            raise ValueError("verified session model keys must be instrument IDs")
+        if model != "continuous_24_7":
+            raise ValueError(
+                "verified session models may only declare continuous_24_7"
+            )
+        models[instrument_id] = model
+    return models
+
+
+# Operator assertions only: never infer a 24/7 calendar from an instrument name
+# or from SessionAgent's trading eligibility rules.
+MT5_VERIFIED_SESSION_MODELS = _load_verified_session_models(
+    os.environ.get("MT5_VERIFIED_SESSION_MODEL_JSON", "")
+)
+MAX_COUNT = 20000
 CANONICAL_TRANSFORMATION_VERSION = "mt5-broker-bars-v1"
 connector = None
 
@@ -72,9 +100,9 @@ def _authorized():
     return secrets.compare_digest(supplied, "Bearer " + MT5_BRIDGE_TOKEN)
 
 
-def _bar_status(index, latest_index, start_pos):
-    """Only position-zero requests include MT5's current, still-forming bar."""
-    return "forming" if start_pos == 0 and index == latest_index else "closed"
+def _bar_status(index, forming_indexes):
+    """Use UTC bar-boundary evidence, not array position, to label forming bars."""
+    return "forming" if index in forming_indexes else "closed"
 
 
 def _finite_number(value):
@@ -161,7 +189,7 @@ def _quarantine_reasons(raw_rows):
     return reasons
 
 
-def _response_row(raw, index, latest_index, start_pos, quarantine_codes, observation_id):
+def _response_row(raw, index, forming_indexes, quarantine_codes, observation_id):
     timestamp_value = _finite_number(raw.get("time"))
     timestamp = None
     if timestamp_value is not None and timestamp_value > 0 and timestamp_value.is_integer():
@@ -192,7 +220,7 @@ def _response_row(raw, index, latest_index, start_pos, quarantine_codes, observa
         "real_volume": safe_int("real_volume"),
         "spread": safe_int("spread"),
         "volume_type": "tick_volume",
-        "bar_status": _bar_status(index, latest_index, start_pos),
+        "bar_status": _bar_status(index, forming_indexes),
         "quarantine_reasons": quarantine_codes,
     }
 
@@ -324,7 +352,9 @@ def get_ohlcv():
                 "status": "error",
                 "error": "broker symbol contract metadata changed; rediscover symbols before requesting data",
             }), 409
-        rates = connector.fetch_rates(broker_symbol, timeframe, count, start_pos)
+        rates, fetch_metadata = connector.fetch_rates_detailed(
+            broker_symbol, timeframe, count, start_pos
+        )
         symbol_info = mt5.symbol_info(broker_symbol)
     except ValueError as exc:
         return jsonify({"status": "error", "error": str(exc)}), 400
@@ -355,13 +385,6 @@ def get_ohlcv():
         reasons_by_index.setdefault(index, []).append(record["reason_code"])
         reason_counts[record["reason_code"]] = reason_counts.get(record["reason_code"], 0) + 1
 
-    valid_timestamp_indexes = []
-    for index, raw in enumerate(raw_rows):
-        value = _finite_number(raw.get("time"))
-        if value is not None and value > 0 and value.is_integer():
-            valid_timestamp_indexes.append((int(value), index))
-    latest_index = max(valid_timestamp_indexes)[1] if valid_timestamp_indexes else None
-
     # Re-check the authenticated account after rate retrieval. If the
     # terminal/account changed or disconnected mid-request, withhold the batch.
     try:
@@ -377,6 +400,25 @@ def get_ohlcv():
             "status": "error",
             "error": "MT5 account session changed during retrieval; data withheld",
         }), 503
+    retrieved_at = datetime.now(timezone.utc)
+    history_completeness = assess_history_completeness(
+        raw_rows,
+        timeframe,
+        count,
+        fetch_metadata,
+        start_pos=start_pos,
+        retrieved_at=retrieved_at,
+        session_model=MT5_VERIFIED_SESSION_MODELS.get(symbol_id, "unknown"),
+    )
+    history_completeness.update({
+        "account_fingerprint": account_identity["account_fingerprint"],
+        "instrument_id": symbol_id,
+        "broker_symbol": broker_symbol,
+    })
+    forming_indexes = set(
+        history_completeness["forming_observation_indexes"]
+    )
+
     server_name = account_identity["server"]
     if not server_name:
         return jsonify({
@@ -394,7 +436,7 @@ def get_ohlcv():
         "timeframe": timeframe,
         "start_pos": start_pos,
         "source_type": "broker_bars",
-        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "retrieved_at": retrieved_at.isoformat(),
         "batch_id": None,
     }
 
@@ -411,7 +453,7 @@ def get_ohlcv():
 
     response_rows = [
         _response_row(
-            raw, index, latest_index, start_pos,
+            raw, index, forming_indexes,
             reasons_by_index.get(index, []),
             persisted["observation_ids"][index],
         )
@@ -428,7 +470,8 @@ def get_ohlcv():
         }),
         "quarantine_record_count": len(quarantine_records),
         "reason_counts": reason_counts,
-        "validator_version": "1",
+        "validator_version": "2",
+        "history_completeness": history_completeness,
     }
     validation_report = {
         "report_id": validation_report_id,
@@ -442,6 +485,7 @@ def get_ohlcv():
         "timeframe": timeframe,
         "validator_version": quality_report["validator_version"],
         "report": quality_report,
+        "history_completeness": history_completeness,
     }
 
     canonical_records = []
@@ -481,7 +525,7 @@ def get_ohlcv():
             "volume": numeric_values["tick_volume"],
             "volume_type": "tick_volume",
             "source_class": "broker_bar",
-            "bar_status": _bar_status(index, latest_index, start_pos),
+            "bar_status": _bar_status(index, forming_indexes),
             "source_observation_ids": [persisted["observation_ids"][index]],
             "transformation_version": CANONICAL_TRANSFORMATION_VERSION,
             "validation_report_id": validation_report_id,
@@ -516,6 +560,7 @@ def get_ohlcv():
         "retrieved_at": envelope["retrieved_at"],
         "raw_persistence": persisted,
         "quality_report": quality_report,
+        "history_completeness": history_completeness,
         "canonical_persistence": {
             "persisted": True,
             **canonical_persistence,

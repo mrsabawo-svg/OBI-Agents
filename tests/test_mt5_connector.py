@@ -137,7 +137,7 @@ def test_unsupported_timeframe_and_invalid_count_are_rejected():
     with pytest.raises(ValueError, match="unsupported"):
         connector.fetch_rates("EURUSD", "3m", 100)
     with pytest.raises(ValueError, match="count"):
-        connector.fetch_rates("EURUSD", "5m", 2001)
+        connector.fetch_rates("EURUSD", "5m", 20001)
 
 
 def test_empty_history_is_reported_not_silently_replaced():
@@ -197,6 +197,8 @@ def test_history_pagination_rejects_out_of_range_start_position():
     assert connector.connect()
     with pytest.raises(ValueError, match="start_pos"):
         connector.fetch_rates("EURUSD", "1h", 100, start_pos=1000001)
+    with pytest.raises(ValueError, match="start_pos"):
+        connector.fetch_rates("EURUSD", "1h", 2, start_pos=999999)
 
 
 def test_demo_configuration_rejects_actual_live_account():
@@ -323,3 +325,147 @@ def test_reconnect_refuses_silent_switch_to_another_account_on_same_server():
     assert connector.ensure_connected() is False
     assert connector.state is ConnectionState.ERROR
     assert "fingerprint differs" in connector.last_error
+
+
+class _FakeStructuredRates:
+    dtype = SimpleNamespace(names=(
+        "time", "open", "high", "low", "close",
+        "tick_volume", "real_volume", "spread",
+    ))
+
+    def __init__(self, times):
+        self.rows = [
+            (timestamp, 1.0, 1.2, 0.9, 1.1, 10, 0, 1)
+            for timestamp in times
+        ]
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __getitem__(self, key):
+        if key == "time":
+            return [row[0] for row in self.rows]
+        return self.rows[key]
+
+
+def _structured_rate_array(times):
+    return _FakeStructuredRates(times)
+
+
+def test_paginated_history_is_reassembled_in_chronological_order():
+    connector, adapter = make_connector()
+    page_newer = _structured_rate_array(range(2001, 4001))
+    page_older = _structured_rate_array(range(1001, 2001))
+    latest = _structured_rate_array([4000])
+
+    def paged_copy(symbol, timeframe, start, count):
+        adapter.rate_calls.append((symbol, timeframe, start, count))
+        if start == 0 and count == 1:
+            return latest
+        if start == 0:
+            return page_newer
+        if start == 2000:
+            return page_older
+        return _structured_rate_array([])
+
+    adapter.copy_rates_from_pos = paged_copy
+    assert connector.connect()
+    rates, metadata = connector.fetch_rates_detailed("EURUSD", "5m", 3000)
+
+    assert len(rates) == 3000
+    assert int(rates["time"][0]) == 1001
+    assert int(rates["time"][-1]) == 4000
+    assert metadata["requested_count"] == 3000
+    assert metadata["returned_count"] == 3000
+    assert metadata["page_count"] == 2
+    assert metadata["page_sizes"] == [2000, 1000]
+    assert metadata["page_start_positions"] == [0, 2000]
+    assert metadata["snapshot_check_performed"] is True
+    assert metadata["snapshot_stable"] is True
+
+
+def test_paginated_history_marks_snapshot_drift():
+    connector, adapter = make_connector()
+    page_newer = _structured_rate_array(range(2001, 4001))
+    page_older = _structured_rate_array(range(1001, 2001))
+    latest_values = iter([4000, 4300])
+
+    def drifting_copy(symbol, timeframe, start, count):
+        adapter.rate_calls.append((symbol, timeframe, start, count))
+        if start == 0 and count == 1:
+            return _structured_rate_array([next(latest_values)])
+        if start == 0:
+            return page_newer
+        if start == 2000:
+            return page_older
+        return _structured_rate_array([])
+
+    adapter.copy_rates_from_pos = drifting_copy
+    assert connector.connect()
+    _, metadata = connector.fetch_rates_detailed("EURUSD", "5m", 3000)
+    assert metadata["snapshot_stable"] is False
+    assert metadata["latest_bar_time_before"] == 4000
+    assert metadata["latest_bar_time_after"] == 4300
+
+
+def test_partial_paginated_history_reports_returned_count():
+    connector, adapter = make_connector()
+    partial_page = _structured_rate_array(range(1001, 2001))
+    latest = _structured_rate_array([2000])
+
+    def partial_copy(symbol, timeframe, start, count):
+        adapter.rate_calls.append((symbol, timeframe, start, count))
+        if start == 0 and count == 1:
+            return latest
+        if start == 0:
+            return partial_page
+        return _structured_rate_array([])
+
+    adapter.copy_rates_from_pos = partial_copy
+    assert connector.connect()
+    _, metadata = connector.fetch_rates_detailed("EURUSD", "5m", 3000)
+    assert metadata["requested_count"] == 3000
+    assert metadata["returned_count"] == 1000
+    assert metadata["page_count"] == 1
+    assert metadata["snapshot_stable"] is True
+
+
+def test_numpy_structured_pages_use_native_concatenation_when_available():
+    np = pytest.importorskip("numpy")
+    connector, adapter = make_connector()
+    dtype = [
+        ("time", "i8"), ("open", "f8"), ("high", "f8"),
+        ("low", "f8"), ("close", "f8"), ("tick_volume", "i8"),
+        ("real_volume", "i8"), ("spread", "i8"),
+    ]
+
+    def native_rates(times):
+        return np.array([
+            (timestamp, 1.0, 1.2, 0.9, 1.1, 10, 0, 1)
+            for timestamp in times
+        ], dtype=dtype)
+
+    newer = native_rates(range(2001, 4001))
+    older = native_rates(range(1001, 2001))
+    latest = native_rates([4000])
+
+    def paged_copy(symbol, timeframe, start, count):
+        if start == 0 and count == 1:
+            return latest
+        if start == 0:
+            return newer
+        if start == 2000:
+            return older
+        return native_rates([])
+
+    adapter.copy_rates_from_pos = paged_copy
+    assert connector.connect()
+    rates, metadata = connector.fetch_rates_detailed("EURUSD", "5m", 3000)
+
+    assert isinstance(rates, np.ndarray)
+    assert int(rates["time"][0]) == 1001
+    assert int(rates["time"][-1]) == 4000
+    assert metadata["snapshot_stable"] is True

@@ -67,7 +67,7 @@ The reusable connector has explicit lifecycle states: DISCONNECTED, INITIALIZING
 - GET /health reports connection state only.
 - GET /symbols returns account-scoped symbol discovery and contract metadata (digits, point, tick size/value, contract size, currencies, volume limits, path, and availability flags). Every call appends the account observation and symbol snapshot to the SQLite registry. Discovery does not classify a symbol as SyntX or mark it analysis-eligible.
 - GET /ohlcv requires a prior /symbols discovery for the same account fingerprint and exact broker symbol. A changed contract-metadata fingerprint or ambiguous OBI mapping blocks the request until reviewed and rediscovered.
-- GET /ohlcv?symbol=OBI_ID&timeframe=5m|15m|1h|4h&count=1..2000&start_pos=0..1000000 returns mapped broker rates after persistence. Position zero includes the current bar; positive positions page backward through historical bars.
+- GET /ohlcv?symbol=OBI_ID&timeframe=5m|15m|1h|4h&count=1..20000&start_pos=0..1000000 returns mapped broker rates after persistence. Requests up to 20,000 bars are fetched in 2,000-bar pages. The bridge reassembles pages chronologically and checks that the newest bar open-time anchor did not change during multi-page retrieval. This detects a new bar opening and shifting position-based pages; it does not claim that the broker never revises historical OHLC values. Position zero may include the current bar; forming/closed status is determined from the UTC timeframe boundary, not array position.
 
 Only exact symbols configured in MT5_SYMBOL_MAP_JSON can be requested through the OBI instrument ID. Symbol discovery is evidence for account-specific mapping, not automatic authorization. Timeframes are explicit; unsupported values fail rather than falling back.
 
@@ -120,7 +120,7 @@ This is the first direct lineage integration. Derived indicator/feature dependen
 
 ## Signal archive lineage manifest
 
-Each scan builds a bounded `obi-data-lineage-v2` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
+Each scan builds a bounded `obi-data-lineage-v3` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
 
 Manifest status is explicit. These labels describe provenance coverage for the data frames used by the scan, not broker-history completeness, data quality approval, or trading eligibility:
 - `complete`: every expected timeframe has canonical IDs and a complete immutable source/report reference.
@@ -157,3 +157,20 @@ Discovery records remain unverified or partially_verified. Merely seeing or sele
 
 
 Account fingerprints are also included in each immutable validation report and raw-observation row, then validated by DataAgent and carried into the archived signal's per-timeframe source lineage. A signal can therefore be traced to the exact broker account identity without exposing the account login number.
+
+
+## Broker-history completeness gate
+
+Each OHLCV response now includes an immutable history-completeness subreport. The report is scoped to the exact requested window (count and start position); it does not claim that all older broker history exists. It records requested/returned counts, page boundaries, latest-bar anchor stability, timestamp ordering/alignment, duplicates, gaps, forming/closed bars, freshness, and a status of complete, incomplete, or unverifiable. A complete status certifies only the requested window, not the broker's entire historical archive.
+
+Unexplained gaps or stale latest data remain unverifiable when no verified broker session calendar is available. They are not silently treated as missing bars or as valid continuous-market history. A verified continuous 24/7 session model can classify those gaps as incomplete. DataAgent accepts only complete history windows; incomplete or unverifiable windows are persisted as evidence but withheld from signal generation. The archived per-timeframe data lineage now uses schema v3 and carries the history report summary alongside the account fingerprint.
+
+### Explicit session-calendar declaration
+
+The bridge defaults every instrument to the `unknown` session model. An operator may set `MT5_VERIFIED_SESSION_MODEL_JSON` only after confirming the instrument's schedule from authoritative broker documentation or an equivalent verified source. The only currently supported declaration is an explicit continuous 24/7 schedule, for example:
+
+```bash
+MT5_VERIFIED_SESSION_MODEL_JSON='{"SFX_VOL_75":"continuous_24_7"}'
+```
+
+Do not set this merely because an instrument is labelled synthetic or because SessionAgent permits trading. Without this declaration, unexplained gaps and stale latest windows remain unverifiable and DataAgent withholds signals.

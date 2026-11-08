@@ -55,7 +55,7 @@ class ArchiveAnalyticsSchemaTest(unittest.TestCase):
     def test_archive_preserves_data_lineage_manifest(self):
         signal = self._signal(FakeScore())
         lineage = {
-            "schema_version": "obi-data-lineage-v2",
+            "schema_version": "obi-data-lineage-v3",
             "instrument_id": "XAUUSD",
             "status": "complete",
             "timeframes": {
@@ -112,6 +112,14 @@ class DataLineageManifestTest(unittest.TestCase):
             "server_name": "Weltrade-Demo",
             "account_environment": "demo",
             "account_fingerprint": "a" * 64,
+            "history_status": "complete",
+            "history_session_model": "unknown",
+            "history_report_id": "history-report-001",
+            "history_requested_count": 300,
+            "history_returned_count": 300,
+            "history_gap_count": 0,
+            "history_forming_count": 1,
+            "history_closed_count": 299,
             "broker_symbol": "SFX Vol 75",
             "source_type": "broker_bars",
         }

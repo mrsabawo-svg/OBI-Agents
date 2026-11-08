@@ -164,6 +164,102 @@ class DataAgent:
                 ):
                     print(f"[DATA] {self.symbol} {tf}: durable validation report or account fingerprint missing")
                     continue
+                history_report = quality_report.get("history_completeness")
+                pagination = (
+                    history_report.get("pagination")
+                    if isinstance(history_report, dict) else None
+                )
+                page_sizes = pagination.get("page_sizes") if isinstance(pagination, dict) else None
+                page_starts = (
+                    pagination.get("page_start_positions")
+                    if isinstance(pagination, dict) else None
+                )
+                page_count = pagination.get("page_count") if isinstance(pagination, dict) else None
+                forming_count = history_report.get("forming_count") if isinstance(history_report, dict) else None
+                closed_count = history_report.get("closed_count") if isinstance(history_report, dict) else None
+                if isinstance(forming_count, bool) or not isinstance(forming_count, int):
+                    forming_count = -1
+                if isinstance(closed_count, bool) or not isinstance(closed_count, int):
+                    closed_count = -1
+                forming_indexes = (
+                    history_report.get("forming_observation_indexes")
+                    if isinstance(history_report, dict) else None
+                )
+                requested_start_pos = (
+                    history_report.get("requested_start_pos")
+                    if isinstance(history_report, dict) else None
+                )
+                expected_page_starts = []
+                if (
+                    isinstance(requested_start_pos, int)
+                    and not isinstance(requested_start_pos, bool)
+                    and isinstance(page_sizes, list)
+                    and all(isinstance(value, int) and not isinstance(value, bool) for value in page_sizes)
+                ):
+                    cursor = requested_start_pos
+                    for page_size in page_sizes:
+                        expected_page_starts.append(cursor)
+                        cursor += page_size
+                expected_forming_indexes = [
+                    index for index, row in enumerate(rows)
+                    if isinstance(row, dict) and row.get("bar_status") == "forming"
+                ]
+                pagination_valid = (
+                    isinstance(page_sizes, list)
+                    and isinstance(page_starts, list)
+                    and isinstance(page_count, int) and not isinstance(page_count, bool)
+                    and page_count == len(page_sizes) == len(page_starts)
+                    and all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in page_sizes)
+                    and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in page_starts)
+                    and sum(page_sizes) == len(rows)
+                    and page_starts == expected_page_starts
+                )
+                forming_valid = (
+                    isinstance(forming_indexes, list)
+                    and all(isinstance(value, int) and not isinstance(value, bool) for value in forming_indexes)
+                    and sorted(forming_indexes) == expected_forming_indexes
+                )
+                if (
+                    not isinstance(history_report, dict)
+                    or history_report.get("schema_version") != "obi-history-completeness-v1"
+                    or history_report.get("status") != "complete"
+                    or history_report.get("session_model") not in {"unknown", "continuous_24_7"}
+                    or history_report.get("coverage_scope") != "requested_window"
+                    or history_report.get("requested_start_pos") != parsed.get("start_pos", 0)
+                    or history_report.get("timeframe") != tf
+                    or history_report.get("instrument_id") != self.symbol
+                    or history_report.get("broker_symbol") != parsed.get("broker_symbol")
+                    or history_report.get("account_fingerprint") != fingerprint
+                    or history_report.get("requested_count") != history_report.get("returned_count")
+                    or history_report.get("returned_count") != len(rows)
+                    or closed_count != len(rows) - forming_count
+                    or closed_count < 1
+                    or forming_count != len(expected_forming_indexes)
+                    or not forming_valid
+                    or not pagination_valid
+                    or history_report.get("snapshot_stable") is not True
+                    or (
+                        page_count > 1
+                        and history_report.get("snapshot_check_performed") is not True
+                    )
+                    or history_report.get("valid_timestamp_count") != len(rows)
+                    or history_report.get("invalid_timestamp_count") != 0
+                    or history_report.get("missing_interval_count") != 0
+                    or history_report.get("gap_segment_count") != 0
+                    or history_report.get("duplicate_timestamp_count") != 0
+                    or history_report.get("duplicate_observation_count") != 0
+                    or history_report.get("duplicate_group_count") != 0
+                    or history_report.get("gaps") != []
+                    or history_report.get("out_of_order_count") != 0
+                    or history_report.get("timeframe_alignment_error_count") != 0
+                    or history_report.get("future_bar_count") != 0
+                    or history_report.get("latest_bar_stale") is not False
+                    or history_report.get("freshness_status") != "fresh"
+                    or history_report.get("reasons") != []
+                ):
+                    status = history_report.get("status") if isinstance(history_report, dict) else "missing"
+                    print(f"[DATA] {self.symbol} {tf}: history completeness is {status}; withholding signal data")
+                    continue
                 canonical_persistence = parsed.get("canonical_persistence")
                 observation_ids = persistence.get("observation_ids")
                 quarantine_ids = persistence.get("quarantine_ids")
@@ -373,6 +469,14 @@ class DataAgent:
                     "server_name": parsed.get("server_name"),
                     "account_environment": parsed.get("account_environment"),
                     "account_fingerprint": fingerprint,
+                    "history_status": history_report.get("status"),
+                    "history_report_id": quality_report.get("report_id"),
+                    "history_session_model": history_report.get("session_model"),
+                    "history_requested_count": history_report.get("requested_count"),
+                    "history_returned_count": history_report.get("returned_count"),
+                    "history_gap_count": history_report.get("missing_interval_count"),
+                    "history_forming_count": history_report.get("forming_count"),
+                    "history_closed_count": history_report.get("closed_count"),
                     "broker_symbol": parsed.get("broker_symbol"),
                     "source_type": parsed.get("source_type"),
                     "raw_batch_id": persistence.get("batch_id"),

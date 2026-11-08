@@ -15,6 +15,30 @@ from threading import RLock
 from typing import Any, Optional
 
 
+
+class _CombinedRateBatch:
+    """Small structured-array-compatible fallback for paged MT5 test adapters."""
+
+    def __init__(self, pages):
+        self.dtype = getattr(pages[0], "dtype", None)
+        self._rows = [row for page in pages for row in page]
+
+    def __len__(self):
+        return len(self._rows)
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            names = getattr(self.dtype, "names", None) or ()
+            if key not in names:
+                raise KeyError(key)
+            column_index = names.index(key)
+            return [row[column_index] for row in self._rows]
+        return self._rows[key]
+
+
 def _serialized(method):
     """Serialize access to the process-wide MT5 terminal connection."""
     @wraps(method)
@@ -33,6 +57,8 @@ class ConnectionState(str, Enum):
 
 
 TIMEFRAME_NAMES = ("5m", "15m", "1h", "4h")
+MAX_HISTORY_COUNT = 20000
+HISTORY_PAGE_SIZE = 2000
 
 
 @dataclass(frozen=True)
@@ -334,23 +360,140 @@ class MT5Connector:
             "metadata": self._symbol_metadata(refreshed),
         }
 
+    @staticmethod
+    def _latest_rate_timestamp(rates: Any) -> int | None:
+        if rates is None or len(rates) == 0:
+            return None
+        names = getattr(getattr(rates, "dtype", None), "names", None)
+        if names and "time" in names:
+            values = rates["time"]
+        else:
+            values = []
+            for row in rates:
+                if isinstance(row, dict):
+                    values.append(row.get("time"))
+                else:
+                    try:
+                        values.append(row[0])
+                    except (TypeError, IndexError, KeyError):
+                        continue
+        valid = []
+        for value in values:
+            if hasattr(value, "item"):
+                value = value.item()
+            try:
+                number = float(value)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(number) and number > 0 and number.is_integer():
+                valid.append(int(number))
+        return max(valid) if valid else None
+
     @_serialized
+    def fetch_rates_detailed(
+        self, exact_symbol: str, timeframe: str, count: int, start_pos: int = 0
+    ):
+        """Fetch a bounded history window in pages and report pagination evidence."""
+        if timeframe not in self._timeframes or self._timeframes[timeframe] is None:
+            raise ValueError("unsupported MT5 timeframe")
+        if (
+            not isinstance(count, int) or isinstance(count, bool)
+            or count < 1 or count > MAX_HISTORY_COUNT
+        ):
+            raise ValueError(
+                f"count must be an integer between 1 and {MAX_HISTORY_COUNT}"
+            )
+        if (
+            not isinstance(start_pos, int) or isinstance(start_pos, bool)
+            or start_pos < 0 or start_pos + count > 1000000
+        ):
+            raise ValueError("start_pos must be an integer between 0 and 1000000")
+
+        self.select_symbol(exact_symbol)
+        before_timestamp = None
+        snapshot_check_performed = count > HISTORY_PAGE_SIZE
+        if snapshot_check_performed:
+            before = self.adapter.copy_rates_from_pos(
+                exact_symbol, self._timeframes[timeframe], 0, 1
+            )
+            before_timestamp = self._latest_rate_timestamp(before)
+
+        pages = []
+        page_sizes = []
+        page_start_positions = []
+        cursor = start_pos
+        remaining = count
+        while remaining > 0:
+            page_request = min(HISTORY_PAGE_SIZE, remaining)
+            page = self.adapter.copy_rates_from_pos(
+                exact_symbol, self._timeframes[timeframe], cursor, page_request
+            )
+            if page is None or len(page) == 0:
+                if not pages:
+                    error = (
+                        self.adapter.last_error()
+                        if hasattr(self.adapter, "last_error") else "no rates"
+                    )
+                    raise RuntimeError(f"broker returned no rates: {error}")
+                break
+            page_length = len(page)
+            if page_length > page_request:
+                raise RuntimeError("broker returned more bars than requested for a page")
+            pages.append(page)
+            page_sizes.append(page_length)
+            page_start_positions.append(cursor)
+            remaining -= page_length
+            if page_length < page_request:
+                break
+            cursor += page_length
+
+        after_timestamp = None
+        if snapshot_check_performed:
+            after = self.adapter.copy_rates_from_pos(
+                exact_symbol, self._timeframes[timeframe], 0, 1
+            )
+            after_timestamp = self._latest_rate_timestamp(after)
+            if before_timestamp is None or after_timestamp is None:
+                snapshot_stable = None
+            else:
+                snapshot_stable = before_timestamp == after_timestamp
+        else:
+            snapshot_stable = True
+
+        if len(pages) == 1:
+            rates = pages[0]
+        else:
+            ordered_pages = list(reversed(pages))
+            try:
+                import numpy as np
+                # MT5 position zero is newest; older pages must precede newer
+                # pages in the returned chronological sequence.
+                if not all(isinstance(page, np.ndarray) for page in ordered_pages):
+                    raise TypeError("test adapter pages are not NumPy arrays")
+                rates = np.concatenate(ordered_pages, axis=0)
+            except (ImportError, TypeError, ValueError):
+                rates = _CombinedRateBatch(ordered_pages)
+
+        metadata = {
+            "requested_count": count,
+            "returned_count": sum(page_sizes),
+            "page_count": len(pages),
+            "page_sizes": page_sizes,
+            "page_start_positions": page_start_positions,
+            "snapshot_check_performed": snapshot_check_performed,
+            "snapshot_stable": snapshot_stable,
+            "latest_bar_time_before": before_timestamp,
+            "latest_bar_time_after": after_timestamp,
+        }
+        return rates, metadata
+
     def fetch_rates(
         self, exact_symbol: str, timeframe: str, count: int, start_pos: int = 0
     ):
-        if timeframe not in self._timeframes or self._timeframes[timeframe] is None:
-            raise ValueError("unsupported MT5 timeframe")
-        if not isinstance(count, int) or isinstance(count, bool) or count < 1 or count > 2000:
-            raise ValueError("count must be an integer between 1 and 2000")
-        if not isinstance(start_pos, int) or isinstance(start_pos, bool) or start_pos < 0 or start_pos > 1000000:
-            raise ValueError("start_pos must be an integer between 0 and 1000000")
-        self.select_symbol(exact_symbol)
-        rates = self.adapter.copy_rates_from_pos(
-            exact_symbol, self._timeframes[timeframe], start_pos, count
+        """Compatibility wrapper returning only the fetched broker-rate array."""
+        rates, _ = self.fetch_rates_detailed(
+            exact_symbol, timeframe, count, start_pos
         )
-        if rates is None or len(rates) == 0:
-            error = self.adapter.last_error() if hasattr(self.adapter, "last_error") else "no rates"
-            raise RuntimeError(f"broker returned no rates: {error}")
         return rates
 
     @_serialized

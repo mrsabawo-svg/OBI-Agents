@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 
-LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v2"
+LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v3"
 DEFAULT_ID_WINDOW = 50
 QUALITY_SUMMARY_FIELDS = (
     "received_count",
@@ -31,6 +31,9 @@ REQUIRED_CANONICAL_METADATA = (
     "server_name",
     "account_environment",
     "account_fingerprint",
+    "history_status",
+    "history_report_id",
+    "history_session_model",
     "broker_symbol",
     "source_type",
 )
@@ -121,6 +124,7 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
     metadata_complete = metadata_complete and (
         len(fingerprint) == 64
         and all(char in "0123456789abcdef" for char in fingerprint)
+        and metadata.get("history_status") == "complete"
     )
     report_hash = metadata.get("canonical_validation_report_sha256", "")
     metadata_complete = metadata_complete and (
@@ -152,6 +156,16 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "server_name": metadata.get("server_name"),
         "account_environment": metadata.get("account_environment"),
         "account_fingerprint": metadata.get("account_fingerprint"),
+        "history_completeness": {
+            "report_id": metadata.get("history_report_id"),
+            "status": metadata.get("history_status"),
+            "session_model": metadata.get("history_session_model"),
+            "requested_count": metadata.get("history_requested_count"),
+            "returned_count": metadata.get("history_returned_count"),
+            "missing_interval_count": metadata.get("history_gap_count"),
+            "forming_count": metadata.get("history_forming_count"),
+            "closed_count": metadata.get("history_closed_count"),
+        },
         "broker_symbol": metadata.get("broker_symbol"),
         "source_type": metadata.get("source_type"),
         "quality_summary": quality_summary,

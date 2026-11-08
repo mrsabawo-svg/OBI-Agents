@@ -129,7 +129,7 @@ class ArchiveAgent:
         data_lineage = signal.get("data_lineage")
         if not isinstance(data_lineage, dict):
             data_lineage = {
-                "schema_version": "obi-data-lineage-v2",
+                "schema_version": "obi-data-lineage-v3",
                 "instrument_id": signal.get("symbol"),
                 "status": "unavailable",
                 "timeframes": {},

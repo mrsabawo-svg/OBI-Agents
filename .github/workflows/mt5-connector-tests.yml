@@ -24,4 +24,4 @@ jobs:
           python -m pip install Flask pytest
       - name: Run connector and bridge tests
         run: |
-          python -m pytest -q tests/test_mt5_connector.py tests/test_mt5_bridge.py tests/test_data_foundation.py
+          python -m pytest -q tests/test_mt5_connector.py tests/test_mt5_bridge.py tests/test_data_foundation.py tests/test_history_completeness.py
