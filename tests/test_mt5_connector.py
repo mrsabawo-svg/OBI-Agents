@@ -73,14 +73,90 @@ class FakeMT5:
         self.initialized = False
 
 
+TEST_FINGERPRINT_KEY = "unit-test-account-fingerprint-key-32-bytes-minimum"
+
+
 def make_connector(adapter=None, **kwargs):
     adapter = adapter or FakeMT5()
+    kwargs.setdefault("fingerprint_key", TEST_FINGERPRINT_KEY)
     connector = MT5Connector(
         adapter,
         ConnectionIdentity("Weltrade", "Weltrade-Demo", "demo"),
         **kwargs,
     )
     return connector, adapter
+
+
+def test_account_fingerprint_is_keyed_and_stable_for_the_same_account():
+    adapter = FakeMT5()
+    connector, _ = make_connector(adapter)
+    account = SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Demo",
+        login=123456, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_DEMO,
+    )
+    fingerprint = connector._fingerprint_for_account(account)
+    assert len(fingerprint) == 64
+    assert fingerprint == connector._fingerprint_for_account(account)
+
+    other_key = MT5Connector(
+        adapter,
+        ConnectionIdentity("Weltrade", "Weltrade-Demo", "demo"),
+        fingerprint_key="a-different-fingerprint-key-32-bytes",
+    )
+    assert other_key._fingerprint_for_account(account) != fingerprint
+
+
+def test_connector_requires_a_strong_fingerprint_key():
+    with pytest.raises(ValueError, match="at least 32"):
+        MT5Connector(
+            FakeMT5(),
+            ConnectionIdentity("Weltrade", "Weltrade-Demo", "demo"),
+            fingerprint_key="too-short",
+        )
+
+
+def test_connector_rejects_invalid_expected_fingerprint():
+    with pytest.raises(ValueError, match="lowercase SHA-256"):
+        make_connector(expected_account_fingerprint="not-a-digest")
+
+
+def test_expected_account_pin_is_checked_on_initial_authentication_and_restart():
+    original_account = SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Demo",
+        login=123456, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_DEMO,
+    )
+    probe, _ = make_connector()
+    expected = probe._fingerprint_for_account(original_account)
+
+    same_account_connector, _ = make_connector(
+        expected_account_fingerprint=expected
+    )
+    assert same_account_connector.connect() is True
+    identity = same_account_connector.get_account_identity()
+    assert identity["identity_pinned"] is True
+    assert identity["account_fingerprint"] == expected
+
+    switched_adapter = FakeMT5()
+    switched_adapter.account_info = lambda: SimpleNamespace(
+        company="Weltrade Ltd", server="Weltrade-Demo",
+        login=654321, trade_mode=FakeMT5.ACCOUNT_TRADE_MODE_DEMO,
+    )
+    restarted_connector, _ = make_connector(
+        switched_adapter,
+        expected_account_fingerprint=expected,
+    )
+    assert restarted_connector.connect() is False
+    assert "pinned account fingerprint" in restarted_connector.last_error
+
+
+def test_connector_requires_exact_configured_server():
+    connector = MT5Connector(
+        FakeMT5(),
+        ConnectionIdentity("Weltrade", "", "demo"),
+        fingerprint_key=TEST_FINGERPRINT_KEY,
+    )
+    assert connector.connect() is False
+    assert "exact configured broker server" in connector.last_error
 
 
 def test_connect_authenticates_and_verifies_broker_server():
