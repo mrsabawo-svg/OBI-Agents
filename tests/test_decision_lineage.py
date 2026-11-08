@@ -193,6 +193,7 @@ def test_archive_agent_preserves_verified_decision_lineage():
     }
     entry = ArchiveAgent()._build_entry(signal)
     assert entry["decision_lineage_status"] == "complete"
+    assert entry["decision_lineage_provenance_status"] == "complete"
     assert entry["decision_lineage_sha256"] == manifest["manifest_sha256"]
     assert entry["decision_lineage"] == manifest
 
@@ -211,6 +212,7 @@ def test_archive_agent_marks_missing_or_tampered_decision_lineage_unavailable():
     entry = ArchiveAgent()._build_entry(signal)
     assert entry["decision_lineage_status"] == "unavailable"
     assert entry["decision_lineage_sha256"] is None
+    assert entry["decision_lineage_provenance_status"] == "unavailable"
 
     manifest = build_decision_lineage(
         "EURUSD", _market_data(), _outputs(),
@@ -404,3 +406,18 @@ def test_intelligence_agent_does_not_archive_duplicate(monkeypatch):
     result = IntelligenceAgent("EURUSD").verdict(_intelligence_payload())
     assert result == {}
     assert events == []
+
+
+def test_decision_lineage_distinguishes_manifest_integrity_from_provenance_completeness():
+    manifest = build_decision_lineage(
+        "EURUSD",
+        _market_data(),
+        _outputs(),
+        {"schema_version": "obi-data-lineage-v3", "status": "unavailable", "timeframes": {}},
+        {},
+    )
+    assert manifest["status"] == "complete"
+    assert manifest["provenance_status"] == "partial"
+    assert any("Edge: closed archive snapshot hash unavailable" in item for item in manifest["warnings"])
+    assert any("pipeline data lineage is unavailable" in item for item in manifest["warnings"])
+    assert verify_decision_lineage(manifest)
