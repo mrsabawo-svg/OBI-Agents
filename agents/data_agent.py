@@ -4,7 +4,6 @@ Fetches OHLCV data across all timeframes for a symbol.
 """
 import os
 import requests
-import numpy as np
 import yfinance as yf
 import pandas as pd
 import ta as ta_lib
@@ -118,134 +117,71 @@ class DataAgent:
 
     def _fetch_synthetics(self, timeframes: list) -> dict:
         """
-        Fetches synthetic market data for Weltrade SyntX indices.
-        Attempts free MT5 bridge/REST feed if MT5_BRIDGE_URL is set,
-        otherwise generates deterministic continuous tick/candle series
-        matching Weltrade SyntX crash/boom and volatility specifications.
+        Fetch live Weltrade SyntX OHLCV through the configured MT5 bridge.
+
+        No simulated/random fallback is permitted in the production analysis
+        path: fabricated candles must never be mistaken for market evidence.
         """
         data = {}
         bridge_url = os.environ.get("MT5_BRIDGE_URL")
+        if not bridge_url:
+            print(
+                "[DATA] " + self.symbol
+                + ": MT5_BRIDGE_URL is not configured; refusing synthetic fallback"
+            )
+            return data
+
+        required = {"Open", "High", "Low", "Close", "Volume"}
         for tf in timeframes:
-            df = None
-            if bridge_url:
-                try:
-                    res = requests.get(
-                        f"{bridge_url.rstrip('/')}/ohlcv",
-                        params={"symbol": self.symbol, "timeframe": tf},
-                        timeout=5
-                    )
-                    if res.status_code == 200:
-                        parsed = res.json()
-                        if parsed and "data" in parsed:
-                            df = pd.DataFrame(parsed["data"])
-                            df["timestamp"] = pd.to_datetime(df["timestamp"])
-                            df.set_index("timestamp", inplace=True)
-                except Exception as e:
-                    print(f"[DATA] MT5 Bridge error for {self.symbol} {tf}: {e}")
+            try:
+                res = requests.get(
+                    f"{bridge_url.rstrip('/')}/ohlcv",
+                    params={"symbol": self.symbol, "timeframe": tf},
+                    timeout=5,
+                )
+                res.raise_for_status()
+                parsed = res.json()
+                rows = parsed.get("data") if isinstance(parsed, dict) else None
+                if not isinstance(rows, list) or not rows:
+                    print(f"[DATA] {self.symbol} {tf}: bridge returned no candle rows")
+                    continue
 
-            if df is None or df.empty:
-                df = self.generate_synthetic_ohlcv(self.symbol, tf)
+                df = pd.DataFrame(rows)
+                if "timestamp" not in df.columns or not required.issubset(df.columns):
+                    print(f"[DATA] {self.symbol} {tf}: invalid bridge schema")
+                    continue
 
-            if df is not None and not df.empty:
+                df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+                df = df.dropna(subset=["timestamp"]).set_index("timestamp")
+                for column in required:
+                    df[column] = pd.to_numeric(df[column], errors="coerce")
+                df = df.dropna(subset=list(required))
+                df = df[~df.index.duplicated(keep="last")].sort_index()
+
+                if df.empty:
+                    print(f"[DATA] {self.symbol} {tf}: no valid candles after parsing")
+                    continue
+
+                valid_ohlc = (
+                    (df["Low"] > 0)
+                    & (df["High"] >= df[["Open", "Close"]].max(axis=1))
+                    & (df["Low"] <= df[["Open", "Close"]].min(axis=1))
+                    & (df["High"] >= df["Low"])
+                )
+                df = df.loc[valid_ohlc]
+                if df.empty:
+                    print(f"[DATA] {self.symbol} {tf}: OHLC validation rejected all candles")
+                    continue
+
                 df = self._add_indicators(df)
                 df.dropna(inplace=True)
-                data[tf] = df
-                print(f"[DATA] {self.symbol} {tf}: {len(df)} candles")
+                if not df.empty:
+                    data[tf] = df
+                    print(f"[DATA] {self.symbol} {tf}: {len(df)} live bridge candles")
+            except Exception as e:
+                print(f"[DATA] MT5 Bridge error for {self.symbol} {tf}: {e}")
 
         return data
-
-    @staticmethod
-    def generate_synthetic_ohlcv(symbol: str, timeframe: str, count: int = 350) -> pd.DataFrame:
-        """
-        Generates realistic synthetic OHLCV time series for Weltrade SyntX instruments.
-        Specs:
-        - PAIN_999: PainX 999 (Crash index: steady upward drift with sharp crash spikes averaging ~1 in 999 ticks)
-        - GAIN_999: GainX 999 (Boom index: steady downward drift with sharp boom spikes averaging ~1 in 999 ticks)
-        - PAIN_1200: PainX 1200 (Crash index: steady upward drift with sharp crash spikes averaging ~1 in 1200 ticks)
-        - GAIN_1200: GainX 1200 (Boom index: steady downward drift with sharp boom spikes averaging ~1 in 1200 ticks)
-        - SFX_VOL_75: Continuous constant-volatility index (75% annualised volatility, Gaussian random walk with momentum)
-        """
-        now = pd.Timestamp.now(tz="UTC").floor("min")
-        tf_freq_map = {
-            "5m": ("5min", pd.Timedelta(minutes=5)),
-            "15m": ("15min", pd.Timedelta(minutes=15)),
-            "1h": ("1h", pd.Timedelta(hours=1)),
-            "4h": ("4h", pd.Timedelta(hours=4)),
-        }
-        freq_str, delta = tf_freq_map.get(timeframe, ("15min", pd.Timedelta(minutes=15)))
-        start_time = now - delta * (count - 1)
-        timestamps = pd.date_range(start=start_time, periods=count, freq=freq_str)
-
-        # Deterministic seed based on symbol, timeframe, and current hour for repeatable consistency
-        seed = abs(hash(f"{symbol}-{timeframe}-{now.strftime('%Y-%m-%d-%H')}")) % (2**32)
-        rng = np.random.RandomState(seed)
-
-        # Baseline parameters per symbol type
-        if "PAIN" in symbol:
-            base_price = 100000.0
-            ticks_per_spike = 1200 if "1200" in symbol else 999
-            # Approx 30 ticks per minute -> 5m=150 ticks, 15m=450 ticks, 1h=1800 ticks
-            ticks_per_candle = {"5m": 150, "15m": 450, "1h": 1800, "4h": 7200}.get(timeframe, 450)
-            spike_prob = min(ticks_per_candle / ticks_per_spike, 0.95)
-            # Upward steady drift with occasional sharp downside spike
-            drift = 0.0012
-            spike_mag = -0.015
-            vol = 0.002
-            is_spike_down = True
-        elif "GAIN" in symbol:
-            base_price = 100000.0
-            ticks_per_spike = 1200 if "1200" in symbol else 999
-            ticks_per_candle = {"5m": 150, "15m": 450, "1h": 1800, "4h": 7200}.get(timeframe, 450)
-            spike_prob = min(ticks_per_candle / ticks_per_spike, 0.95)
-            # Downward steady drift with occasional sharp upside boom spike
-            drift = -0.0012
-            spike_mag = 0.015
-            vol = 0.002
-            is_spike_down = False
-        else:  # SFX_VOL_75
-            base_price = 5000.0
-            spike_prob = 0.0
-            spike_mag = 0.0
-            drift = 0.0001
-            vol = 0.007
-            is_spike_down = False
-
-        prices = [base_price]
-        opens, highs, lows, closes, volumes = [], [], [], [], []
-
-        for i in range(count):
-            curr_open = prices[-1]
-            has_spike = rng.rand() < spike_prob
-            candle_ret = drift + rng.normal(0, vol)
-            if has_spike:
-                candle_ret += spike_mag
-
-            curr_close = max(curr_open * (1.0 + candle_ret), 1.0)
-            noise_high = abs(rng.normal(0, vol * 0.7)) * curr_open
-            noise_low = abs(rng.normal(0, vol * 0.7)) * curr_open
-
-            curr_high = max(curr_open, curr_close) + noise_high
-            curr_low = min(curr_open, curr_close) - noise_low
-
-            opens.append(curr_open)
-            highs.append(curr_high)
-            lows.append(curr_low)
-            closes.append(curr_close)
-            volumes.append(int(rng.uniform(500, 2500)))
-
-            prices.append(curr_close)
-
-        df = pd.DataFrame(
-            {
-                "Open": opens,
-                "High": highs,
-                "Low": lows,
-                "Close": closes,
-                "Volume": volumes,
-            },
-            index=timestamps,
-        )
-        return df
 
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         try:
