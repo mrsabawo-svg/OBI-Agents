@@ -202,7 +202,6 @@ class MT5Connector:
     def connect(self) -> bool:
         self.state = ConnectionState.INITIALIZING
         self.last_error = None
-        self._authenticated_fingerprint = None
         if self.adapter is None:
             return self._fail("MetaTrader5 adapter is unavailable")
         if self.identity.environment not in {"demo", "live", "contest"}:
@@ -241,7 +240,15 @@ class MT5Connector:
 
             if not self._identity_matches(account):
                 return self._fail(self.last_error or "connected account identity rejected")
-            self._authenticated_fingerprint = self._fingerprint_for_account(account)
+            candidate_fingerprint = self._fingerprint_for_account(account)
+            if (
+                self._authenticated_fingerprint is not None
+                and candidate_fingerprint != self._authenticated_fingerprint
+            ):
+                return self._fail(
+                    "connected account fingerprint differs from the previously authenticated account"
+                )
+            self._authenticated_fingerprint = candidate_fingerprint
 
             self.state = ConnectionState.AUTHENTICATED
             return True
