@@ -344,7 +344,10 @@ AGENT_SPECS = {
             "minimum_sample_scope": "global closed archive, not per subgroup",
             "low_sample_defaults_pct": 50.0,
         },
-        "inputs": ["closed signal archive", "Trigger.tags", "Bias", "Regime.label"],
+        "inputs": [
+            "symbol", "closed archive status/symbol/regime/tags/outcome",
+            "Trigger.tags", "Regime.label",
+        ],
         "outputs": [
             "symbol_wr", "grade_wr", "regime_wr", "tag_wr",
             "overall_wr", "sample_size", "low_sample",
