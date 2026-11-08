@@ -368,6 +368,7 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
 def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
     rows = [{
+        "observation_id": "obs-0",
         "timestamp": "2026-11-08T00:00:00Z", "Open": 5000,
         "High": 5002, "Low": 4998, "Close": 5001, "Volume": 100,
         "volume_type": "tick_volume", "bar_status": "closed",
