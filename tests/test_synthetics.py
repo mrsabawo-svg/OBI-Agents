@@ -168,6 +168,9 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     assert "5m" in data
     assert not data["5m"].empty
     assert {"Open", "High", "Low", "Close", "Volume"}.issubset(data["5m"].columns)
+    assert {"CanonicalCandleID", "RawObservationID"}.issubset(data["5m"].columns)
+    assert data["5m"]["CanonicalCandleID"].notna().all()
+    assert data["5m"]["RawObservationID"].notna().all()
 
 
 def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
