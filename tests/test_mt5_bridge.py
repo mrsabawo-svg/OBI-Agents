@@ -279,3 +279,16 @@ def test_ohlcv_blocks_metadata_drift_after_symbol_discovery(monkeypatch, tmp_pat
     response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
     assert response.status_code == 409
     assert "metadata changed" in response.get_json()["error"]
+
+
+def test_verified_session_model_configuration_is_explicit_and_strict():
+    assert mt5_bridge._load_verified_session_models("") == {}
+    assert mt5_bridge._load_verified_session_models(
+        '{"SFX_VOL_75":"continuous_24_7"}'
+    ) == {"SFX_VOL_75": "continuous_24_7"}
+    with pytest.raises(ValueError, match="valid JSON"):
+        mt5_bridge._load_verified_session_models("{invalid")
+    with pytest.raises(ValueError, match="continuous_24_7"):
+        mt5_bridge._load_verified_session_models(
+            '{"EURUSD":"assumed_24_5"}'
+        )
