@@ -31,7 +31,7 @@ class ArchiveAgent:
             # Prevent duplicate writes for the same signal id.
             if any(item.get("id") == entry.get("id") for item in archive):
                 print("[ARCHIVE] Duplicate signal ignored: " + str(entry.get("id")))
-                return True
+                return False
 
             archive.append(entry)
             save_memory(memory)
