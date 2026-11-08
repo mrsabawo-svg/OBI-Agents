@@ -75,6 +75,7 @@ def test_canonical_candle_persists_with_exact_raw_lineage(tmp_path):
     assert saved["volume_type"] == "tick_volume"
     assert saved["bar_status"] == "closed"
     assert len(saved["record_sha256"]) == 64
+    assert result["record_sha256"] == [saved["record_sha256"]]
 
 
 def test_canonical_store_rejects_missing_source_observation(tmp_path):
@@ -148,3 +149,17 @@ def test_canonical_records_and_source_links_are_append_only(tmp_path):
                 "DELETE FROM canonical_candle_sources WHERE candle_id = ?",
                 (candle_id,),
             )
+
+
+
+def test_canonical_batch_is_atomic_when_later_record_is_invalid(tmp_path):
+    path, source_id = setup_store(tmp_path)
+    store = CanonicalCandleStore(path)
+    valid = candle(source_id)
+    invalid = candle(source_id)
+    invalid["close_time"] = "2026-11-08T10:00:00Z"
+
+    with pytest.raises(CanonicalDataError, match="close_time"):
+        store.append_batch([valid, invalid])
+
+    assert store.count() == 0
