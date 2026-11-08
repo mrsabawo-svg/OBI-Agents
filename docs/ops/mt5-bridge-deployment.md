@@ -62,7 +62,7 @@ A successful HTTP response does not by itself promote an instrument to verified.
 
 ## Connector capabilities and API
 
-The reusable connector has explicit lifecycle states: DISCONNECTED, INITIALIZING, CONNECTED, AUTHENTICATED, and ERROR. A session is trusted only after terminal connectivity and configured broker/server identity checks pass. If the session drops, the connector performs one bounded reconnect attempt when a data request arrives; it does not retry indefinitely.
+The reusable connector has explicit lifecycle states: DISCONNECTED, INITIALIZING, CONNECTED, AUTHENTICATED, and ERROR. A session is trusted only after terminal connectivity, configured broker/server identity checks, and actual MT5 account trade-mode verification pass. Access to the process-wide MT5 API is serialized across HTTP worker threads so concurrent requests cannot interleave terminal operations. If the session drops, the connector performs one bounded reconnect attempt when a data request arrives; it does not retry indefinitely.
 
 - GET /health reports connection state only.
 - GET /symbols returns terminal-visible symbol names and selection/visibility flags. Discovery does not classify a symbol as SyntX or mark it analysis-eligible.
