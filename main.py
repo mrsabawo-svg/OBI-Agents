@@ -14,7 +14,6 @@ from agents.zone_agent         import ZoneAgent
 from agents.trigger_agent      import TriggerAgent
 from agents.regime_agent       import RegimeAgent
 from agents.health_agent       import HealthAgent
-from agents.archive_agent      import ArchiveAgent
 from agents.lifecycle_agent    import LifecycleAgent
 from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
@@ -123,8 +122,9 @@ def run(symbol: str, news: dict = None) -> dict:
             "decision_lineage": decision_lineage,
         }
 
-        IntelligenceAgent(symbol).verdict(payload)
-        ArchiveAgent().log(payload)
+        intelligence_result = IntelligenceAgent(symbol).verdict(payload)
+        if not intelligence_result:
+            return {"blocked": "duplicate_or_archive_persistence"}
 
         try:
             ExecutionAgent(symbol).propose(payload)
