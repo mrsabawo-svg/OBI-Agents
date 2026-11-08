@@ -200,9 +200,21 @@ def build_data_lineage(
     else:
         overall_status = "untracked"
 
+    feature_statuses = [
+        item.get("feature_lineage_status", "unavailable")
+        for item in manifests.values()
+    ]
+    if feature_statuses and all(status == "complete" for status in feature_statuses):
+        overall_feature_status = "complete"
+    elif any(status in {"complete", "partial"} for status in feature_statuses):
+        overall_feature_status = "partial"
+    else:
+        overall_feature_status = "unavailable"
+
     return {
         "schema_version": LINEAGE_SCHEMA_VERSION,
         "instrument_id": instrument_id,
         "status": overall_status,
+        "feature_lineage_status": overall_feature_status,
         "timeframes": manifests,
     }
