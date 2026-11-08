@@ -10,9 +10,9 @@ def test_bridge_rejects_unsupported_timeframe():
 
 def test_bridge_rejects_unbounded_count():
     client = mt5_bridge.app.test_client()
-    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2001")
+    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=20001")
     assert response.status_code == 400
-    assert "between 1 and 2000" in response.get_json()["error"]
+    assert "between 1 and 20000" in response.get_json()["error"]
 
 
 def test_bridge_rejects_non_integer_count():
@@ -30,16 +30,10 @@ def test_bridge_requires_token_for_non_loopback_binding(monkeypatch):
     assert response.status_code == 401
 
 
-def test_position_zero_marks_only_latest_returned_bar_forming():
-    assert mt5_bridge._bar_status(0, 2, 0) == "closed"
-    assert mt5_bridge._bar_status(1, 2, 0) == "closed"
-    assert mt5_bridge._bar_status(2, 2, 0) == "forming"
-
-
-def test_historical_pagination_marks_every_returned_bar_closed():
-    assert mt5_bridge._bar_status(0, 2, 300) == "closed"
-    assert mt5_bridge._bar_status(1, 2, 300) == "closed"
-    assert mt5_bridge._bar_status(2, 2, 300) == "closed"
+def test_bar_status_uses_history_completeness_forming_indexes():
+    assert mt5_bridge._bar_status(0, set()) == "closed"
+    assert mt5_bridge._bar_status(1, {1}) == "forming"
+    assert mt5_bridge._bar_status(2, {1}) == "closed"
 
 
 def test_quarantine_detects_invalid_timestamp_numeric_ohlc_and_duplicates():
@@ -73,7 +67,7 @@ def test_response_row_handles_invalid_timestamp_and_non_finite_prices():
         "real_volume": 0, "spread": 1,
     }
     response = mt5_bridge._response_row(
-        row, 0, None, 0, ["INVALID_TIMESTAMP", "INVALID_NUMERIC"], "raw-observation-001"
+        row, 0, set(), ["INVALID_TIMESTAMP", "INVALID_NUMERIC"], "raw-observation-001"
     )
     assert response["observation_id"] == "raw-observation-001"
     assert response["timestamp"] is None
@@ -85,6 +79,10 @@ def test_response_row_handles_invalid_timestamp_and_non_finite_prices():
 def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
+    from datetime import datetime, timezone
+
+    current_bucket = int(datetime.now(timezone.utc).timestamp() // 300) * 300
+
     class FakeRates:
         dtype = SimpleNamespace(names=(
             "time", "open", "high", "low", "close",
@@ -93,8 +91,8 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
 
         def __iter__(self):
             return iter([
-                (100, 10.0, 12.0, 9.0, 11.0, 10, 0, 1),
-                (200, 10.0, 8.0, 9.0, 11.0, 10, 0, 1),
+                (current_bucket - 300, 10.0, 12.0, 9.0, 11.0, 10, 0, 1),
+                (current_bucket, 10.0, 8.0, 9.0, 11.0, 10, 0, 1),
             ])
 
     class FakeConnector:
@@ -132,9 +130,17 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
             assert symbol == "SFX Vol 75"
             return {"name": symbol, "description": symbol, "metadata": self.metadata}
 
-        def fetch_rates(self, symbol, timeframe, count, start_pos):
+        def fetch_rates_detailed(self, symbol, timeframe, count, start_pos):
             assert (symbol, timeframe, count, start_pos) == ("SFX Vol 75", "5m", 2, 0)
-            return FakeRates()
+            return FakeRates(), {
+                "requested_count": count,
+                "returned_count": 2,
+                "page_count": 1,
+                "page_sizes": [2],
+                "page_start_positions": [start_pos],
+                "snapshot_check_performed": False,
+                "snapshot_stable": True,
+            }
 
         def is_connected(self):
             return True
