@@ -127,26 +127,34 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
     timeframe_verified = (
         isinstance(verified_timeframes, list) and timeframe in verified_timeframes
     )
-    fingerprint = metadata.get("account_fingerprint", "")
-    metadata_complete = metadata_complete and (
-        len(fingerprint) == 64
+    fingerprint = metadata.get("account_fingerprint")
+    fingerprint_valid = (
+        isinstance(fingerprint, str)
+        and len(fingerprint) == 64
         and all(char in "0123456789abcdef" for char in fingerprint)
+    )
+    instrument_metadata_hash = metadata.get("instrument_metadata_sha256")
+    instrument_metadata_hash_valid = (
+        isinstance(instrument_metadata_hash, str)
+        and len(instrument_metadata_hash) == 64
+        and all(char in "0123456789abcdef" for char in instrument_metadata_hash)
+    )
+    report_hash = metadata.get("canonical_validation_report_sha256")
+    report_hash_valid = (
+        isinstance(report_hash, str)
+        and len(report_hash) == 64
+        and all(char in "0123456789abcdef" for char in report_hash.lower())
+    )
+    metadata_complete = metadata_complete and (
+        fingerprint_valid
+        and instrument_metadata_hash_valid
+        and report_hash_valid
         and metadata.get("account_identity_pinned") is True
         and metadata.get("instrument_verification_status") == "verified"
         and metadata.get("timeframe_verified") is True
         and metadata.get("analysis_eligible") is True
         and timeframe_verified
         and metadata.get("history_status") == "complete"
-    )
-    instrument_metadata_hash = metadata.get("instrument_metadata_sha256", "")
-    metadata_complete = metadata_complete and (
-        len(instrument_metadata_hash) == 64
-        and all(char in "0123456789abcdef" for char in instrument_metadata_hash)
-    )
-    report_hash = metadata.get("canonical_validation_report_sha256", "")
-    metadata_complete = metadata_complete and (
-        len(report_hash) == 64
-        and all(char in "0123456789abcdef" for char in report_hash.lower())
     )
 
     if ids_complete and metadata_complete:
