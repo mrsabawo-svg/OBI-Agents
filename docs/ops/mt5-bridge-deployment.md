@@ -135,7 +135,7 @@ This is the first direct lineage integration. Derived indicator/feature dependen
 
 ## Signal archive lineage manifest
 
-Each scan builds a bounded `obi-data-lineage-v3` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
+Each scan builds a bounded `obi-data-lineage-v4` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
 
 Manifest status is explicit. These labels describe provenance coverage for the data frames used by the scan, not broker-history completeness, data quality approval, or trading eligibility:
 - `complete`: every expected timeframe has canonical IDs and a complete immutable source/report reference.
