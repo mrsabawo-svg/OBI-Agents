@@ -175,6 +175,8 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     lineage = build_data_lineage(data, "SFX_VOL_75", expected_timeframes=["5m"])
     assert lineage["status"] == "complete"
     assert lineage["timeframes"]["5m"]["validation_report_id"] == "accepted-report"
+    assert lineage["timeframes"]["5m"]["quality_summary"]["received_count"] == 80
+    assert lineage["timeframes"]["5m"]["quality_summary"]["durable_quarantined_count"] == 0
 
 
 def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
