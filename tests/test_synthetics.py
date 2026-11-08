@@ -173,6 +173,52 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     assert data["5m"]["RawObservationID"].notna().all()
 
 
+def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+    rows = [{
+        "observation_id": "obs-1",
+        "timestamp": "2026-11-08T00:00:00Z",
+        "Open": 5000, "High": 5002, "Low": 4998, "Close": 5001,
+        "Volume": 100, "volume_type": "tick_volume",
+        "bar_status": "closed", "quarantine_reasons": [],
+    }]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ok", "symbol_id": "SFX_VOL_75", "timeframe": "5m",
+                "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo", "account_environment": "demo",
+                "source_type": "broker_bars",
+                "raw_persistence": {
+                    "persisted": True, "batch_id": "lineage-test",
+                    "inserted_count": 1, "quarantine_count": 0,
+                    "observation_ids": ["obs-1"], "quarantine_ids": [],
+                    "quarantine_records": [],
+                },
+                "quality_report": {
+                    "report_id": "lineage-report", "received_count": 1,
+                    "quarantined_observation_count": 0,
+                    "quarantine_record_count": 0, "reason_counts": {},
+                },
+                "canonical_persistence": {
+                    "persisted": True, "inserted_count": 0,
+                    "candle_ids": [], "source_lineage": [],
+                    "validation_report_id": "lineage-report",
+                    "validation_report_sha256": "a" * 64,
+                },
+                "data": rows,
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
+
+    assert data == {}
+
+
 def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
 
