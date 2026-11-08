@@ -106,8 +106,9 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=80, freq="5min")
     rows = []
     price = 5000.0
-    for timestamp in timestamps:
+    for index, timestamp in enumerate(timestamps):
         rows.append({
+            "observation_id": f"obs-{index}",
             "timestamp": timestamp.isoformat(),
             "Open": price,
             "High": price + 2,
@@ -134,6 +135,7 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                     "inserted_count": len(rows), "quarantine_count": 0,
                     "observation_ids": [f"obs-{i}" for i in range(len(rows))],
                     "quarantine_ids": [],
+                    "quarantine_records": [],
                 },
                 "quality_report": {
                     "received_count": len(rows), "quarantined_observation_count": 0,
@@ -154,6 +156,7 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
 
     rows = [{
+        "observation_id": "obs-0",
         "timestamp": "2026-11-08T00:00:00Z",
         "Open": 5000,
         "High": 4990,
@@ -200,6 +203,8 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
     for index, timestamp in enumerate(timestamps):
         price = 5000 + index
         rows.append({
+            "observation_id": f"obs-{index}",
+            "observation_id": f"obs-{index}",
             "timestamp": timestamp.isoformat(), "Open": price,
             "High": price + 2, "Low": price - 2, "Close": price + 1,
             "Volume": 100, "volume_type": "tick_volume",
@@ -286,6 +291,7 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
     for index, timestamp in enumerate(timestamps):
         price = 5000 + index
         rows.append({
+            "observation_id": f"obs-{index}",
             "timestamp": timestamp.isoformat(), "Open": price,
             "High": price + 2, "Low": price - 2, "Close": price + 1,
             "Volume": 100, "volume_type": "tick_volume",
@@ -308,6 +314,11 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                     "inserted_count": len(rows), "quarantine_count": 1,
                     "observation_ids": [f"obs-{i}" for i in range(len(rows))],
                     "quarantine_ids": ["quarantine-0"],
+                    "quarantine_records": [{
+                        "quarantine_id": "quarantine-0",
+                        "observation_id": "obs-10",
+                        "reason_code": "INVALID_OHLC",
+                    }],
                 },
                 "quality_report": {
                     "received_count": len(rows), "quarantined_observation_count": 1,
@@ -347,6 +358,7 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                     "persisted": True, "batch_id": "mismatch-test",
                     "inserted_count": 1, "quarantine_count": 0,
                     "observation_ids": ["obs-0"], "quarantine_ids": [],
+                    "quarantine_records": [],
                 },
                 "quality_report": {
                     "received_count": 1, "quarantined_observation_count": 0,
