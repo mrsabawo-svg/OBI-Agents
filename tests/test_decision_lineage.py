@@ -14,6 +14,7 @@ from core.decision_lineage import (
     AGENT_SPECS,
     build_decision_lineage,
     verify_decision_lineage,
+    _sha256,
 )
 from core.models import BiasResult, EdgeResult, ScoreResult, TriggerResult
 
@@ -138,6 +139,19 @@ def test_decision_lineage_verification_detects_tampering():
     )
     assert verify_decision_lineage(manifest)
     manifest["agent_traces"]["HTF"]["output"]["bias"] = "BEARISH"
+    assert not verify_decision_lineage(manifest)
+
+
+def test_decision_lineage_detects_nested_tampering_even_if_outer_hash_is_recomputed():
+    manifest = build_decision_lineage(
+        "EURUSD", _market_data(), _outputs(),
+        {"schema_version": "obi-data-lineage-v3", "status": "complete", "timeframes": {}},
+        {"Edge": {"archive_snapshot_sha256": "e" * 64}},
+    )
+    manifest["agent_specs"]["HTF"]["formula_version"] = "tampered"
+    material = dict(manifest)
+    material.pop("manifest_sha256")
+    manifest["manifest_sha256"] = _sha256(material)
     assert not verify_decision_lineage(manifest)
 
 
