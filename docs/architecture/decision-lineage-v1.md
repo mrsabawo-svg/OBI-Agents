@@ -4,7 +4,7 @@
 
 Every fired signal should preserve enough evidence to identify the exact decision logic that produced it. This includes the formula identity and version, parameters, declared inputs and outputs, source-code hashes, actual input/output hashes, runtime dependency versions, and the upstream-agent chain.
 
-The registry in \`core/decision_lineage.py\` is the machine-readable source of truth. This document explains the contract and the current baseline.
+The registry in `core/decision_lineage.py` is the machine-readable source of truth. This document explains the contract and the current baseline.
 
 ## Versioning policy
 
@@ -17,7 +17,7 @@ The registry in \`core/decision_lineage.py\` is the machine-readable source of t
 
 ## What each archived signal records
 
-The \`obi-decision-lineage-v1\` manifest contains:
+The `obi-decision-lineage-v1` manifest contains:
 
 - Pipeline and schema versions, instrument ID, and evaluation time.
 - The data-lineage manifest hash and per-timeframe DataFrame hashes, row counts, columns, and index boundaries.
@@ -29,22 +29,22 @@ The \`obi-decision-lineage-v1\` manifest contains:
 
 The EdgeAgent trace also references a hash of the exact closed-archive fields used by its historical win-rate calculations. The SessionAgent records the SAST timestamp used for its session decision.
 
-\`status=complete\` means the versioned manifest was built and its contents are self-verifying. \`provenance_status\` separately reports whether all expected input references were available. A complete manifest can therefore carry partial-provenance warnings; these are not silently discarded.
+`status=complete` means the versioned manifest was built and its contents are self-verifying. `provenance_status` separately reports whether all expected input references were available. A complete manifest can therefore carry partial-provenance warnings; these are not silently discarded.
 
 ## Current baseline formula versions
 
 | Agent | Formula ID | Formula version |
 |---|---|---:|
-| Session | \`session-sast-eligibility\` | 1.0.0 |
-| HTF | \`htf-ema-and-extreme-directional-vote\` | 1.0.0 |
-| Regime | \`hmm-volatility-regime-classifier\` | 1.0.0 |
-| MTF | \`mtf-directional-structure-confluence\` | 1.0.0 |
-| Bias | \`bias-seven-factor-filter-v4-3\` | 4.3.0 |
-| Zone | \`premium-discount-orderblock-htf-targets\` | 1.0.0 |
-| LTF | \`ltf-entry-fvg-ob-momentum-atr\` | 1.0.0 |
-| Trigger | \`trigger-final-entry-confirmation\` | 1.0.0 |
-| Edge | \`closed-archive-historical-edge\` | 1.0.0 |
-| Score | \`weighted-confidence-score-v4-3\` | 4.3.0 |
+| Session | `session-sast-eligibility` | 1.0.0 |
+| HTF | `htf-ema-and-extreme-directional-vote` | 1.0.0 |
+| Regime | `hmm-volatility-regime-classifier` | 1.0.0 |
+| MTF | `mtf-directional-structure-confluence` | 1.0.0 |
+| Bias | `bias-seven-factor-filter-v4-3` | 4.3.0 |
+| Zone | `premium-discount-orderblock-htf-targets` | 1.0.0 |
+| LTF | `ltf-entry-fvg-ob-momentum-atr` | 1.0.0 |
+| Trigger | `trigger-final-entry-confirmation` | 1.0.0 |
+| Edge | `closed-archive-historical-edge` | 1.0.0 |
+| Score | `weighted-confidence-score-v4-3` | 4.3.0 |
 
 These are baseline identifiers assigned to the behavior currently present in the repository. They are not a claim that the formulas have been independently validated or are optimal.
 
@@ -59,7 +59,7 @@ The versioned specification records, rather than silently repairs, the following
 5. Bias Grade D is reachable only at exactly two factors; fewer than two are blocked. The embedded Grade C win-rate claims do not identify a dataset/report version.
 6. Zone alignment is advisory; TriggerAgent permits a misaligned zone.
 7. EdgeAgent's minimum sample applies to the global closed archive, not each symbol/regime/tag subgroup. Tag win rate is calculated but not used by ScoreAgent.
-8. SessionAgent hard-codes synthetic 24/7 eligibility. Its \`peak\` flag mirrors any globally active kill zone, even if that zone is not preferred for the instrument. The configured London Close label has no corresponding kill-zone window.
+8. SessionAgent hard-codes synthetic 24/7 eligibility. Its `peak` flag mirrors any globally active kill zone, even if that zone is not preferred for the instrument. The configured London Close label has no corresponding kill-zone window.
 9. The broker-history session model is separate from SessionAgent's trading-eligibility rules. A synthetic label must not be treated as proof of a broker's trading calendar.
 
 These issues should be prioritized in a separate formula-review and calibration workstream. Versioning must not be used to imply that the current logic is sound.
