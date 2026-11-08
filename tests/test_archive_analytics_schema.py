@@ -132,6 +132,7 @@ class DataLineageManifestTest(unittest.TestCase):
             max_id_window=2,
         )
 
+        self.assertEqual(manifest["schema_version"], "obi-data-lineage-v4")
         self.assertEqual(manifest["status"], "partial")
         self.assertEqual(manifest["timeframes"]["5m"]["status"], "canonical")
         self.assertEqual(
