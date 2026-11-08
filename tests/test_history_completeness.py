@@ -189,3 +189,29 @@ def test_historical_window_does_not_apply_latest_bar_freshness_check():
 def test_unsupported_timeframe_is_rejected(timeframe):
     with pytest.raises(ValueError, match="unsupported"):
         assess_history_completeness([], timeframe, 1, retrieved_at=NOW)
+
+
+def test_noncontiguous_pagination_boundaries_are_incomplete():
+    report = assess_history_completeness(
+        rows(1794138600, 1794138900, 1794139200),
+        "5m",
+        3,
+        fetch(3, page_sizes=[2, 1], starts=[0, 3]),
+        retrieved_at=NOW,
+    )
+    assert report["status"] == "incomplete"
+    assert "PAGINATION_BOUNDARY_INVALID" in report["reasons"]
+
+
+def test_multpage_history_without_snapshot_check_is_unverifiable():
+    metadata = fetch(3, page_sizes=[2, 1], starts=[0, 2])
+    metadata["snapshot_check_performed"] = False
+    report = assess_history_completeness(
+        rows(1794138600, 1794138900, 1794139200),
+        "5m",
+        3,
+        metadata,
+        retrieved_at=NOW,
+    )
+    assert report["status"] == "unverifiable"
+    assert "PAGINATION_SNAPSHOT_UNVERIFIABLE" in report["reasons"]
