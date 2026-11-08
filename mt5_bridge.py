@@ -449,6 +449,7 @@ def verify_instrument():
                 or not isinstance(quality, dict)
                 or quality.get("account_fingerprint") != account_fingerprint
                 or quality.get("account_identity_pinned") is not True
+                or quality.get("instrument_metadata_sha256") != current_metadata_sha256
                 or not isinstance(history, dict)
                 or history.get("status") != "complete"
                 or history.get("account_fingerprint") != account_fingerprint
