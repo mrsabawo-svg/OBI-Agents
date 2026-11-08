@@ -74,6 +74,9 @@ def test_registry_verified_record_requires_evidence_fields():
         "verification_status": "verified",
         "availability_status": "data_verified",
         "supported_timeframes": ["5m"],
+        "account_environment": "demo",
+        "evidence_refs": ["evidence://account-observation-001"],
+        "last_verified_at": "2026-11-08T10:00:00Z",
     })
     assert validate_instrument_record(record) is record
 
