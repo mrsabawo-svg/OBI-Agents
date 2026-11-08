@@ -93,6 +93,10 @@ def require_bridge_authentication():
 def init_mt5():
     if mt5 is None:
         return False, "MetaTrader5 package not installed"
+    if not MT5_BROKER_NAME or MT5_BROKER_NAME.lower() == "unknown":
+        return False, "MT5_BROKER_NAME must identify the configured broker"
+    if MT5_ACCOUNT_ENVIRONMENT not in {"demo", "live", "contest"}:
+        return False, "MT5_ACCOUNT_ENVIRONMENT must be demo, live, or contest"
 
     init_kwargs = {}
     if MT5_PATH:
