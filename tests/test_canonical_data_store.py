@@ -156,10 +156,10 @@ def test_canonical_batch_is_atomic_when_later_record_is_invalid(tmp_path):
     path, source_id = setup_store(tmp_path)
     store = CanonicalCandleStore(path)
     valid = candle(source_id)
-    invalid = candle(source_id)
-    invalid["close_time"] = "2026-11-08T10:00:00Z"
+    invalid_source = candle(source_id)
+    invalid_source["source_observation_ids"] = ["not-in-the-raw-store"]
 
-    with pytest.raises(CanonicalDataError, match="close_time"):
-        store.append_batch([valid, invalid])
+    with pytest.raises(CanonicalDataError, match="do not exist"):
+        store.append_batch([valid, invalid_source])
 
     assert store.count() == 0
