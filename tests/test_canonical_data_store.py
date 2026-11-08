@@ -242,3 +242,23 @@ def test_canonical_candle_rejects_unknown_validation_status():
 
     with pytest.raises(CanonicalDataError, match="validation_status"):
         validate_canonical_candle(record)
+
+
+
+def test_validation_report_is_persisted_when_no_candles_are_eligible(tmp_path):
+    path, _ = setup_store(tmp_path)
+    store = CanonicalCandleStore(path)
+    report = validation_report(report_id="all-quarantined-report")
+
+    result = store.append_batch([], validation_report=report)
+
+    assert result["inserted_count"] == 0
+    assert result["candle_ids"] == []
+    assert result["source_lineage"] == []
+    assert result["validation_report_id"] == "all-quarantined-report"
+    with sqlite3.connect(path) as connection:
+        saved = connection.execute(
+            "SELECT report_id, report_sha256 FROM canonical_validation_reports"
+        ).fetchone()
+    assert saved[0] == "all-quarantined-report"
+    assert len(saved[1]) == 64
