@@ -222,6 +222,7 @@ def get_ohlcv():
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
         "platform": "MT5",
         "timeframe": timeframe,
+        "start_pos": start_pos,
         "source_type": "broker_bars",
         "volume_type": "tick_volume",
         "retrieved_at": envelope["retrieved_at"],
