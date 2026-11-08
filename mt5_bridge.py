@@ -18,7 +18,7 @@ from core.mt5_connector import ConnectionIdentity, MT5Connector
 from core.raw_observation_store import RawObservationStore
 from core.canonical_data_store import CanonicalCandleStore
 from core.instrument_registry_store import InstrumentRegistryStore, metadata_fingerprint
-from core.history_completeness import assess_history_completeness
+from core.history_completeness import assess_history_completeness, TIMEFRAME_SECONDS
 
 try:
     import MetaTrader5 as mt5
@@ -37,7 +37,6 @@ MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
 MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
 MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
 MAX_COUNT = 20000
-TIMEFRAME_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}
 CANONICAL_TRANSFORMATION_VERSION = "mt5-broker-bars-v1"
 connector = None
 
