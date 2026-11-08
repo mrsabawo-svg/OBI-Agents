@@ -120,7 +120,7 @@ This is the first direct lineage integration. Derived indicator/feature dependen
 
 ## Signal archive lineage manifest
 
-Each scan builds a bounded `obi-data-lineage-v2` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
+Each scan builds a bounded `obi-data-lineage-v3` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
 
 Manifest status is explicit. These labels describe provenance coverage for the data frames used by the scan, not broker-history completeness, data quality approval, or trading eligibility:
 - `complete`: every expected timeframe has canonical IDs and a complete immutable source/report reference.
@@ -157,3 +157,10 @@ Discovery records remain unverified or partially_verified. Merely seeing or sele
 
 
 Account fingerprints are also included in each immutable validation report and raw-observation row, then validated by DataAgent and carried into the archived signal's per-timeframe source lineage. A signal can therefore be traced to the exact broker account identity without exposing the account login number.
+
+
+## Broker-history completeness gate
+
+Each OHLCV response now includes an immutable history-completeness subreport. The report is scoped to the exact requested window (count and start position); it does not claim that all older broker history exists. It records requested/returned counts, page boundaries, snapshot stability, timestamp ordering/alignment, duplicates, gaps, forming/closed bars, freshness, and a status of complete, incomplete, or unverifiable.
+
+Unexplained gaps or stale latest data remain unverifiable when no verified broker session calendar is available. They are not silently treated as missing bars or as valid continuous-market history. A verified continuous 24/7 session model can classify those gaps as incomplete. DataAgent accepts only complete history windows; incomplete or unverifiable windows are persisted as evidence but withheld from signal generation. The archived per-timeframe data lineage now uses schema v3 and carries the history report summary alongside the account fingerprint.
