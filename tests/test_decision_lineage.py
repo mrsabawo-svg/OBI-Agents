@@ -94,7 +94,7 @@ def test_decision_lineage_versions_every_decision_agent_and_is_self_verifying():
         market_data=_market_data(),
         agent_outputs=_outputs(),
         data_lineage={
-            "schema_version": "obi-data-lineage-v4",
+            "schema_version": "obi-data-lineage-v5",
             "status": "complete",
             "timeframes": {},
         },
@@ -145,7 +145,7 @@ def test_decision_lineage_verification_detects_tampering():
 def test_decision_lineage_detects_nested_tampering_even_if_outer_hash_is_recomputed():
     manifest = build_decision_lineage(
         "EURUSD", _market_data(), _outputs(),
-        {"schema_version": "obi-data-lineage-v4", "status": "complete", "timeframes": {}},
+        {"schema_version": "obi-data-lineage-v5", "status": "complete", "timeframes": {}},
         {"Edge": {"archive_snapshot_sha256": "e" * 64}},
     )
     manifest["agent_specs"]["HTF"]["formula_version"] = "tampered"
@@ -186,7 +186,7 @@ def test_agent_formula_specs_are_complete_and_reference_existing_sources():
 def test_archive_agent_preserves_verified_decision_lineage():
     manifest = build_decision_lineage(
         "EURUSD", _market_data(), _outputs(),
-        {"schema_version": "obi-data-lineage-v4", "status": "complete", "timeframes": {}},
+        {"schema_version": "obi-data-lineage-v5", "status": "complete", "timeframes": {}},
         {"Edge": {"archive_snapshot_sha256": "c" * 64}},
     )
     outputs = _outputs()
@@ -199,7 +199,7 @@ def test_archive_agent_preserves_verified_decision_lineage():
         "htf": outputs["HTF"],
         "mtf": outputs["MTF"],
         "data_lineage": {
-            "schema_version": "obi-data-lineage-v4",
+            "schema_version": "obi-data-lineage-v5",
             "status": "complete",
             "timeframes": {},
         },
@@ -427,7 +427,7 @@ def test_decision_lineage_distinguishes_manifest_integrity_from_provenance_compl
         "EURUSD",
         _market_data(),
         _outputs(),
-        {"schema_version": "obi-data-lineage-v4", "status": "unavailable", "timeframes": {}},
+        {"schema_version": "obi-data-lineage-v5", "status": "unavailable", "timeframes": {}},
         {},
     )
     assert manifest["status"] == "complete"
