@@ -70,6 +70,25 @@ class MT5Connector:
         self.state = ConnectionState.ERROR
         return False
 
+    def _identity_matches(self, account: Any) -> bool:
+        company = str(getattr(account, "company", "") or "").strip()
+        actual_server = str(getattr(account, "server", "") or "").strip()
+        if not company or not actual_server:
+            self.last_error = "broker company/server identity is unavailable"
+            return False
+        expected_broker = self.identity.broker.casefold()
+        if expected_broker not in company.casefold() and expected_broker not in actual_server.casefold():
+            self.last_error = "connected broker does not match configured broker identity"
+            return False
+        if self.identity.server and self.identity.server.casefold() != actual_server.casefold():
+            self.last_error = "connected server does not match configured server identity"
+            return False
+        actual_login = getattr(account, "login", None)
+        if self.login_id is not None and actual_login is not None and int(actual_login) != int(self.login_id):
+            self.last_error = "connected account does not match configured login identity"
+            return False
+        return True
+
     def connect(self) -> bool:
         self.state = ConnectionState.INITIALIZING
         self.last_error = None
@@ -105,15 +124,8 @@ class MT5Connector:
             ):
                 return self._fail("terminal is not connected to an authenticated account")
 
-            company = str(getattr(account, "company", "") or "").strip()
-            actual_server = str(getattr(account, "server", "") or "").strip()
-            if not company or not actual_server:
-                return self._fail("broker company/server identity is unavailable")
-            expected_broker = self.identity.broker.casefold()
-            if expected_broker not in company.casefold() and expected_broker not in actual_server.casefold():
-                return self._fail("connected broker does not match configured broker identity")
-            if self.identity.server and self.identity.server.casefold() != actual_server.casefold():
-                return self._fail("connected server does not match configured server identity")
+            if not self._identity_matches(account):
+                return self._fail(self.last_error or "connected account identity rejected")
 
             self.state = ConnectionState.AUTHENTICATED
             return True
@@ -132,6 +144,7 @@ class MT5Connector:
                 terminal is not None
                 and account is not None
                 and getattr(terminal, "connected", False)
+                and self._identity_matches(account)
             )
             if not connected:
                 self.state = ConnectionState.DISCONNECTED
