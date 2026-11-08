@@ -36,6 +36,10 @@ MT5_BRIDGE_HOST = os.environ.get("MT5_BRIDGE_HOST", "127.0.0.1")
 MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
 MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
 MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
+MT5_ACCOUNT_FINGERPRINT_KEY = os.environ.get("MT5_ACCOUNT_FINGERPRINT_KEY", "")
+MT5_EXPECTED_ACCOUNT_FINGERPRINT = (
+    os.environ.get("MT5_EXPECTED_ACCOUNT_FINGERPRINT", "").strip() or None
+)
 
 
 def _load_verified_session_models(raw_value):
@@ -76,7 +80,8 @@ def _symbol_map():
     except json.JSONDecodeError as exc:
         raise RuntimeError("MT5_SYMBOL_MAP_JSON must be valid JSON") from exc
     if not isinstance(parsed, dict) or any(
-        not isinstance(k, str) or not isinstance(v, str) or not v.strip()
+        not isinstance(k, str) or not k.strip() or k.strip() != k
+        or not isinstance(v, str) or not v.strip() or v.strip() != v
         for k, v in parsed.items()
     ):
         raise RuntimeError("MT5_SYMBOL_MAP_JSON must map internal IDs to exact broker symbols")
@@ -242,6 +247,17 @@ def init_mt5():
         return False, "MT5_BROKER_NAME must identify the configured broker"
     if MT5_ACCOUNT_ENVIRONMENT not in {"demo", "live", "contest"}:
         return False, "MT5_ACCOUNT_ENVIRONMENT must be demo, live, or contest"
+    if not MT5_SERVER or not MT5_SERVER.strip():
+        return False, "MT5_SERVER must identify the exact expected broker server"
+    if len(MT5_ACCOUNT_FINGERPRINT_KEY) < 32:
+        return False, "MT5_ACCOUNT_FINGERPRINT_KEY must contain at least 32 characters"
+    if MT5_EXPECTED_ACCOUNT_FINGERPRINT is not None and (
+        len(MT5_EXPECTED_ACCOUNT_FINGERPRINT) != 64
+        or any(char not in "0123456789abcdef" for char in MT5_EXPECTED_ACCOUNT_FINGERPRINT)
+    ):
+        return False, "MT5_EXPECTED_ACCOUNT_FINGERPRINT must be a lowercase SHA-256 hex digest"
+    if bool(MT5_LOGIN) != bool(MT5_PASSWORD):
+        return False, "MT5_LOGIN and MT5_PASSWORD must be configured together"
     connector = MT5Connector(
         mt5,
         ConnectionIdentity(
@@ -251,9 +267,11 @@ def init_mt5():
         ),
         login=MT5_LOGIN or None,
         password=MT5_PASSWORD or None,
-        server=MT5_SERVER or None,
+        server=MT5_SERVER if MT5_LOGIN and MT5_PASSWORD else None,
         terminal_path=MT5_PATH or None,
         reconnect_attempts=1,
+        fingerprint_key=MT5_ACCOUNT_FINGERPRINT_KEY,
+        expected_account_fingerprint=MT5_EXPECTED_ACCOUNT_FINGERPRINT,
     )
     if not connector.connect():
         return False, connector.last_error or "MT5 connection failed"
@@ -269,6 +287,9 @@ def health():
         "status": "connected" if connected else "disconnected",
         "connected": connected,
         "state": connector.state.value,
+        "account_identity_pinned": bool(
+            connector.expected_account_fingerprint
+        ),
     }), (200 if connected else 503)
 
 
@@ -292,6 +313,7 @@ def get_symbols():
         "status": "ok",
         "count": len(symbols),
         "account_identity": account_identity,
+        "account_identity_pinned": account_identity.get("identity_pinned") is True,
         "discovery": discovery,
         "symbols": symbols,
     })
@@ -326,6 +348,11 @@ def get_ohlcv():
 
     try:
         account_identity = connector.get_account_identity()
+        if account_identity.get("identity_pinned") is not True:
+            return jsonify({
+                "status": "error",
+                "error": "account identity is not pinned; review /symbols and configure MT5_EXPECTED_ACCOUNT_FINGERPRINT before requesting market data",
+            }), 409
         registry = InstrumentRegistryStore(MT5_RAW_DB_PATH)
         latest_discovery = registry.latest_symbol(
             account_identity["account_fingerprint"], broker_symbol
@@ -464,6 +491,7 @@ def get_ohlcv():
     quality_report = {
         "report_id": validation_report_id,
         "account_fingerprint": account_identity["account_fingerprint"],
+        "account_identity_pinned": True,
         "received_count": len(raw_rows),
         "quarantined_observation_count": len({
             record["observation_index"] for record in quarantine_records
@@ -481,6 +509,7 @@ def get_ohlcv():
         "server_name": server_name,
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
         "account_fingerprint": account_identity["account_fingerprint"],
+        "account_identity_pinned": True,
         "broker_symbol": broker_symbol,
         "timeframe": timeframe,
         "validator_version": quality_report["validator_version"],
@@ -552,6 +581,7 @@ def get_ohlcv():
         "server_name": server_name,
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
         "account_identity": account_identity,
+        "account_identity_pinned": True,
         "platform": "MT5",
         "timeframe": timeframe,
         "start_pos": start_pos,
