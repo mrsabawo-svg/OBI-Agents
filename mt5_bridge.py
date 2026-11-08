@@ -312,6 +312,11 @@ def get_ohlcv():
                 "status": "error",
                 "error": "broker symbol is ambiguously mapped to multiple OBI instruments",
             }), 409
+        if symbol_id not in latest_discovery["mapped_instrument_ids"]:
+            return jsonify({
+                "status": "error",
+                "error": "exact OBI-to-broker mapping is not present in the account registry",
+            }), 409
         selected_symbol = connector.select_symbol(broker_symbol)
         current_metadata = selected_symbol.get("metadata", {})
         if metadata_fingerprint(current_metadata) != latest_discovery["metadata_sha256"]:
