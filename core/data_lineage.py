@@ -34,7 +34,20 @@ def _column_values(frame: Any, column: str) -> list[str]:
         values = frame[column].tolist()
     except Exception:
         return []
-    return [str(value) if value is not None else "" for value in values]
+    normalized = []
+    for value in values:
+        if value is None:
+            normalized.append("")
+            continue
+        try:
+            if value != value:
+                normalized.append("")
+                continue
+        except Exception:
+            pass
+        label = str(value).strip()
+        normalized.append("" if label.lower() in {"", "nan", "none", "<na>"} else label)
+    return normalized
 
 
 def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
