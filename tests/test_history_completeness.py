@@ -215,3 +215,16 @@ def test_multi_page_history_without_snapshot_check_is_unverifiable():
     )
     assert report["status"] == "unverifiable"
     assert "PAGINATION_SNAPSHOT_UNVERIFIABLE" in report["reasons"]
+
+
+def test_string_and_boolean_timestamps_are_invalid():
+    report = assess_history_completeness(
+        [{"time": "1794138600"}, {"time": True}, {"time": 1794139200}],
+        "5m",
+        3,
+        fetch(3),
+        retrieved_at=NOW,
+    )
+    assert report["status"] == "incomplete"
+    assert report["invalid_timestamp_count"] == 2
+    assert "INVALID_TIMESTAMP" in report["reasons"]
