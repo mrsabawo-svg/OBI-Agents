@@ -170,6 +170,11 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
 
     assert response.status_code == 200
     assert payload["account_identity"]["account_fingerprint"] == "e" * 64
+    assert payload["history_completeness"]["status"] == "complete"
+    assert payload["history_completeness"]["requested_count"] == 2
+    assert payload["history_completeness"]["returned_count"] == 2
+    assert payload["history_completeness"]["forming_count"] == 1
+    assert payload["data"][1]["bar_status"] == "forming"
     assert payload["raw_persistence"]["inserted_count"] == 2
     assert payload["raw_persistence"]["quarantine_count"] == 1
     assert payload["quality_report"]["quarantined_observation_count"] == 1
