@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 def _json_safe(value: Any) -> Any:
@@ -63,6 +63,7 @@ class RawObservationStore:
                     instrument_id TEXT NOT NULL,
                     broker TEXT NOT NULL,
                     server_name TEXT,
+                    account_fingerprint TEXT,
                     account_environment TEXT NOT NULL,
                     platform TEXT NOT NULL,
                     broker_symbol TEXT NOT NULL,
@@ -75,6 +76,15 @@ class RawObservationStore:
                     schema_version TEXT NOT NULL
                 )
             """)
+            columns = {
+                row[1] for row in connection.execute(
+                    "PRAGMA table_info(raw_observations)"
+                ).fetchall()
+            }
+            if "account_fingerprint" not in columns:
+                connection.execute(
+                    "ALTER TABLE raw_observations ADD COLUMN account_fingerprint TEXT"
+                )
             connection.execute("""
                 CREATE INDEX IF NOT EXISTS idx_raw_observations_instrument_time
                 ON raw_observations(instrument_id, source_timestamp)
@@ -173,13 +183,15 @@ class RawObservationStore:
                 connection.execute("""
                     INSERT INTO raw_observations (
                         observation_id, batch_id, instrument_id, broker,
-                        server_name, account_environment, platform,
-                        broker_symbol, timeframe, source_type, source_timestamp,
-                        retrieved_at, payload_json, payload_sha256, schema_version
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        server_name, account_fingerprint, account_environment,
+                        platform, broker_symbol, timeframe, source_type,
+                        source_timestamp, retrieved_at, payload_json,
+                        payload_sha256, schema_version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     observation_id, batch_id, envelope["instrument_id"],
                     envelope["broker"], envelope.get("server_name"),
+                    envelope.get("account_fingerprint"),
                     envelope["account_environment"], envelope["platform"],
                     envelope["broker_symbol"], envelope["timeframe"],
                     envelope["source_type"], source_timestamp, retrieved_at,
@@ -255,17 +267,19 @@ class RawObservationStore:
         with self._connect() as connection:
             row = connection.execute("""
                 SELECT observation_id, batch_id, instrument_id, broker,
-                       server_name, account_environment, platform, broker_symbol,
-                       timeframe, source_type, source_timestamp, retrieved_at,
-                       payload_json, payload_sha256, schema_version
+                       server_name, account_fingerprint, account_environment,
+                       platform, broker_symbol, timeframe, source_type,
+                       source_timestamp, retrieved_at, payload_json,
+                       payload_sha256, schema_version
                 FROM raw_observations WHERE observation_id = ?
             """, (observation_id,)).fetchone()
         if row is None:
             return None
         fields = (
             "observation_id", "batch_id", "instrument_id", "broker",
-            "server_name", "account_environment", "platform", "broker_symbol",
-            "timeframe", "source_type", "source_timestamp", "retrieved_at",
+            "server_name", "account_fingerprint", "account_environment",
+            "platform", "broker_symbol", "timeframe", "source_type",
+            "source_timestamp", "retrieved_at",
             "payload_json", "payload_sha256", "schema_version",
         )
         result = dict(zip(fields, row))
