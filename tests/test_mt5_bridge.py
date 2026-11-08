@@ -49,7 +49,7 @@ def test_quarantine_detects_invalid_timestamp_numeric_ohlc_and_duplicates():
         {"time": 0, "open": 10, "high": 12, "low": 9, "close": 11,
          "tick_volume": 10, "real_volume": 0, "spread": 1},
         {"time": 200, "open": float("nan"), "high": 12, "low": 9, "close": 11,
-         "tick_volume": 10, "real_volume": 0, "spread": 1},
+         "tick_volume": -1, "real_volume": 0, "spread": 1},
         {"time": 300, "open": 10, "high": 8, "low": 9, "close": 11,
          "tick_volume": 10, "real_volume": 0, "spread": 1},
         {"time": 100, "open": 10, "high": 12, "low": 9, "close": 11,
@@ -60,6 +60,7 @@ def test_quarantine_detects_invalid_timestamp_numeric_ohlc_and_duplicates():
 
     assert (1, "INVALID_TIMESTAMP") in reason_pairs
     assert (2, "INVALID_NUMERIC") in reason_pairs
+    assert (2, "INVALID_VOLUME") in reason_pairs
     assert (3, "INVALID_OHLC") in reason_pairs
     assert (0, "DUPLICATE_TIMESTAMP") in reason_pairs
     assert (4, "DUPLICATE_TIMESTAMP") in reason_pairs
