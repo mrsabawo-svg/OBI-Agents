@@ -112,6 +112,7 @@ class DataLineageManifestTest(unittest.TestCase):
             "server_name": "Weltrade-Demo",
             "account_environment": "demo",
             "account_fingerprint": "a" * 64,
+            "account_identity_pinned": True,
             "history_status": "complete",
             "history_session_model": "unknown",
             "history_report_id": "history-report-001",
