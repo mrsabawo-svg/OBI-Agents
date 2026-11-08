@@ -34,7 +34,7 @@ AGENT_ORDER = (
 
 AGENT_SPECS = {
     "Session": {
-        "agent_version": "1.0.0",
+        "agent_version": "1.0.1",
         "formula_id": "session-sast-eligibility",
         "formula_version": "1.0.0",
         "formula": (
@@ -57,8 +57,8 @@ AGENT_SPECS = {
                 "PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"
             ],
         },
-        "inputs": ["instrument_id", "SAST weekday/hour", "kill-zone clock"],
-        "outputs": ["tradeable", "reason", "kill_zone", "zone_name", "peak"],
+        "inputs": ["instrument_id", "captured SAST datetime", "kill-zone clock"],
+        "outputs": ["tradeable", "reason", "kill_zone", "zone_name", "peak", "evaluated_at_sast"],
         "market_data_timeframes": [],
         "upstream_agents": [],
         "source_files": ["agents/session_agent.py", "core/utils.py"],
