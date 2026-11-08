@@ -45,6 +45,8 @@ def candle(source_id):
         "bar_status": "closed",
         "source_observation_ids": [source_id],
         "transformation_version": "broker-bars-v1",
+        "validation_report_id": "quality-report-001",
+        "validation_status": "valid",
     }
 
 
@@ -199,3 +201,11 @@ def test_canonical_hash_is_stable_across_equivalent_timezone_and_numeric_inputs(
     result = store.append_batch([utc_record, offset_record])
 
     assert result["record_sha256"][0] == result["record_sha256"][1]
+
+
+def test_canonical_candle_rejects_unknown_validation_status():
+    record = candle("source")
+    record["validation_status"] = "rejected"
+
+    with pytest.raises(CanonicalDataError, match="validation_status"):
+        validate_canonical_candle(record)
