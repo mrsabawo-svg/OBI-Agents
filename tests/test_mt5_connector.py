@@ -1,0 +1,154 @@
+from types import SimpleNamespace
+
+import pytest
+
+from core.mt5_connector import (
+    ConnectionIdentity,
+    ConnectionState,
+    MT5Connector,
+)
+
+
+class FakeMT5:
+    TIMEFRAME_M5 = 5
+    TIMEFRAME_M15 = 15
+    TIMEFRAME_H1 = 60
+    TIMEFRAME_H4 = 240
+
+    def __init__(self):
+        self.initialized = False
+        self.connected = True
+        self.login_calls = []
+        self.selected = []
+        self.rates = [{"time": 1}]
+        self.symbols = [
+            SimpleNamespace(name="SFX Vol 75", description="SFX Vol 75", select=True, visible=True),
+            SimpleNamespace(name="EURUSD", description="Euro vs US Dollar", select=False, visible=False),
+        ]
+
+    def initialize(self, **kwargs):
+        self.initialized = True
+        return True
+
+    def login(self, **kwargs):
+        self.login_calls.append(kwargs)
+        return True
+
+    def terminal_info(self):
+        return SimpleNamespace(connected=self.connected) if self.initialized else None
+
+    def account_info(self):
+        if not self.initialized or not self.connected:
+            return None
+        return SimpleNamespace(company="Weltrade Ltd", server="Weltrade-Demo")
+
+    def symbols_get(self):
+        return self.symbols
+
+    def symbol_info(self, name):
+        for item in self.symbols:
+            if item.name == name:
+                return item
+        return None
+
+    def symbol_select(self, name, enabled):
+        self.selected.append((name, enabled))
+        return self.symbol_info(name) is not None
+
+    def copy_rates_from_pos(self, symbol, timeframe, start, count):
+        return self.rates
+
+    def last_error(self):
+        return (0, "ok")
+
+    def shutdown(self):
+        self.initialized = False
+
+
+def make_connector(adapter=None, **kwargs):
+    adapter = adapter or FakeMT5()
+    connector = MT5Connector(
+        adapter,
+        ConnectionIdentity("Weltrade", "Weltrade-Demo", "demo"),
+        **kwargs,
+    )
+    return connector, adapter
+
+
+def test_connect_authenticates_and_verifies_broker_server():
+    connector, adapter = make_connector(
+        login=123456,
+        password="never-log-this",
+        server="Weltrade-Demo",
+    )
+    assert connector.connect() is True
+    assert connector.state is ConnectionState.AUTHENTICATED
+    assert adapter.login_calls[0]["password"] == "never-log-this"
+    assert "never-log-this" not in str(connector.last_error)
+
+
+def test_connect_rejects_wrong_broker_identity():
+    adapter = FakeMT5()
+    adapter.account_info = lambda: SimpleNamespace(
+        company="Other Broker", server="Other-Demo"
+    )
+    connector, _ = make_connector(adapter)
+    assert connector.connect() is False
+    assert connector.state is ConnectionState.ERROR
+    assert "does not match" in connector.last_error
+
+
+def test_connect_requires_complete_explicit_credentials():
+    connector, _ = make_connector(login=1234, password="secret")
+    assert connector.connect() is False
+    assert "must be configured together" in connector.last_error
+
+
+def test_symbol_discovery_does_not_assume_family_identity():
+    connector, _ = make_connector()
+    assert connector.connect()
+    rows = connector.discover_symbols()
+    assert [row["name"] for row in rows] == ["EURUSD", "SFX Vol 75"]
+    assert rows[0]["selected"] is False
+
+
+def test_exact_symbol_selection_only():
+    connector, adapter = make_connector()
+    assert connector.connect()
+    selected = connector.select_symbol("SFX Vol 75")
+    assert selected["name"] == "SFX Vol 75"
+    assert adapter.selected == [("SFX Vol 75", True)]
+    with pytest.raises(LookupError):
+        connector.select_symbol("SFX_VOL_75")
+
+
+def test_unsupported_timeframe_and_invalid_count_are_rejected():
+    connector, _ = make_connector()
+    assert connector.connect()
+    with pytest.raises(ValueError, match="unsupported"):
+        connector.fetch_rates("EURUSD", "3m", 100)
+    with pytest.raises(ValueError, match="count"):
+        connector.fetch_rates("EURUSD", "5m", 2001)
+
+
+def test_empty_history_is_reported_not_silently_replaced():
+    connector, adapter = make_connector()
+    assert connector.connect()
+    adapter.rates = []
+    with pytest.raises(RuntimeError, match="no rates"):
+        connector.fetch_rates("EURUSD", "5m", 100)
+
+
+def test_reconnect_attempt_restores_connection():
+    connector, adapter = make_connector(reconnect_attempts=1)
+    assert connector.connect()
+    adapter.connected = False
+    assert connector.ensure_connected() is True
+    assert connector.state is ConnectionState.AUTHENTICATED
+
+
+def test_connector_exposes_no_trade_execution_methods():
+    connector, _ = make_connector()
+    assert not hasattr(connector, "order_send")
+    assert not hasattr(connector, "positions_get")
+    assert not hasattr(connector, "order_modify")
