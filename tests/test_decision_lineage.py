@@ -106,7 +106,7 @@ def test_decision_lineage_versions_every_decision_agent_and_is_self_verifying():
     assert manifest["agent_order"] == list(AGENT_ORDER)
     assert set(manifest["agent_specs"]) == set(AGENT_ORDER)
     assert set(manifest["agent_traces"]) == set(AGENT_ORDER)
-    assert manifest["manifest_content_size_bytes"] > 0
+    assert 0 < manifest["manifest_content_size_bytes"] < 50000
     assert verify_decision_lineage(manifest)
 
     for name in AGENT_ORDER:
