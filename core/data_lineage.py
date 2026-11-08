@@ -76,6 +76,8 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
             "row_count": 0,
             "canonical_candle_ids_tail": [],
             "raw_observation_ids_tail": [],
+            "feature_lineage": {"status": "unavailable", "features": []},
+            "feature_lineage_status": "unavailable",
         }
 
     attrs = getattr(frame, "attrs", {}) or {}
@@ -85,6 +87,9 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
     quality_report = attrs.get("quality_report", {})
     if not isinstance(quality_report, dict):
         quality_report = {}
+    feature_lineage = attrs.get("feature_lineage", {})
+    if not isinstance(feature_lineage, dict):
+        feature_lineage = {"status": "unavailable", "features": []}
     quality_summary = {
         key: value for key, value in quality_report.items()
         if key in QUALITY_SUMMARY_FIELDS
@@ -143,6 +148,8 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "broker_symbol": metadata.get("broker_symbol"),
         "source_type": metadata.get("source_type"),
         "quality_summary": quality_summary,
+        "feature_lineage": feature_lineage,
+        "feature_lineage_status": feature_lineage.get("status", "unavailable"),
         "canonical_candle_ids_tail": canonical_ids[-window:] if ids_complete else [],
         "raw_observation_ids_tail": raw_ids[-window:] if ids_complete else [],
         "id_window_count": min(row_count, window) if ids_complete else 0,
@@ -175,6 +182,8 @@ def build_data_lineage(
                 "row_count": 0,
                 "canonical_candle_ids_tail": [],
                 "raw_observation_ids_tail": [],
+                "feature_lineage": {"status": "unavailable", "features": []},
+                "feature_lineage_status": "unavailable",
             }
         else:
             manifests[timeframe] = _timeframe_manifest(
