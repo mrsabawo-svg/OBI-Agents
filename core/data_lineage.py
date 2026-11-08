@@ -131,7 +131,13 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         and metadata.get("instrument_verification_status") == "verified"
         and metadata.get("timeframe_verified") is True
         and metadata.get("analysis_eligible") is True
+        and timeframe in metadata.get("verified_timeframes", [])
         and metadata.get("history_status") == "complete"
+    )
+    instrument_metadata_hash = metadata.get("instrument_metadata_sha256", "")
+    metadata_complete = metadata_complete and (
+        len(instrument_metadata_hash) == 64
+        and all(char in "0123456789abcdef" for char in instrument_metadata_hash)
     )
     report_hash = metadata.get("canonical_validation_report_sha256", "")
     metadata_complete = metadata_complete and (
