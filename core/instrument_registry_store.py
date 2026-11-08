@@ -41,10 +41,12 @@ class InstrumentRegistryStore:
     def _connect(self):
         connection = sqlite3.connect(self.database_path, timeout=10)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
     def _initialize(self):
         with self._connect() as db:
+            db.execute("PRAGMA journal_mode = WAL")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS mt5_account_observations (
                     observation_id TEXT PRIMARY KEY,
@@ -110,13 +112,23 @@ class InstrumentRegistryStore:
         )
         if any(not account_identity.get(key) for key in required):
             raise ValueError("complete verified account identity is required")
+        fingerprint = account_identity.get("account_fingerprint")
+        if (
+            not isinstance(fingerprint, str)
+            or len(fingerprint) != 64
+            or any(char not in "0123456789abcdef" for char in fingerprint)
+        ):
+            raise ValueError("account_fingerprint must be a lowercase SHA-256 hex digest")
         if not isinstance(symbols, list):
             raise ValueError("symbols must be a list")
         symbol_map = symbol_map or {}
         if not isinstance(symbol_map, dict):
             raise ValueError("symbol_map must be an object")
-        if any(not isinstance(k, str) or not isinstance(v, str) or not v.strip()
-               for k, v in symbol_map.items()):
+        if any(
+            not isinstance(k, str) or not k.strip()
+            or not isinstance(v, str) or not v.strip()
+            for k, v in symbol_map.items()
+        ):
             raise ValueError("symbol_map must contain exact non-empty symbol names")
 
         reverse_map: dict[str, list[str]] = {}
