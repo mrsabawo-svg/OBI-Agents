@@ -314,6 +314,7 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                 "quality_report": {
                     "report_id": "lineage-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
                     "history_completeness": _complete_history_report(rows), "received_count": 1,
                     "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -378,6 +379,7 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                 "quality_report": {
                     "report_id": "invalid-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -610,6 +612,7 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                 "quality_report": {
                     "report_id": "mismatch-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": 1, "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
