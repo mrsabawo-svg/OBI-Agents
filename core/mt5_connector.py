@@ -383,7 +383,7 @@ class MT5Connector:
             )
         if (
             not isinstance(start_pos, int) or isinstance(start_pos, bool)
-            or start_pos < 0 or start_pos > 1000000
+            or start_pos < 0 or start_pos + count > 1000000
         ):
             raise ValueError("start_pos must be an integer between 0 and 1000000")
 
@@ -431,11 +431,10 @@ class MT5Connector:
                 exact_symbol, self._timeframes[timeframe], 0, 1
             )
             after_timestamp = self._latest_rate_timestamp(after)
-            snapshot_stable = (
-                before_timestamp is not None
-                and after_timestamp is not None
-                and before_timestamp == after_timestamp
-            )
+            if before_timestamp is None or after_timestamp is None:
+                snapshot_stable = None
+            else:
+                snapshot_stable = before_timestamp == after_timestamp
         else:
             snapshot_stable = True
 
