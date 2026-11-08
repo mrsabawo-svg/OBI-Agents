@@ -229,6 +229,7 @@ class RawObservationStore:
             "quarantine_ids": quarantine_ids,
             "quarantine_records": quarantine_links,
             "schema_version": SCHEMA_VERSION,
+            "account_fingerprint": envelope.get("account_fingerprint"),
             "persisted": True,
         }
 
