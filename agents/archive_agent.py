@@ -6,6 +6,7 @@ The archive is stored inside core.memory under the `_archive` key.
 This module MUST NOT maintain a second archive file or Gist.
 """
 from datetime import datetime
+from copy import deepcopy
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
@@ -125,6 +126,16 @@ class ArchiveAgent:
         signal_id = signal.get("id") or (
             str(signal.get("symbol", "")) + "_" + datetime.now(SAST).strftime("%Y%m%d%H%M%S")
         )
+        data_lineage = signal.get("data_lineage")
+        if not isinstance(data_lineage, dict):
+            data_lineage = {
+                "schema_version": "obi-data-lineage-v1",
+                "instrument_id": signal.get("symbol"),
+                "status": "unavailable",
+                "timeframes": {},
+            }
+        else:
+            data_lineage = deepcopy(data_lineage)
 
         return {
             "id": signal_id,
@@ -159,4 +170,6 @@ class ArchiveAgent:
             "status": "OPEN",
             "closed_at": None,
             "closed": None,
+            "data_lineage": data_lineage,
+            "data_lineage_status": data_lineage.get("status", "unavailable"),
         }
