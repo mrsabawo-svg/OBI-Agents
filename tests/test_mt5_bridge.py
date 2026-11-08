@@ -98,6 +98,40 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
             ])
 
     class FakeConnector:
+        metadata = {
+            "name": "SFX Vol 75", "description": "SFX Vol 75",
+            "path": "Synthetics\\SFX", "digits": 2, "point": 0.01,
+            "trade_mode": 4, "trade_contract_size": 1.0,
+            "trade_tick_size": 0.01, "trade_tick_value": 0.01,
+            "currency_base": "", "currency_profit": "USD",
+            "currency_margin": "USD", "volume_min": 0.01,
+            "volume_max": 100.0, "volume_step": 0.01,
+            "selected": True, "visible": True,
+        }
+
+        def get_account_identity(self):
+            return {
+                "account_fingerprint": "e" * 64,
+                "broker_company": "Weltrade Ltd",
+                "server": "Weltrade-Demo",
+                "environment": "demo",
+                "platform": "MT5",
+                "currency": "USD",
+                "leverage": 1000,
+                "trade_allowed": False,
+                "trade_expert": False,
+            }
+
+        def discover_symbols(self):
+            return [{
+                "name": "SFX Vol 75", "description": "SFX Vol 75",
+                "selected": True, "visible": True, "metadata": self.metadata,
+            }]
+
+        def select_symbol(self, symbol):
+            assert symbol == "SFX Vol 75"
+            return {"name": symbol, "description": symbol, "metadata": self.metadata}
+
         def fetch_rates(self, symbol, timeframe, count, start_pos):
             assert (symbol, timeframe, count, start_pos) == ("SFX Vol 75", "5m", 2, 0)
             return FakeRates()
@@ -121,12 +155,15 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_HOST", "127.0.0.1")
     monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_TOKEN", "")
 
-    response = mt5_bridge.app.test_client().get(
-        "/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2"
-    )
+    client = mt5_bridge.app.test_client()
+    discovery_response = client.get("/symbols")
+    assert discovery_response.status_code == 200
+    assert discovery_response.get_json()["discovery"]["symbol_count"] == 1
+    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
     payload = response.get_json()
 
     assert response.status_code == 200
+    assert payload["account_identity"]["account_fingerprint"] == "e" * 64
     assert payload["raw_persistence"]["inserted_count"] == 2
     assert payload["raw_persistence"]["quarantine_count"] == 1
     assert payload["quality_report"]["quarantined_observation_count"] == 1
@@ -153,3 +190,33 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     saved = canonical.get(payload["canonical_persistence"]["candle_ids"][0])
     assert saved["source_observation_ids"] == [payload["data"][0]["observation_id"]]
     assert saved["validation_report_id"] == payload["quality_report"]["report_id"]
+
+
+def test_ohlcv_requires_account_scoped_symbol_discovery(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    import mt5_bridge
+
+    class FakeConnector:
+        def get_account_identity(self):
+            return {
+                "account_fingerprint": "f" * 64,
+                "broker_company": "Weltrade Ltd",
+                "server": "Weltrade-Demo",
+                "environment": "demo",
+                "platform": "MT5",
+            }
+
+        def is_connected(self):
+            return True
+
+    monkeypatch.setattr(mt5_bridge, "connector", FakeConnector())
+    monkeypatch.setattr(mt5_bridge, "SYMBOL_MAP", {"SFX_VOL_75": "SFX Vol 75"})
+    monkeypatch.setattr(mt5_bridge, "MT5_RAW_DB_PATH", str(tmp_path / "registry.sqlite3"))
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_HOST", "127.0.0.1")
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_TOKEN", "")
+
+    response = mt5_bridge.app.test_client().get(
+        "/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2"
+    )
+    assert response.status_code == 409
+    assert "call /symbols first" in response.get_json()["error"]
