@@ -135,6 +135,7 @@ def test_expected_account_pin_is_checked_on_initial_authentication_and_restart()
     identity = same_account_connector.get_account_identity()
     assert identity["identity_pinned"] is True
     assert identity["account_fingerprint"] == expected
+    assert identity["account_login_suffix"] == "3456"
 
     switched_adapter = FakeMT5()
     switched_adapter.account_info = lambda: SimpleNamespace(
