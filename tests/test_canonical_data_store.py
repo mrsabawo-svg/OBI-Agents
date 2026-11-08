@@ -177,3 +177,11 @@ def test_canonical_store_rejects_source_class_mismatch(tmp_path):
         store.append_batch([candle(result["observation_ids"][0])])
 
     assert store.count() == 0
+
+
+def test_canonical_candle_rejects_timeframe_boundary_mismatch():
+    record = candle("source")
+    record["close_time"] = "2026-11-08T10:15:00Z"
+
+    with pytest.raises(CanonicalDataError, match="timeframe"):
+        validate_canonical_candle(record)
