@@ -17,6 +17,7 @@ from typing import Any, Iterable
 SOURCE_CLASSES = frozenset({"broker_bar", "tick_derived", "resampled_bar"})
 BAR_STATUSES = frozenset({"forming", "closed"})
 VOLUME_TYPES = frozenset({"tick_volume", "real_volume", "trade_count", "unknown"})
+VALIDATION_STATUSES = frozenset({"valid", "warning"})
 TIMEFRAME_SECONDS = {
     "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
     "1h": 3600, "4h": 14400, "1d": 86400,
@@ -54,7 +55,7 @@ def validate_canonical_candle(record: dict[str, Any]) -> dict[str, Any]:
         "broker_symbol", "timeframe", "open_time", "close_time",
         "open", "high", "low", "close", "volume", "volume_type",
         "source_class", "bar_status", "source_observation_ids",
-        "transformation_version",
+        "transformation_version", "validation_report_id", "validation_status",
     )
     missing = [field for field in required if field not in record]
     if missing:
@@ -62,7 +63,7 @@ def validate_canonical_candle(record: dict[str, Any]) -> dict[str, Any]:
 
     for field in (
         "instrument_id", "broker", "server_name", "account_environment",
-        "broker_symbol", "timeframe", "transformation_version",
+        "broker_symbol", "timeframe", "transformation_version", "validation_report_id",
     ):
         if not isinstance(record[field], str) or not record[field].strip():
             raise CanonicalDataError(f"{field} must be a non-empty string")
@@ -73,6 +74,8 @@ def validate_canonical_candle(record: dict[str, Any]) -> dict[str, Any]:
         raise CanonicalDataError("invalid bar_status")
     if record["volume_type"] not in VOLUME_TYPES:
         raise CanonicalDataError("invalid volume_type")
+    if record["validation_status"] not in VALIDATION_STATUSES:
+        raise CanonicalDataError("invalid validation_status")
 
     open_time = _utc_datetime(record["open_time"], "open_time")
     close_time = _utc_datetime(record["close_time"], "close_time")
@@ -164,6 +167,8 @@ class CanonicalCandleStore:
                     source_class TEXT NOT NULL,
                     bar_status TEXT NOT NULL,
                     transformation_version TEXT NOT NULL,
+                    validation_report_id TEXT NOT NULL,
+                    validation_status TEXT NOT NULL,
                     derived_at TEXT NOT NULL,
                     record_sha256 TEXT NOT NULL
                 )
@@ -257,6 +262,8 @@ class CanonicalCandleStore:
                     "bar_status": candle["bar_status"],
                     "source_observation_ids": list(candle["source_observation_ids"]),
                     "transformation_version": candle["transformation_version"],
+                    "validation_report_id": candle["validation_report_id"],
+                    "validation_status": candle["validation_status"],
                 }
                 serialized = _canonical_json(payload)
                 record_hash = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
@@ -267,8 +274,9 @@ class CanonicalCandleStore:
                         account_environment, broker_symbol, timeframe,
                         open_time, close_time, open, high, low, close, volume,
                         volume_type, source_class, bar_status,
-                        transformation_version, derived_at, record_sha256
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        transformation_version, validation_report_id, validation_status,
+                        derived_at, record_sha256
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     candle_id, candle["instrument_id"], candle["broker"],
                     candle["server_name"], candle["account_environment"],
@@ -279,7 +287,8 @@ class CanonicalCandleStore:
                     float(candle["low"]), float(candle["close"]),
                     float(candle["volume"]), candle["volume_type"],
                     candle["source_class"], candle["bar_status"],
-                    candle["transformation_version"], now, record_hash,
+                    candle["transformation_version"], candle["validation_report_id"],
+                    candle["validation_status"], now, record_hash,
                 ))
                 for ordinal, source_id in enumerate(source_ids):
                     connection.execute("""
@@ -324,7 +333,8 @@ class CanonicalCandleStore:
             "account_environment", "broker_symbol", "timeframe",
             "open_time", "close_time", "open", "high", "low", "close",
             "volume", "volume_type", "source_class", "bar_status",
-            "transformation_version", "derived_at", "record_sha256",
+            "transformation_version", "validation_report_id", "validation_status",
+            "derived_at", "record_sha256",
         )
         result = dict(zip(fields, row))
         result["source_observation_ids"] = [source[0] for source in sources]
