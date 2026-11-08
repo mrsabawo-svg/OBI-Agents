@@ -148,6 +148,22 @@ class CanonicalCandleStore:
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute("""
+                CREATE TABLE IF NOT EXISTS canonical_validation_reports (
+                    report_id TEXT PRIMARY KEY,
+                    batch_id TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    broker TEXT NOT NULL,
+                    server_name TEXT NOT NULL,
+                    account_environment TEXT NOT NULL,
+                    broker_symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    validator_version TEXT NOT NULL,
+                    report_json TEXT NOT NULL,
+                    report_sha256 TEXT NOT NULL,
+                    generated_at TEXT NOT NULL
+                )
+            """)
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS canonical_candles (
                     candle_id TEXT PRIMARY KEY,
                     instrument_id TEXT NOT NULL,
@@ -186,7 +202,7 @@ class CanonicalCandleStore:
                 CREATE INDEX IF NOT EXISTS idx_canonical_identity_time
                 ON canonical_candles(instrument_id, timeframe, open_time)
             """)
-            for table in ("canonical_candles", "canonical_candle_sources"):
+            for table in ("canonical_validation_reports", "canonical_candles", "canonical_candle_sources"):
                 connection.execute(f"""
                     CREATE TRIGGER IF NOT EXISTS {table}_no_update
                     BEFORE UPDATE ON {table}
@@ -198,22 +214,83 @@ class CanonicalCandleStore:
                     BEGIN SELECT RAISE(ABORT, 'canonical lineage is append-only'); END
                 """)
 
-    def append_batch(self, candles: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    def append_batch(
+        self,
+        candles: Iterable[dict[str, Any]],
+        validation_report: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         candles = list(candles)
         if not candles:
             raise CanonicalDataError("at least one canonical candle is required")
+        if not isinstance(validation_report, dict):
+            raise CanonicalDataError("a persisted validation_report is required")
 
         validated = [validate_canonical_candle(candle) for candle in candles]
+        report_required = (
+            "report_id", "batch_id", "instrument_id", "broker", "server_name",
+            "account_environment", "broker_symbol", "timeframe",
+            "validator_version", "report",
+        )
+        missing_report = [key for key in report_required if not validation_report.get(key)]
+        if missing_report:
+            raise CanonicalDataError("validation_report missing: " + ", ".join(missing_report))
+        report_payload = {
+            "report_id": validation_report["report_id"],
+            "batch_id": validation_report["batch_id"],
+            "instrument_id": validation_report["instrument_id"],
+            "broker": validation_report["broker"],
+            "server_name": validation_report["server_name"],
+            "account_environment": validation_report["account_environment"],
+            "broker_symbol": validation_report["broker_symbol"],
+            "timeframe": validation_report["timeframe"],
+            "validator_version": validation_report["validator_version"],
+            "report": validation_report["report"],
+        }
+        report_json = _canonical_json(report_payload)
+        report_hash = hashlib.sha256(report_json.encode("utf-8")).hexdigest()
         inserted_ids = []
         record_hashes = []
+        source_lineage = []
         now = datetime.now(timezone.utc).isoformat()
 
+        report_identity = tuple(report_payload[key] for key in (
+            "instrument_id", "broker", "server_name", "account_environment",
+            "broker_symbol", "timeframe",
+        ))
+        if any(candle["validation_report_id"] != report_payload["report_id"] for candle in validated):
+            raise CanonicalDataError("candle validation_report_id does not match supplied report")
+        if any(tuple(candle[key] for key in (
+            "instrument_id", "broker", "server_name", "account_environment",
+            "broker_symbol", "timeframe",
+        )) != report_identity for candle in validated):
+            raise CanonicalDataError("candle identity does not match validation report")
+
         with self._connect() as connection:
+            connection.execute("""
+                INSERT OR IGNORE INTO canonical_validation_reports (
+                    report_id, batch_id, instrument_id, broker, server_name,
+                    account_environment, broker_symbol, timeframe,
+                    validator_version, report_json, report_sha256, generated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                report_payload["report_id"], report_payload["batch_id"],
+                report_payload["instrument_id"], report_payload["broker"],
+                report_payload["server_name"], report_payload["account_environment"],
+                report_payload["broker_symbol"], report_payload["timeframe"],
+                report_payload["validator_version"], report_json, report_hash, now,
+            ))
+            existing_report = connection.execute(
+                "SELECT report_sha256 FROM canonical_validation_reports WHERE report_id = ?",
+                (report_payload["report_id"],),
+            ).fetchone()
+            if existing_report is None or existing_report[0] != report_hash:
+                raise CanonicalDataError("validation report ID already exists with different content")
+
             for candle in validated:
                 source_ids = candle["source_observation_ids"]
                 placeholders = ",".join("?" for _ in source_ids)
                 source_rows = connection.execute(
-                    f"""SELECT observation_id, instrument_id, broker, server_name,
+                    f"""SELECT observation_id, batch_id, instrument_id, broker, server_name,
                                account_environment, broker_symbol, timeframe, source_type
                         FROM raw_observations
                         WHERE observation_id IN ({placeholders})""",
@@ -226,19 +303,21 @@ class CanonicalCandleStore:
                 for source_id in source_ids:
                     source = source_by_id[source_id]
                     expected = (
-                        candle["instrument_id"], candle["broker"],
-                        candle["server_name"], candle["account_environment"],
-                        candle["broker_symbol"],
+                        report_payload["instrument_id"], report_payload["broker"],
+                        report_payload["server_name"], report_payload["account_environment"],
+                        report_payload["broker_symbol"],
                     )
-                    actual = tuple(source[1:6])
+                    if source[1] != report_payload["batch_id"]:
+                        raise CanonicalDataError("source observation batch does not match validation report")
+                    actual = tuple(source[2:7])
                     if actual != expected:
                         raise CanonicalDataError(
                             "source observation identity does not match canonical candle"
                         )
                     expected_source_type = {"broker_bar": "broker_bars", "tick_derived": "broker_ticks", "resampled_bar": "broker_bars"}[candle["source_class"]]
-                    if source[7] != expected_source_type:
+                    if source[8] != expected_source_type:
                         raise CanonicalDataError("raw observation source type does not match canonical source class")
-                    if candle["source_class"] == "broker_bar" and source[6] != candle["timeframe"]:
+                    if candle["source_class"] == "broker_bar" and source[7] != candle["timeframe"]:
                         raise CanonicalDataError(
                             "broker_bar source timeframe does not match canonical timeframe"
                         )
@@ -298,11 +377,19 @@ class CanonicalCandleStore:
                     """, (candle_id, source_id, ordinal))
                 inserted_ids.append(candle_id)
                 record_hashes.append(record_hash)
+                for source_id in source_ids:
+                    source_lineage.append({
+                        "candle_id": candle_id,
+                        "observation_id": source_id,
+                    })
 
         return {
             "inserted_count": len(inserted_ids),
             "candle_ids": inserted_ids,
             "record_sha256": record_hashes,
+            "source_lineage": source_lineage,
+            "validation_report_id": report_payload["report_id"],
+            "validation_report_sha256": report_hash,
         }
 
     def count(self) -> int:
