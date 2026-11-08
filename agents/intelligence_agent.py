@@ -5,6 +5,7 @@ Thin orchestrator. Delegates to SignalReviewer, PersistenceAgent, NotifierAgent.
 from core.utils import sast_str
 from core.memory import load as load_memory
 from agents.signal_reviewer import SignalReviewer
+from agents.archive_agent import ArchiveAgent
 from agents.persistence_agent import PersistenceAgent
 from agents.notifier_agent import NotifierAgent
 
@@ -47,6 +48,11 @@ class IntelligenceAgent:
             "score":           payload.get("score", {}),
             "edge":            payload.get("edge", {}),
         }
+
+        # Persist the versioned decision record before any notification is sent.
+        if not ArchiveAgent().log(payload):
+            print("[INTEL] " + self.symbol + ": archive persistence failed; notification suppressed")
+            return {}
 
         PersistenceAgent(self.symbol).save(result, payload)
         NotifierAgent(self.symbol).send(result, narrative)
