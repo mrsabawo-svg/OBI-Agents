@@ -220,8 +220,6 @@ class CanonicalCandleStore:
         validation_report: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         candles = list(candles)
-        if not candles:
-            raise CanonicalDataError("at least one canonical candle is required")
         if not isinstance(validation_report, dict):
             raise CanonicalDataError("a persisted validation_report is required")
 
