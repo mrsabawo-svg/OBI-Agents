@@ -50,8 +50,9 @@ def test_same_transaction_id_and_payload_is_idempotent(monkeypatch):
     }}
     with patch("core.memory.requests.get", return_value=FakeResponse(200, gist(current))), \
          patch("core.memory.requests.patch") as patch_call:
-        assert memory.load() == current
-        assert memory.save({"counter": 2}, transaction_id="event-1") is True
+        snapshot = memory.load()
+        assert snapshot == current
+        assert memory.save(snapshot, transaction_id="event-1") is True
         patch_call.assert_not_called()
 
 
@@ -83,4 +84,35 @@ def test_invalid_mutator_result_does_not_write(monkeypatch):
          patch("core.memory.requests.patch") as patch_call:
         with pytest.raises(TypeError):
             memory.transaction(lambda _state: [], "event-bad")
+        patch_call.assert_not_called()
+
+
+def test_transaction_retry_does_not_rerun_committed_mutator(monkeypatch):
+    configure(monkeypatch)
+    committed = {"counter": 2, "_memory_meta": {
+        "schema_version": 1, "revision": 1,
+        "transactions": [{"id": "event-1", "digest": memory._digest({"counter": 2})}],
+    }}
+    calls = []
+    with patch("core.memory.requests.get", return_value=FakeResponse(200, gist(committed))), \
+         patch("core.memory.requests.patch") as patch_call:
+        assert memory.transaction(lambda state: calls.append("called") or state.update(counter=3), "event-1") is True
+        assert calls == []
+        patch_call.assert_not_called()
+
+
+def test_old_snapshot_is_rejected_even_after_another_load_advances_global_revision(monkeypatch):
+    configure(monkeypatch)
+    old = {"counter": 1}
+    newer = {"counter": 2, "_memory_meta": {
+        "schema_version": 1, "revision": 1, "transactions": [],
+    }}
+    with patch("core.memory.requests.get", side_effect=[
+        FakeResponse(200, gist(old)),
+        FakeResponse(200, gist(newer)),
+        FakeResponse(200, gist(newer)),
+    ]), patch("core.memory.requests.patch") as patch_call:
+        old_snapshot = memory.load()
+        assert memory.load() == newer
+        assert memory.save(old_snapshot) is False
         patch_call.assert_not_called()

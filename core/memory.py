@@ -113,9 +113,13 @@ def save(data: dict, transaction_id: Optional[str] = None) -> bool:
             print("[MEMORY] Save blocked: transaction_id must be a non-empty string")
             return False
         try:
+            # The expected revision belongs to this exact snapshot. Do not use
+            # the process-global revision as the concurrency token: another
+            # caller may have loaded a newer snapshot in the meantime.
+            snapshot_revision = _metadata(data)["revision"]
             remote, meta = _remote_read()
-            if meta["revision"] != _BASE_REVISION:
-                raise MemoryConflictError("stale revision: expected " + str(_BASE_REVISION) + ", found " + str(meta["revision"]))
+            if meta["revision"] != snapshot_revision:
+                raise MemoryConflictError("stale snapshot revision: expected " + str(snapshot_revision) + ", found " + str(meta["revision"]))
             candidate = copy.deepcopy(data)
             candidate.pop(META_KEY, None)
             digest = _digest(candidate)
@@ -164,6 +168,11 @@ def transaction(mutator: Callable[[dict], Optional[dict]], transaction_id: str) 
         raise ValueError("transaction_id must be a non-empty string")
     with _LOCK:
         working = copy.deepcopy(load())
+        existing_ids = {item["id"] for item in _metadata(working)["transactions"]}
+        if transaction_id in existing_ids:
+            # The transaction was committed previously. In particular, do not
+            # rerun a non-idempotent mutator after an ambiguous read-back failure.
+            return True
         result = mutator(working)
         candidate = working if result is None else result
         if not isinstance(candidate, dict):
