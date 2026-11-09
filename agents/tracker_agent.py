@@ -120,7 +120,9 @@ def check_outcome(symbol: str, ticker: str):
 
         if changed:
             _rebuild_stats(memory, symbol)
-            save_memory(memory)
+            if save_memory(memory) is not True:
+                print("[TRACKER] " + symbol + ": archive update was not persisted")
+                return
             print("[TRACKER] " + symbol + ": stats rebuilt from archive")
 
     except Exception as e:

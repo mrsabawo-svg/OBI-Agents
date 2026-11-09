@@ -57,9 +57,26 @@ AGENT_SPECS = {
             "synthetic_symbols": [
                 "PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"
             ],
+            "symbol_preferred_kill_zones": {
+                "XAUUSD": ["London Open", "New York Open"],
+                "EURUSD": ["London Open", "New York Open"],
+                "USDJPY": ["London Open", "New York Open", "Asian Session"],
+                "GBPJPY": ["London Open", "New York Open"],
+                "GBPUSD": ["London Open", "New York Open"],
+                "NASDAQ": ["New York Open"],
+                "BTCUSD": ["London Open", "New York Open", "Asian Session"],
+                "ETHUSD": ["London Open", "New York Open", "Asian Session"],
+                "SOLUSD": ["London Open", "New York Open", "Asian Session"],
+                "PAIN_999": ["London Open", "New York Open", "Asian Session", "London Close"],
+                "GAIN_999": ["London Open", "New York Open", "Asian Session", "London Close"],
+                "PAIN_1200": ["London Open", "New York Open", "Asian Session", "London Close"],
+                "GAIN_1200": ["London Open", "New York Open", "Asian Session", "London Close"],
+                "SFX_VOL_75": ["London Open", "New York Open", "Asian Session", "London Close"],
+            },
+            "default_preferred_kill_zones": ["London Open", "New York Open"],
         },
-        "inputs": ["instrument_id", "captured SAST datetime", "kill-zone clock"],
-        "outputs": ["tradeable", "reason", "kill_zone", "zone_name", "peak", "evaluated_at_sast"],
+        "inputs": ["instrument_id", "captured SAST datetime when required", "kill-zone clock"],
+        "outputs": ["tradeable", "reason", "kill_zone", "zone_name", "peak", "evaluated_at_sast (null for synthetic bypass)"],
         "market_data_timeframes": [],
         "upstream_agents": [],
         "source_files": ["agents/session_agent.py", "core/utils.py"],
@@ -344,7 +361,10 @@ AGENT_SPECS = {
             "minimum_sample_scope": "global closed archive, not per subgroup",
             "low_sample_defaults_pct": 50.0,
         },
-        "inputs": ["closed signal archive", "Trigger.tags", "Bias", "Regime.label"],
+        "inputs": [
+            "symbol", "closed archive status/symbol/regime/tags/outcome",
+            "Trigger.tags", "Regime.label",
+        ],
         "outputs": [
             "symbol_wr", "grade_wr", "regime_wr", "tag_wr",
             "overall_wr", "sample_size", "low_sample",
@@ -716,11 +736,11 @@ def verify_decision_lineage(manifest: dict) -> bool:
 
         source_files = spec.get("source_files")
         if not isinstance(source_files, list) or any(
-            path not in source_hashes for path in source_files
+            source_path not in source_hashes for source_path in source_files
         ):
             return False
         expected_implementation_hash = _sha256({
-            path: source_hashes[path] for path in source_files
+            source_path: source_hashes[source_path] for source_path in source_files
         })
         if trace.get("formula_spec_sha256") != supplied_spec_hash:
             return False
