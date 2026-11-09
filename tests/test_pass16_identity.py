@@ -4,7 +4,12 @@ import pytest
 
 from agents.archive_agent import ArchiveAgent
 from agents.signal_reviewer import SignalReviewer, SAST
-from core.signal_identity import (\n    SETUP_IDENTITY_VERSION,\n    build_setup_identity,\n    create_signal_identity,\n    resolve_setup_identity,\n)
+from core.signal_identity import (
+    SETUP_IDENTITY_VERSION,
+    build_setup_identity,
+    create_signal_identity,
+    resolve_setup_identity,
+)
 from main import build_signal_id
 
 
