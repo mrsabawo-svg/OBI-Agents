@@ -383,6 +383,8 @@ class InstrumentRegistryStore:
                     persisted_report = json.loads(report_json)
                 except (TypeError, json.JSONDecodeError) as exc:
                     raise ValueError("canonical evidence report JSON is invalid") from exc
+                quality = persisted_report.get("report")
+                history = quality.get("history_completeness") if isinstance(quality, dict) else None
                 if (
                     persisted_report.get("report_id") != evidence["report_id"]
                     or persisted_report.get("instrument_id") != instrument_id
@@ -390,8 +392,18 @@ class InstrumentRegistryStore:
                     or persisted_report.get("account_environment") != account_identity.get("environment")
                     or persisted_report.get("broker_symbol") != broker_symbol
                     or persisted_report.get("timeframe") != evidence["timeframe"]
+                    or not isinstance(quality, dict)
+                    or quality.get("account_fingerprint") != account_fingerprint
+                    or quality.get("account_identity_pinned") is not True
+                    or quality.get("instrument_metadata_sha256") != metadata_sha256
+                    or not isinstance(history, dict)
+                    or history.get("status") != "complete"
+                    or history.get("account_fingerprint") != account_fingerprint
+                    or history.get("instrument_id") != instrument_id
+                    or history.get("broker_symbol") != broker_symbol
+                    or history.get("timeframe") != evidence["timeframe"]
                 ):
-                    raise ValueError("canonical evidence report payload identity mismatch")
+                    raise ValueError("canonical evidence report payload identity or metadata proof mismatch")
 
                 candle_rows = db.execute("""
                     SELECT c.candle_id, r.account_fingerprint
