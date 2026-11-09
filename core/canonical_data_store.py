@@ -262,14 +262,14 @@ class CanonicalCandleStore:
         now = datetime.now(timezone.utc).isoformat()
 
         report_identity = tuple(report_payload[key] for key in (
-            "instrument_id", "broker", "server_name", "account_fingerprint",
-            "account_environment", "broker_symbol", "timeframe",
+            "instrument_id", "broker", "server_name", "account_environment",
+            "broker_symbol", "timeframe",
         ))
         if any(candle["validation_report_id"] != report_payload["report_id"] for candle in validated):
             raise CanonicalDataError("candle validation_report_id does not match supplied report")
         if any(tuple(candle[key] for key in (
-            "instrument_id", "broker", "server_name", "account_fingerprint",
-            "account_environment", "broker_symbol", "timeframe",
+            "instrument_id", "broker", "server_name", "account_environment",
+            "broker_symbol", "timeframe",
         )) != report_identity for candle in validated):
             raise CanonicalDataError("candle identity does not match validation report")
 
@@ -299,7 +299,8 @@ class CanonicalCandleStore:
                 placeholders = ",".join("?" for _ in source_ids)
                 source_rows = connection.execute(
                     f"""SELECT observation_id, batch_id, instrument_id, broker, server_name,
-                               account_environment, broker_symbol, timeframe, source_type
+                               account_fingerprint, account_environment, broker_symbol,
+                               timeframe, source_type
                         FROM raw_observations
                         WHERE observation_id IN ({placeholders})""",
                     tuple(source_ids),
