@@ -99,6 +99,17 @@ def test_resolver_rejects_malformed_issued_identity_instead_of_recomputing():
         resolve_setup_identity(candidate)
 
 
+
+def test_archive_log_rejects_missing_event_identity_without_writing(monkeypatch):
+    memory = {"_archive": []}
+    saved = []
+    monkeypatch.setattr("agents.archive_agent.load_memory", lambda: memory)
+    monkeypatch.setattr("agents.archive_agent.save_memory", lambda value: saved.append(value) or True)
+    assert not ArchiveAgent().log({"symbol": "EURUSD"})
+    assert memory["_archive"] == []
+    assert saved == []
+
+
 def test_exact_signal_id_is_duplicate_even_if_open_timestamp_is_unavailable(monkeypatch):
     candidate = payload("SIGNAL_001")
     archive = [{
