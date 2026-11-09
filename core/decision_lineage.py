@@ -433,6 +433,7 @@ AGENT_SPECS = {
 ROOT_SOURCE_FILES = [
     "main.py",
     "core/decision_lineage.py",
+    "core/signal_identity.py",
     "agents/intelligence_agent.py",
     "agents/archive_agent.py",
     "agents/lifecycle_agent.py",
@@ -582,6 +583,7 @@ def build_decision_lineage(
     data_lineage: dict | None,
     external_inputs: dict | None = None,
     evaluated_at: datetime | None = None,
+    signal_identity: dict | None = None,
 ) -> dict:
     """Build a self-verifying manifest for one fired OBI decision."""
     missing_agents = [name for name in AGENT_ORDER if name not in agent_outputs]
@@ -593,6 +595,28 @@ def build_decision_lineage(
         raise ValueError("evaluated_at must be timezone-aware")
     evaluated_at_iso = now.astimezone(timezone.utc).isoformat()
     external_inputs = external_inputs or {}
+    identity = None
+    if signal_identity is not None:
+        if not isinstance(signal_identity, dict):
+            raise ValueError("signal_identity must be a dictionary")
+        signal_id = signal_identity.get("signal_id")
+        setup_id = signal_identity.get("setup_id")
+        identity_version = signal_identity.get("setup_identity_version")
+        if not isinstance(signal_id, str) or not signal_id.strip():
+            raise ValueError("signal_identity.signal_id must be non-empty")
+        if (
+            not isinstance(setup_id, str)
+            or len(setup_id) != 64
+            or any(character not in "0123456789abcdef" for character in setup_id)
+        ):
+            raise ValueError("signal_identity.setup_id must be a lowercase SHA-256 digest")
+        if not isinstance(identity_version, str) or not identity_version.strip():
+            raise ValueError("signal_identity.setup_identity_version must be non-empty")
+        identity = {
+            "signal_id": signal_id,
+            "setup_id": setup_id,
+            "setup_identity_version": identity_version,
+        }
 
     market_fingerprints = {
         timeframe: _frame_fingerprint(frame)
@@ -690,6 +714,7 @@ def build_decision_lineage(
         "provenance_status": "partial" if warnings else "complete",
         "pipeline_version": PIPELINE_VERSION,
         "instrument_id": symbol,
+        "signal_identity": identity,
         "evaluated_at": evaluated_at_iso,
         "agent_order": list(AGENT_ORDER),
         "data_lineage_status": data_lineage_status,
@@ -714,6 +739,23 @@ def verify_decision_lineage(manifest: dict) -> bool:
         return False
     if manifest.get("agent_order") != list(AGENT_ORDER):
         return False
+    identity = manifest.get("signal_identity")
+    if identity is not None:
+        if not isinstance(identity, dict):
+            return False
+        signal_id = identity.get("signal_id")
+        setup_id = identity.get("setup_id")
+        identity_version = identity.get("setup_identity_version")
+        if not isinstance(signal_id, str) or not signal_id.strip():
+            return False
+        if (
+            not isinstance(setup_id, str)
+            or len(setup_id) != 64
+            or any(character not in "0123456789abcdef" for character in setup_id)
+        ):
+            return False
+        if not isinstance(identity_version, str) or not identity_version.strip():
+            return False
 
     specs = manifest.get("agent_specs")
     traces = manifest.get("agent_traces")
