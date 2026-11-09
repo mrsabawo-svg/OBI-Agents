@@ -5,7 +5,6 @@ Handles: memory updates, archive, gist push.
 import os
 import json
 import requests
-from datetime import datetime
 from core.memory import load as load_memory, save as save_memory
 
 GIST_TOKEN   = os.environ.get("GIST_TOKEN")
@@ -31,9 +30,8 @@ class PersistenceAgent:
             memory[self.symbol]["last_direction"]  = result.get("direction")
             memory[self.symbol]["last_confidence"] = payload["score"].confidence
 
-            signal_id = result.get("id") or payload.get("id") or (
-                self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            )
+            # Reuse the issued event ID; persistence never manufactures identity.
+            signal_id = payload.get("id")
 
             # ARCHIVE AUTHORITY INVARIANT:
             # PersistenceAgent MUST NOT create or mutate _archive.
