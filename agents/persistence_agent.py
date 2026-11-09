@@ -31,36 +31,15 @@ class PersistenceAgent:
             memory[self.symbol]["last_direction"]  = result.get("direction")
             memory[self.symbol]["last_confidence"] = payload["score"].confidence
 
-            signal_id    = self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            trade_record = {
-                "id":         signal_id,
-                "symbol":     self.symbol,
-                "status":     "OPEN",
-                "direction":  result.get("direction"),
-                "grade":      result.get("grade"),
-                "entry":      result.get("entry"),
-                "sl":         result.get("sl"),
-                "tp1":        result.get("tp1"),
-                "tp2":        result.get("tp2"),
-                "tp3":        result.get("tp3"),
-                "rr":         result.get("rr"),
-                "tags":       result.get("tags", []),
-                "factors":    payload["bias"].factors,
-                "bias_grade": payload["bias"].grade,
-                "obi_score":  payload["score"].confidence,
-                "regime":     payload.get("regime", {}).get("label"),
-                "opened":     result.get("timestamp"),
-                "closed":     None,
-                "tp1_hit":    False,
-                "tp2_hit":    False,
-                "tp3_hit":    False,
-                "outcome":    None
-            }
+            signal_id = result.get("id") or payload.get("id") or (
+                self.symbol + "_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            )
 
-            if "_archive" not in memory:
-                memory["_archive"] = []
-            memory["_archive"].append(trade_record)
-
+            # ARCHIVE AUTHORITY INVARIANT:
+            # PersistenceAgent MUST NOT create or mutate _archive.
+            # ArchiveAgent is the sole writer for trade-history records.
+            # PersistenceAgent owns only symbol-level summary memory and
+            # the latest signal snapshot (obi_signal.json).
             memory[self.symbol]["last_signal_data"] = {
                 "id":        signal_id,
                 "direction": result.get("direction"),
@@ -72,13 +51,15 @@ class PersistenceAgent:
                 "tp3":       result.get("tp3"),
                 "rr":        result.get("rr"),
                 "tags":      result.get("tags", []),
-                "regime":    trade_record["regime"],
-                "obi_score": trade_record["obi_score"],
+                "regime":    payload.get("regime", {}).get("label"),
+                "obi_score": payload["score"].confidence,
                 "timestamp": result.get("timestamp")
             }
 
-            save_memory(memory)
-            print("[PERSIST] Memory updated - archived: " + signal_id)
+            if save_memory(memory) is not True:
+                print("[PERSIST] Memory summary update was not persisted: " + signal_id)
+                return
+            print("[PERSIST] Memory updated - archive untouched: " + signal_id)
         except Exception as e:
             print("[PERSIST] Memory error: " + str(e))
 

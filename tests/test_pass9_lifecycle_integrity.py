@@ -44,6 +44,7 @@ def test_pass9_open_to_closed_uses_same_canonical_memory():
     def fake_save(data):
         persisted.clear()
         persisted.update(copy.deepcopy(data))
+        return True
 
     price = pd.DataFrame({"Close": [1.1100]})
 

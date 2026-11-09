@@ -17,11 +17,13 @@ from core.models import SymbolContext
 SAST = pytz.timezone("Africa/Johannesburg")
 
 SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD",
-           "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
+           "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ",
+           "PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"]
 
-CRYPTO   = {"BTCUSD", "ETHUSD", "SOLUSD"}
-FOREX    = {"XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD"}
-INDICES  = {"NASDAQ"}
+CRYPTO     = {"BTCUSD", "ETHUSD", "SOLUSD"}
+FOREX      = {"XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD"}
+INDICES    = {"NASDAQ"}
+SYNTHETICS = {"PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"}
 
 # Session windows in SAST hours
 SESSION_WINDOWS = {
@@ -33,10 +35,10 @@ SESSION_WINDOWS = {
 
 # Which symbols are most relevant per session
 SESSION_PRIORITY = {
-    "Asian Session":  ["USDJPY", "BTCUSD", "ETHUSD", "SOLUSD"],
-    "London Open":    ["XAUUSD", "EURUSD", "GBPJPY", "GBPUSD", "BTCUSD"],
-    "New York Open":  ["XAUUSD", "EURUSD", "NASDAQ", "BTCUSD", "ETHUSD"],
-    "London Close":   ["XAUUSD", "EURUSD", "GBPJPY"],
+    "Asian Session":  ["USDJPY", "BTCUSD", "ETHUSD", "SOLUSD", "SFX_VOL_75"],
+    "London Open":    ["XAUUSD", "EURUSD", "GBPJPY", "GBPUSD", "BTCUSD", "PAIN_999", "GAIN_999"],
+    "New York Open":  ["XAUUSD", "EURUSD", "NASDAQ", "BTCUSD", "ETHUSD", "PAIN_1200", "GAIN_1200"],
+    "London Close":   ["XAUUSD", "EURUSD", "GBPJPY", "SFX_VOL_75"],
 }
 
 
@@ -77,8 +79,8 @@ def _prioritise(hour: int, weekday: int, context: SymbolContext) -> list:
         last_conf = context.last_confidence.get(sym, 50)
         score += int(last_conf * 0.30)         # max 30pts at conf=100
 
-        # 3. Crypto 24/7 bonus during off hours
-        if sym in CRYPTO and session == "Off Hours":
+        # 3. Crypto & Synthetics 24/7 bonus during off hours
+        if (sym in CRYPTO or sym in SYNTHETICS) and session == "Off Hours":
             score += 20
 
         # 4. Recency penalty — avoid re-scanning too soon
@@ -93,8 +95,8 @@ def _prioritise(hour: int, weekday: int, context: SymbolContext) -> list:
             except Exception:
                 pass
 
-        # Weekend: skip non-crypto entirely
-        if weekday >= 5 and sym not in CRYPTO:
+        # Weekend: skip traditional forex/indices entirely, allow crypto and synthetics
+        if weekday >= 5 and sym not in CRYPTO and sym not in SYNTHETICS:
             score = -999
 
         priority[sym] = score
@@ -210,7 +212,14 @@ class ChiefAgent:
             lines.append("*Priority symbols:*")
             for sym in top3:
                 score = priority.get(sym, 0)
-                tag   = "🟡 Crypto" if sym in CRYPTO else ("📈 Index" if sym in INDICES else "💱 Forex")
+                if sym in CRYPTO:
+                    tag = "🟡 Crypto"
+                elif sym in SYNTHETICS:
+                    tag = "⚡ Synthetic"
+                elif sym in INDICES:
+                    tag = "📈 Index"
+                else:
+                    tag = "💱 Forex"
                 lines.append(f"  {tag} `{sym}` — score {score}")
         else:
             lines.append("No high-priority symbols right now.")

@@ -51,29 +51,36 @@ class SignalReviewer:
 
     def build_narrative(self, payload: dict) -> str:
         try:
-            regime_label = payload.get("regime", {}).get("label", "Unknown")
-            regime_conf  = payload.get("regime", {}).get("confidence", 0)
-            trigger      = payload["trigger"]
-            tags         = " + ".join(trigger.tags) or "none"
-            bias_factors = payload["bias"].factors
-            top_factors  = ", ".join(bias_factors[:3]) if bias_factors else "none"
-            edge         = payload["edge"]
-            score        = payload["score"]
-            wr_line = (
-                "LOW SAMPLE (" + str(edge.sample_size) + " trades)" if edge.low_sample
-                else "Sym WR: " + str(edge.symbol_wr) + "% | Regime WR: " + str(edge.regime_wr) + "%"
-            )
-            return (
-                "OBI Confidence: " + str(score.confidence) + "/100 | " +
-                "Grade: " + str(score.grade) + " | " +
-                "Risk: " + str(score.risk) + "\n" +
-                "Edge: HMM " + regime_label + " (" + str(round(regime_conf * 100)) + "%) | " + tags + "\n" +
-                wr_line + "\n" +
-                "Factors: " + top_factors
-            )
+            regime_dict  = payload.get("regime", {})
+            regime_label = regime_dict.get("label", "RANGING")
+            trigger      = payload.get("trigger")
+            tags         = " + ".join(getattr(trigger, "tags", []) if trigger else []) or "Structure"
+            session_info = payload.get("session", {})
+            session_name = "Kill Zone" if session_info.get("kill_zone") else "Standard Session"
+
+            # Setup summary: concise confluence of market context
+            setup_line = f"SETUP: {session_name} + {regime_label} Regime ({tags})"
+
+            # Trap / Invalidation watch: concise objective risk warning
+            score_obj = payload.get("score")
+            risk_label = getattr(score_obj, "risk", "MEDIUM") if score_obj else "MEDIUM"
+            edge_obj   = payload.get("edge")
+
+            if regime_label == "VOLATILE":
+                trap_note = "Elevated volatility; enforce strict SL and avoid early re-entry."
+            elif edge_obj and getattr(edge_obj, "low_sample", False):
+                trap_note = "Low sample size; monitor price action closely at TP1."
+            elif risk_label == "HIGH":
+                trap_note = "Lower reward-risk ratio; watch for liquidity sweeps against position."
+            else:
+                trap_note = "Invalidated on close beyond SL; protect capital at TP1."
+
+            watch_line = f"TRAP / WATCH: {trap_note}"
+
+            return f"{setup_line}\n{watch_line}"
         except Exception as e:
             print("[REVIEWER] Narrative error: " + str(e))
-            return "OBI Confidence: 50/100"
+            return "SETUP: Active Signal\nTRAP / WATCH: Monitor position strictly at SL."
 
     def _groq_call(self, prompt: str) -> str:
         r = requests.post(
