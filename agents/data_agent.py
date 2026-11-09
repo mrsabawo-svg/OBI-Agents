@@ -148,6 +148,10 @@ class DataAgent:
                     or account_identity.get("server") != parsed.get("server_name")
                     or account_identity.get("environment") != parsed.get("account_environment")
                     or account_identity.get("platform") != parsed.get("platform")
+                    or account_identity.get("identity_pinned") is not True
+                    or parsed.get("instrument_verification_status") != "verified"
+                    or parsed.get("timeframe_verified") is not True
+                    or parsed.get("analysis_eligible") is not True
                 ):
                     print(f"[DATA] {self.symbol} {tf}: verified broker/account identity metadata missing or inconsistent")
                     continue

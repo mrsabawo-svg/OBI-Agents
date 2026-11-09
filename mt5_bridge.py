@@ -17,7 +17,11 @@ from flask import Flask, jsonify, request
 from core.mt5_connector import ConnectionIdentity, MT5Connector
 from core.raw_observation_store import RawObservationStore
 from core.canonical_data_store import CanonicalCandleStore
-from core.instrument_registry_store import InstrumentRegistryStore, metadata_fingerprint
+from core.instrument_registry_store import (
+    InstrumentRegistryStore,
+    metadata_fingerprint,
+    MIN_ANALYSIS_CLOSED_CANDLES,
+)
 from core.history_completeness import assess_history_completeness, TIMEFRAME_SECONDS
 
 try:
@@ -652,7 +656,12 @@ def get_ohlcv():
         timeframe,
         latest_discovery["metadata_sha256"],
     )
-    analysis_eligible_timeframes = registry.verified_timeframes(
+    verified_timeframes = registry.verified_timeframes(
+        account_identity["account_fingerprint"],
+        symbol_id,
+        latest_discovery["metadata_sha256"],
+    )
+    analysis_eligible_timeframes = registry.analysis_eligible_timeframes(
         account_identity["account_fingerprint"],
         symbol_id,
         latest_discovery["metadata_sha256"],
@@ -661,7 +670,8 @@ def get_ohlcv():
     analysis_eligible = bool(
         timeframe_verified
         and history_completeness.get("status") == "complete"
-        and closed_canonical_count > 0
+        and closed_canonical_count >= MIN_ANALYSIS_CLOSED_CANDLES
+        and bool(instrument_verification.get("analysis_eligible"))
     )
 
     return jsonify({
@@ -683,6 +693,7 @@ def get_ohlcv():
         ),
         "timeframe_verified": timeframe_verified,
         "analysis_eligible": analysis_eligible,
+        "verified_timeframes": verified_timeframes,
         "analysis_eligible_timeframes": analysis_eligible_timeframes,
         "timeframe": timeframe,
         "start_pos": start_pos,

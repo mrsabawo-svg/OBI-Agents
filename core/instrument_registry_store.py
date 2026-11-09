@@ -15,6 +15,7 @@ from typing import Any
 
 
 REGISTRY_VERSION = "obi-instrument-registry-v1"
+MIN_ANALYSIS_CLOSED_CANDLES = 60
 
 
 def _json(value: Any) -> str:
@@ -98,6 +99,7 @@ class InstrumentRegistryStore:
                     reviewer TEXT NOT NULL,
                     evidence_report_ids_json TEXT NOT NULL,
                     metadata_sha256 TEXT NOT NULL,
+                    analysis_eligible INTEGER NOT NULL DEFAULT 0,
                     verified_at TEXT NOT NULL,
                     registry_version TEXT NOT NULL
                 )
@@ -108,6 +110,16 @@ class InstrumentRegistryStore:
                     account_fingerprint, instrument_id, timeframe, verified_at
                 )
             """)
+            verification_columns = {
+                row["name"] for row in db.execute(
+                    "PRAGMA table_info(mt5_instrument_verifications)"
+                ).fetchall()
+            }
+            if "analysis_eligible" not in verification_columns:
+                db.execute("""
+                    ALTER TABLE mt5_instrument_verifications
+                    ADD COLUMN analysis_eligible INTEGER NOT NULL DEFAULT 0
+                """)
             for table in (
                 "mt5_account_observations",
                 "mt5_instrument_discoveries",
@@ -282,6 +294,7 @@ class InstrumentRegistryStore:
             raise ValueError("instrument is not mapped to the discovered broker symbol")
 
         reports_by_timeframe: dict[str, list[str]] = {}
+        analysis_eligible_by_timeframe: dict[str, bool] = {}
         for evidence in evidence_reports:
             if not isinstance(evidence, dict):
                 raise ValueError("evidence reports must be persisted report objects")
@@ -302,12 +315,20 @@ class InstrumentRegistryStore:
             completeness = report.get("history_completeness")
             if not isinstance(completeness, dict) or completeness.get("status") != "complete":
                 raise ValueError("instrument verification requires complete history evidence")
-            if int(evidence.get("closed_candle_count", 0)) < 1:
+            closed_count = int(evidence.get("closed_candle_count", 0))
+            if closed_count < 1:
                 raise ValueError("instrument verification requires at least one persisted closed canonical candle")
             report_id = evidence.get("report_id")
             if not isinstance(report_id, str) or not report_id:
                 raise ValueError("evidence report ID is required")
             reports_by_timeframe.setdefault(timeframe, []).append(report_id)
+            analysis_eligible_by_timeframe[timeframe] = (
+                analysis_eligible_by_timeframe.get(timeframe, False)
+                or (
+                    completeness.get("status") == "complete"
+                    and closed_count >= MIN_ANALYSIS_CLOSED_CANDLES
+                )
+            )
 
         verified_at = datetime.now(timezone.utc).isoformat()
         verification_rows = []
@@ -320,12 +341,14 @@ class InstrumentRegistryStore:
                         verification_id, account_fingerprint, instrument_id,
                         broker_symbol, timeframe, reviewer,
                         evidence_report_ids_json, metadata_sha256,
-                        verified_at, registry_version
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        analysis_eligible, verified_at, registry_version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     verification_id, fingerprint, instrument_id, broker_symbol,
                     timeframe, reviewer.strip(), _json(unique_report_ids),
-                    discovery["metadata_sha256"], verified_at, REGISTRY_VERSION,
+                    discovery["metadata_sha256"],
+                    int(analysis_eligible_by_timeframe.get(timeframe, False)),
+                    verified_at, REGISTRY_VERSION,
                 ))
                 verification_rows.append({
                     "verification_id": verification_id,
@@ -336,13 +359,18 @@ class InstrumentRegistryStore:
                     "reviewer": reviewer.strip(),
                     "evidence_report_ids": unique_report_ids,
                     "metadata_sha256": discovery["metadata_sha256"],
+                    "analysis_eligible": analysis_eligible_by_timeframe.get(timeframe, False),
                     "verified_at": verified_at,
                     "registry_version": REGISTRY_VERSION,
                 })
         return {
             "verification": verification_rows[0],
             "verifications": verification_rows,
-            "analysis_eligible_timeframes": sorted(reports_by_timeframe),
+            "verified_timeframes": sorted(reports_by_timeframe),
+            "analysis_eligible_timeframes": sorted(
+                timeframe for timeframe, eligible in analysis_eligible_by_timeframe.items()
+                if eligible
+            ),
         }
 
     def latest_verification(
@@ -367,6 +395,7 @@ class InstrumentRegistryStore:
         result["evidence_report_ids"] = json.loads(
             result.pop("evidence_report_ids_json")
         )
+        result["analysis_eligible"] = bool(result["analysis_eligible"])
         return result
 
     def verified_timeframes(
@@ -380,6 +409,23 @@ class InstrumentRegistryStore:
                 SELECT DISTINCT timeframe FROM mt5_instrument_verifications
                 WHERE account_fingerprint = ? AND instrument_id = ?
                   AND metadata_sha256 = ?
+                ORDER BY timeframe
+            """, (
+                account_fingerprint, instrument_id, metadata_sha256,
+            )).fetchall()
+        return [row[0] for row in rows]
+
+    def analysis_eligible_timeframes(
+        self,
+        account_fingerprint: str,
+        instrument_id: str,
+        metadata_sha256: str,
+    ) -> list[str]:
+        with self._connect() as db:
+            rows = db.execute("""
+                SELECT DISTINCT timeframe FROM mt5_instrument_verifications
+                WHERE account_fingerprint = ? AND instrument_id = ?
+                  AND metadata_sha256 = ? AND analysis_eligible = 1
                 ORDER BY timeframe
             """, (
                 account_fingerprint, instrument_id, metadata_sha256,
