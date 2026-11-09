@@ -26,7 +26,7 @@ class IntelligenceAgent:
         reviewer = SignalReviewer(self.symbol)
 
         if reviewer.is_duplicate(payload):
-            if reviewer.duplicate_check_status == "unavailable":
+            if getattr(reviewer, "duplicate_check_status", None) == "unavailable":
                 print("[INTEL] " + self.symbol + ": DUPLICATE REVIEW UNAVAILABLE - SIGNAL BLOCKED")
             else:
                 print("[INTEL] " + self.symbol + ": DUPLICATE BLOCKED")
