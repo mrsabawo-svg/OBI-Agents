@@ -47,6 +47,7 @@ class Pass12BLifecycleTest(unittest.TestCase):
             snapshot["_archive"] = list(memory.get("_archive", []))
             store.clear()
             store.update(snapshot)
+            return True
 
         # Archive creates exactly one canonical OPEN record.
         with patch("agents.archive_agent.load_memory", side_effect=load),              patch("agents.archive_agent.save_memory", side_effect=save):

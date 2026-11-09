@@ -34,7 +34,9 @@ class ArchiveAgent:
                 return False
 
             archive.append(entry)
-            save_memory(memory)
+            if save_memory(memory) is not True:
+                print("[ARCHIVE] Persistence failed; signal was not accepted as archived")
+                return False
             print("[ARCHIVE] Signal logged. Total: " + str(len(archive)))
             return True
         except Exception as e:
@@ -72,7 +74,9 @@ class ArchiveAgent:
                 print("[ARCHIVE] Outcome update skipped; signal not found: " + str(signal_id))
                 return False
 
-            save_memory(memory)
+            if save_memory(memory) is not True:
+                print("[ARCHIVE] Outcome persistence failed: " + str(signal_id))
+                return False
             print("[ARCHIVE] Outcome updated: " + str(signal_id) + " -> " + str(outcome))
             return True
         except Exception as e:

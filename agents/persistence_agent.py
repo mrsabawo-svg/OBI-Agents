@@ -56,7 +56,9 @@ class PersistenceAgent:
                 "timestamp": result.get("timestamp")
             }
 
-            save_memory(memory)
+            if save_memory(memory) is not True:
+                print("[PERSIST] Memory summary update was not persisted: " + signal_id)
+                return
             print("[PERSIST] Memory updated - archive untouched: " + signal_id)
         except Exception as e:
             print("[PERSIST] Memory error: " + str(e))
