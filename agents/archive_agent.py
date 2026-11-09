@@ -10,7 +10,7 @@ from copy import deepcopy
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
-from core.signal_identity import SETUP_IDENTITY_VERSION, validate_signal_identity
+from core.signal_identity import validate_signal_identity
 from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
