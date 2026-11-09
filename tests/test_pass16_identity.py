@@ -4,7 +4,12 @@ import pytest
 
 from agents.archive_agent import ArchiveAgent
 from agents.signal_reviewer import SignalReviewer, SAST
-from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
+from core.signal_identity import (
+    SETUP_IDENTITY_VERSION,
+    build_setup_identity,
+    create_signal_identity,
+    resolve_setup_identity,
+)
 from main import build_signal_id
 
 
@@ -63,10 +68,63 @@ def test_material_setup_change_gets_new_setup_identity():
 
 def test_archive_persists_both_signal_and_setup_identity():
     signal = payload()
+    identity = create_signal_identity(signal["symbol"], signal["trigger"], signal["regime"])
+    signal["id"] = identity["signal_id"]
+    signal["signal_identity"] = identity
     entry = ArchiveAgent()._build_entry(signal)
     assert entry["id"] == signal["id"]
     assert entry["setup_identity_version"] == SETUP_IDENTITY_VERSION
-    assert entry["setup_id"] == build_setup_identity(signal)
+    assert entry["setup_id"] == identity["setup_id"]
+
+
+def test_identity_authority_issues_distinct_events_for_same_setup():
+    first = create_signal_identity("XAUUSD", payload()["trigger"], payload()["regime"])
+    second = create_signal_identity("XAUUSD", payload()["trigger"], payload()["regime"])
+    assert first["signal_id"] != second["signal_id"]
+    assert first["setup_id"] == second["setup_id"]
+    assert first["setup_identity_version"] == SETUP_IDENTITY_VERSION
+
+
+def test_archive_does_not_fabricate_missing_event_or_setup_identity():
+    entry = ArchiveAgent()._build_entry({"symbol": "EURUSD"})
+    assert entry["id"] is None
+    assert entry["setup_id"] is None
+    assert entry["setup_identity_version"] is None
+    assert entry["setup_identity_status"] == "unavailable"
+
+
+def test_resolver_rejects_malformed_issued_identity_instead_of_recomputing():
+    candidate = payload()
+    candidate["signal_identity"] = {
+        "signal_id": candidate["id"],
+        "setup_id": "not-a-digest",
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
+    }
+    with pytest.raises(ValueError, match="invalid"):
+        resolve_setup_identity(candidate)
+
+
+
+def test_resolver_rejects_well_formed_but_stale_setup_digest():
+    candidate = payload()
+    candidate["signal_identity"] = {
+        "signal_id": candidate["id"],
+        "setup_id": "a" * 64,
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
+    }
+    with pytest.raises(ValueError, match="invalid"):
+        resolve_setup_identity(candidate)
+
+
+
+def test_archive_log_rejects_missing_event_identity_without_writing(monkeypatch):
+    memory = {"_archive": []}
+    saved = []
+    monkeypatch.setattr("agents.archive_agent.load_memory", lambda: memory)
+    monkeypatch.setattr("agents.archive_agent.save_memory", lambda value: saved.append(value) or True)
+    assert not ArchiveAgent().log({"symbol": "EURUSD"})
+    assert memory["_archive"] == []
+    assert saved == []
 
 
 def test_exact_signal_id_is_duplicate_even_if_open_timestamp_is_unavailable(monkeypatch):

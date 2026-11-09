@@ -10,7 +10,7 @@ from copy import deepcopy
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
-from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
+from core.signal_identity import validate_signal_identity
 from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
@@ -28,6 +28,9 @@ class ArchiveAgent:
             archive = memory.setdefault("_archive", [])
 
             entry = self._build_entry(signal)
+            if not isinstance(entry.get("id"), str) or not entry.get("id").strip():
+                print("[ARCHIVE] Signal rejected: issued event identity is missing")
+                return False
 
             # Prevent duplicate writes for the same signal id.
             if any(item.get("id") == entry.get("id") for item in archive):
@@ -103,9 +106,23 @@ class ArchiveAgent:
             confluence = trigger.get("confluence")
 
         timestamp = datetime.now(SAST).strftime("%Y-%m-%d %H:%M SAST")
-        signal_id = signal.get("id") or (
-            str(signal.get("symbol", "")) + "_" + datetime.now(SAST).strftime("%Y%m%d%H%M%S")
-        )
+        # ArchiveAgent consumes issued identity; it never creates one.
+        signal_id = signal.get("id")
+        decision_lineage = signal.get("decision_lineage")
+        signal_identity = signal.get("signal_identity")
+        if not isinstance(signal_identity, dict) and isinstance(decision_lineage, dict):
+            # P16-02 compatibility: the issued bundle is already bound in lineage.
+            signal_identity = decision_lineage.get("signal_identity")
+
+        setup_id = None
+        setup_identity_version = None
+        setup_identity_status = "unavailable"
+        identity_valid = validate_signal_identity(signal, signal_identity)
+        if identity_valid:
+            setup_id = signal_identity["setup_id"]
+            setup_identity_version = signal_identity["setup_identity_version"]
+            setup_identity_status = "complete"
+
         data_lineage = signal.get("data_lineage")
         if not isinstance(data_lineage, dict):
             data_lineage = {
@@ -117,29 +134,14 @@ class ArchiveAgent:
         else:
             data_lineage = deepcopy(data_lineage)
 
-        try:
-            setup_id = build_setup_identity(signal)
-            setup_identity_version = SETUP_IDENTITY_VERSION
-            setup_identity_status = "complete"
-        except (TypeError, ValueError) as exc:
-            # Preserve compatibility with minimal/legacy archive callers without
-            # inventing an identity from incomplete setup fields.
-            print("[ARCHIVE] Setup identity unavailable: " + str(exc))
-            setup_id = None
-            setup_identity_version = None
-            setup_identity_status = "unavailable"
-
-        decision_lineage = signal.get("decision_lineage")
         identity_required = signal.get("decision_lineage_identity_required") is True
         lineage_identity_status = "unbound"
         identity_matches = not identity_required
         if isinstance(decision_lineage, dict) and decision_lineage.get("signal_identity") is not None:
             bound_identity = decision_lineage.get("signal_identity")
             identity_matches = (
-                isinstance(bound_identity, dict)
-                and bound_identity.get("signal_id") == signal_id
-                and bound_identity.get("setup_id") == setup_id
-                and bound_identity.get("setup_identity_version") == setup_identity_version
+                identity_valid
+                and bound_identity == signal_identity
                 and decision_lineage.get("instrument_id") == signal.get("symbol")
             )
             lineage_identity_status = "bound" if identity_matches else "mismatch"

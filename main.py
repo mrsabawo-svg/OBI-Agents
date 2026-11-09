@@ -2,7 +2,6 @@
 OBI Intelligence v4.2 — Main Pipeline
 Copyright © Mazvita Sabawo. All rights reserved.
 """
-import uuid
 
 from agents.data_agent         import DataAgent
 from agents.htf_agent          import HTFAgent
@@ -21,10 +20,10 @@ from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
-from core.utils                import now_sast, sast_str
+from core.utils                import sast_str
 from core.data_lineage          import build_data_lineage
 from core.decision_lineage      import build_decision_lineage
-from core.signal_identity       import SETUP_IDENTITY_VERSION, build_setup_identity
+from core.signal_identity       import create_signal_event_id, create_signal_identity
 
 SYMBOLS = [
     "XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD",
@@ -35,12 +34,8 @@ ALL_TF  = ["4h", "1h", "15m", "5m"]
 
 
 def build_signal_id(symbol: str) -> str:
-    """Create a unique, human-readable identity for one fired signal event."""
-    normalized_symbol = str(symbol).strip().upper()
-    if not normalized_symbol:
-        raise ValueError("symbol must be a non-empty string")
-    stamp = now_sast().strftime("%Y%m%d%H%M%S")
-    return normalized_symbol + "_" + stamp + "_" + uuid.uuid4().hex
+    """Backward-compatible wrapper; event identity is issued by core authority."""
+    return create_signal_event_id(symbol)
 
 def run(symbol: str, news: dict = None) -> dict:
     print("=" * 45)
@@ -89,12 +84,8 @@ def run(symbol: str, news: dict = None) -> dict:
         edge = edge_agent.analyse(trigger, bias, regime)
         score = ScoreAgent(symbol).compute(bias, trigger, regime, edge, session)
 
-        signal_id = build_signal_id(symbol)
-        setup_id = build_setup_identity({
-            "symbol": symbol,
-            "trigger": trigger,
-            "regime": regime,
-        })
+        signal_identity = create_signal_identity(symbol, trigger, regime)
+        signal_id = signal_identity["signal_id"]
 
         decision_lineage = build_decision_lineage(
             symbol=symbol,
@@ -112,11 +103,7 @@ def run(symbol: str, news: dict = None) -> dict:
                 "Score": score,
             },
             data_lineage=data_lineage,
-            signal_identity={
-                "signal_id": signal_id,
-                "setup_id": setup_id,
-                "setup_identity_version": SETUP_IDENTITY_VERSION,
-            },
+            signal_identity=signal_identity,
             external_inputs={
                 "Session": {
                     "evaluated_at_sast": session.get("evaluated_at_sast"),
@@ -142,6 +129,7 @@ def run(symbol: str, news: dict = None) -> dict:
             "score":   score,
             "data_lineage": data_lineage,
             "decision_lineage": decision_lineage,
+            "signal_identity": signal_identity,
             "decision_lineage_identity_required": True,
         }
 

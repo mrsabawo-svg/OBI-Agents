@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 from core.memory import load as load_memory
 from core.models import _payload_to_dict
-from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
+from core.signal_identity import SETUP_IDENTITY_VERSION, resolve_setup_identity
 import pytz
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -23,7 +23,7 @@ class SignalReviewer:
     @staticmethod
     def setup_identity(payload: dict) -> str:
         """Return the versioned deterministic identity of a material trade setup."""
-        return build_setup_identity(payload)
+        return resolve_setup_identity(payload)
 
     def is_duplicate(self, payload: dict) -> bool:
         try:
