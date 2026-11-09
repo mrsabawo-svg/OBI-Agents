@@ -1,108 +1,171 @@
-"""
-OBI Agents — Memory Core
-Reads/writes agent memory to GitHub Gist.
-"""
+"""Optimistic, verified GitHub Gist memory persistence for OBI."""
 import copy
+import hashlib
 import json
 import os
 import threading
+from typing import Callable, Optional
 
 import requests
 
 GIST_ID = os.environ.get("GIST_ID")
 GH_TOKEN = os.environ.get("GIST_TOKEN")
-HEADERS = {"Authorization": "token " + str(GH_TOKEN)}
+HEADERS = {"Authorization": "token " + str(GH_TOKEN), "Accept": "application/vnd.github+json"}
 FILENAME = "obi_memory.json"
-
+META_KEY = "_memory_meta"
+SCHEMA_VERSION = 1
+MAX_TRANSACTIONS = 200
 _LAST_KNOWN_GOOD = None
 _READ_IS_STALE = True
+_BASE_REVISION = None
 _LOCK = threading.RLock()
 
 
 class MemoryReadError(RuntimeError):
-    """Raised when no trustworthy memory snapshot can be read."""
+    """No trustworthy canonical snapshot is available."""
+
+
+class MemoryConflictError(RuntimeError):
+    """The canonical snapshot changed since it was loaded."""
+
+
+def _canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _digest(data):
+    return hashlib.sha256(_canonical_json(data).encode("utf-8")).hexdigest()
+
+
+def _metadata(snapshot):
+    meta = snapshot.get(META_KEY, {})
+    if not isinstance(meta, dict):
+        raise MemoryReadError("memory metadata must be an object")
+    revision = meta.get("revision", 0)
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        raise MemoryReadError("memory revision must be a non-negative integer")
+    if meta.get("schema_version", SCHEMA_VERSION) != SCHEMA_VERSION:
+        raise MemoryReadError("unsupported memory schema version")
+    transactions = meta.get("transactions", [])
+    if not isinstance(transactions, list):
+        raise MemoryReadError("memory transaction ledger must be a list")
+    for item in transactions:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not isinstance(item.get("digest"), str):
+            raise MemoryReadError("invalid memory transaction ledger entry")
+    return {"schema_version": SCHEMA_VERSION, "revision": revision, "transactions": transactions}
+
+
+def _remote_read():
+    if not GIST_ID or not GH_TOKEN:
+        raise MemoryReadError("GIST_ID and GIST_TOKEN must be configured")
+    response = requests.get("https://api.github.com/gists/" + str(GIST_ID), headers=HEADERS, timeout=15)
+    if response.status_code != 200:
+        raise MemoryReadError("Gist read failed with HTTP " + str(response.status_code))
+    try:
+        info = response.json().get("files", {}).get(FILENAME)
+        if not isinstance(info, dict):
+            raise MemoryReadError("canonical memory file is missing")
+        if info.get("truncated") is True:
+            raise MemoryReadError("canonical memory file is truncated")
+        content = info.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise MemoryReadError("canonical memory file is empty")
+        snapshot = json.loads(content)
+    except MemoryReadError:
+        raise
+    except Exception as exc:
+        raise MemoryReadError("canonical memory could not be decoded: " + str(exc)) from exc
+    if not isinstance(snapshot, dict):
+        raise MemoryReadError("canonical memory root must be an object")
+    return snapshot, _metadata(snapshot)
 
 
 def load() -> dict:
-    """
-    Load the canonical memory snapshot.
-
-    A failed remote read may return an in-process last-known-good snapshot for
-    read-only use, but it marks that snapshot stale. save() refuses writes
-    until a fresh remote read succeeds, preventing stale/empty overwrites.
-    """
-    global _LAST_KNOWN_GOOD, _READ_IS_STALE
+    """Load fresh memory; stale last-known-good is read-only fallback only."""
+    global _LAST_KNOWN_GOOD, _READ_IS_STALE, _BASE_REVISION
     with _LOCK:
         try:
-            if not GIST_ID or not GH_TOKEN:
-                raise MemoryReadError("GIST_ID and GIST_TOKEN must be configured")
-            response = requests.get(
-                "https://api.github.com/gists/" + str(GIST_ID),
-                headers=HEADERS,
-                timeout=15,
-            )
-            if response.status_code != 200:
-                raise MemoryReadError(
-                    "Gist read failed with HTTP " + str(response.status_code)
-                )
-            files = response.json().get("files", {})
-            if FILENAME not in files:
-                raise MemoryReadError("canonical memory file is missing from the Gist")
-            content = files[FILENAME].get("content")
-            if not isinstance(content, str) or not content.strip():
-                raise MemoryReadError("canonical memory file is empty")
-            memory = json.loads(content)
-            if not isinstance(memory, dict):
-                raise MemoryReadError("canonical memory root must be a JSON object")
-
-            _LAST_KNOWN_GOOD = copy.deepcopy(memory)
+            snapshot, meta = _remote_read()
+            _LAST_KNOWN_GOOD = copy.deepcopy(snapshot)
+            _BASE_REVISION = meta["revision"]
             _READ_IS_STALE = False
-            return copy.deepcopy(memory)
+            return copy.deepcopy(snapshot)
         except Exception as exc:
             _READ_IS_STALE = True
+            _BASE_REVISION = None
             if _LAST_KNOWN_GOOD is not None:
-                print("[MEMORY] Remote read failed; using read-only last-known-good snapshot: " + str(exc))
+                print("[MEMORY] Remote read failed; returning read-only last-known-good: " + str(exc))
                 return copy.deepcopy(_LAST_KNOWN_GOOD)
-            raise MemoryReadError(
-                "memory unavailable; refusing an empty fallback: " + str(exc)
-            ) from exc
+            raise MemoryReadError("memory unavailable; refusing an empty fallback: " + str(exc)) from exc
 
 
-def save(data: dict) -> bool:
-    """Persist memory only after a fresh successful read in this process."""
-    global _LAST_KNOWN_GOOD, _READ_IS_STALE
+def save(data: dict, transaction_id: Optional[str] = None) -> bool:
+    """Revision-check, write, then read back exact content before success."""
+    global _LAST_KNOWN_GOOD, _READ_IS_STALE, _BASE_REVISION
     with _LOCK:
-        if _READ_IS_STALE:
-            print("[MEMORY] Save blocked: no fresh trusted read is available")
-            return False
-        if not GIST_ID or not GH_TOKEN:
-            _READ_IS_STALE = True
-            print("[MEMORY] Save blocked: GIST_ID and GIST_TOKEN must be configured")
+        if _READ_IS_STALE or _BASE_REVISION is None:
+            print("[MEMORY] Save blocked: a fresh canonical read is required")
             return False
         if not isinstance(data, dict):
             print("[MEMORY] Save blocked: memory root must be a dictionary")
             return False
+        if transaction_id is not None and (not isinstance(transaction_id, str) or not transaction_id.strip()):
+            print("[MEMORY] Save blocked: transaction_id must be a non-empty string")
+            return False
         try:
-            payload = {"files": {FILENAME: {"content": json.dumps(data, indent=2)}}}
+            remote, meta = _remote_read()
+            if meta["revision"] != _BASE_REVISION:
+                raise MemoryConflictError("stale revision: expected " + str(_BASE_REVISION) + ", found " + str(meta["revision"]))
+            candidate = copy.deepcopy(data)
+            candidate.pop(META_KEY, None)
+            digest = _digest(candidate)
+            transactions = list(meta["transactions"])
+            if transaction_id is not None:
+                previous = next((x for x in transactions if x["id"] == transaction_id), None)
+                if previous:
+                    if previous["digest"] != digest:
+                        raise MemoryConflictError("transaction_id reused with a different payload")
+                    _LAST_KNOWN_GOOD = copy.deepcopy(remote)
+                    _BASE_REVISION = meta["revision"]
+                    _READ_IS_STALE = False
+                    return True
+                transactions = (transactions + [{"id": transaction_id, "digest": digest}])[-MAX_TRANSACTIONS:]
+            next_revision = meta["revision"] + 1
+            candidate[META_KEY] = {"schema_version": SCHEMA_VERSION, "revision": next_revision, "transactions": transactions}
+            body = json.dumps(candidate, indent=2, ensure_ascii=False)
             response = requests.patch(
                 "https://api.github.com/gists/" + str(GIST_ID),
                 headers=HEADERS,
-                json=payload,
+                json={"files": {FILENAME: {"content": body}}},
                 timeout=15,
             )
-            if response.status_code == 200:
-                _LAST_KNOWN_GOOD = copy.deepcopy(data)
-                _READ_IS_STALE = False
-                print("[MEMORY] Saved successfully")
-                return True
-            _READ_IS_STALE = True
-            print(
-                "[MEMORY] Save failed - status "
-                + str(response.status_code)
-                + "; refusing to treat the write as durable"
-            )
-            return False
+            if response.status_code != 200:
+                raise RuntimeError("Gist write failed with HTTP " + str(response.status_code))
+            verified, verified_meta = _remote_read()
+            if verified_meta["revision"] != next_revision or verified != candidate:
+                raise RuntimeError("read-after-write verification mismatch")
+            _LAST_KNOWN_GOOD = copy.deepcopy(verified)
+            _BASE_REVISION = next_revision
+            _READ_IS_STALE = False
+            print("[MEMORY] Save verified at revision " + str(next_revision))
+            return True
         except Exception as exc:
             _READ_IS_STALE = True
-            print("[MEMORY] Save failed: " + str(exc))
+            _BASE_REVISION = None
+            print("[MEMORY] Save rejected or unverified: " + str(exc))
             return False
+
+
+def transaction(mutator: Callable[[dict], Optional[dict]], transaction_id: str) -> bool:
+    """Mutate a fresh snapshot once, identified by a caller-supplied idempotency key."""
+    if not callable(mutator):
+        raise TypeError("mutator must be callable")
+    if not isinstance(transaction_id, str) or not transaction_id.strip():
+        raise ValueError("transaction_id must be a non-empty string")
+    with _LOCK:
+        working = copy.deepcopy(load())
+        result = mutator(working)
+        candidate = working if result is None else result
+        if not isinstance(candidate, dict):
+            raise TypeError("mutator must return a dictionary or None")
+        return save(candidate, transaction_id=transaction_id)
