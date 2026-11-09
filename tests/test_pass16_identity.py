@@ -154,7 +154,7 @@ def test_exact_signal_id_remains_duplicate_after_archive_closure(monkeypatch):
         "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(candidate),
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -169,7 +169,7 @@ def test_same_setup_is_duplicate_even_with_a_new_signal_id(monkeypatch):
         "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(existing),
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -186,7 +186,7 @@ def test_same_entry_with_materially_different_risk_is_not_a_duplicate(monkeypatc
         "setup_id": build_setup_identity(existing),
         "entry": 4000.0,
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert not SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -201,7 +201,7 @@ def test_old_setup_is_not_blocked_after_duplicate_window(monkeypatch):
         "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(existing),
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert not SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -221,7 +221,7 @@ def test_legacy_archive_without_setup_id_is_reconstructed(monkeypatch):
         "tags": ["OB", "FVG"],
         "regime": "TRENDING",
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
