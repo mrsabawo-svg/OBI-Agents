@@ -9,9 +9,10 @@ SAST = pytz.timezone("Africa/Johannesburg")
 def now_sast():
     return datetime.now(SAST)
 
-def is_kill_zone() -> dict:
-    """Returns which kill zone is active right now (SAST)."""
-    hour = now_sast().hour
+def is_kill_zone(now=None) -> dict:
+    """Returns which kill zone is active at the supplied/current SAST time."""
+    now = now or now_sast()
+    hour = now.hour
     zones = {
         "London Open":   (9,  11),
         "New York Open": (15, 17),

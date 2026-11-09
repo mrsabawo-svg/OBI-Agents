@@ -11,16 +11,23 @@ from core.memory import load as load_memory, save as save_memory
 SAST = pytz.timezone("Africa/Johannesburg")
 EXPIRY_HOURS = 48
 
+from agents.data_agent import SYNTHETIC_SYMBOLS, DataAgent
+
 SYMBOL_MAP = {
-    "XAUUSD": "GLD",
-    "EURUSD": "EURUSD=X",
-    "USDJPY": "USDJPY=X",
-    "GBPJPY": "GBPJPY=X",
-    "GBPUSD": "GBPUSD=X",
-    "BTCUSD": "BTC-USD",
-    "ETHUSD": "ETH-USD",
-    "SOLUSD": "SOL-USD",
-    "NASDAQ": "QQQ",
+    "XAUUSD":     "GC=F",
+    "EURUSD":     "EURUSD=X",
+    "USDJPY":     "USDJPY=X",
+    "GBPJPY":     "GBPJPY=X",
+    "GBPUSD":     "GBPUSD=X",
+    "BTCUSD":     "BTC-USD",
+    "ETHUSD":     "ETH-USD",
+    "SOLUSD":     "SOL-USD",
+    "NASDAQ":     "NQ=F",
+    "PAIN_999":   "PAIN_999",
+    "GAIN_999":   "GAIN_999",
+    "PAIN_1200":  "PAIN_1200",
+    "GAIN_1200":  "GAIN_1200",
+    "SFX_VOL_75": "SFX_VOL_75",
 }
 
 def check_outcome(symbol: str, ticker: str):
@@ -36,7 +43,11 @@ def check_outcome(symbol: str, ticker: str):
         if not open_trades:
             return
 
-        df = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True, threads=False)
+        if symbol in SYNTHETIC_SYMBOLS:
+            df = DataAgent(symbol).fetch(["5m"]).get("5m")
+        else:
+            df = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True, threads=False)
+
         if df is None or df.empty:
             return
 
@@ -109,7 +120,9 @@ def check_outcome(symbol: str, ticker: str):
 
         if changed:
             _rebuild_stats(memory, symbol)
-            save_memory(memory)
+            if save_memory(memory) is not True:
+                print("[TRACKER] " + symbol + ": archive update was not persisted")
+                return
             print("[TRACKER] " + symbol + ": stats rebuilt from archive")
 
     except Exception as e:

@@ -3,6 +3,8 @@ OBI Agents — Edge Agent
 Historical win rate analytics.
 """
 from core.memory import load as load_memory
+import hashlib
+import json
 from core.models import EdgeResult, TriggerResult
 
 MIN_SAMPLE = 20
@@ -10,6 +12,7 @@ MIN_SAMPLE = 20
 class EdgeAgent:
     def __init__(self, symbol: str):
         self.symbol = symbol
+        self.archive_snapshot_sha256 = None
 
     def analyse(self, trigger: TriggerResult, bias, regime: dict) -> EdgeResult:
         print("[EDGE] Analysing edge for " + self.symbol)
@@ -17,18 +20,37 @@ class EdgeAgent:
             memory  = load_memory()
             archive = memory.get("_archive", [])
             closed  = [t for t in archive if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"]
+            edge_inputs = [
+                {
+                    "status": record.get("status"),
+                    "symbol": record.get("symbol"),
+                    "regime": record.get("regime"),
+                    "tags": record.get("tags", []),
+                    "outcome": record.get("outcome"),
+                }
+                for record in closed
+            ]
+            archive_payload = json.dumps(
+                edge_inputs, sort_keys=True, separators=(",", ":"), default=str
+            )
+            self.archive_snapshot_sha256 = hashlib.sha256(
+                archive_payload.encode("utf-8")
+            ).hexdigest()
 
             if len(closed) < MIN_SAMPLE:
                 print("[EDGE] Low sample: " + str(len(closed)) + "/" + str(MIN_SAMPLE))
                 return EdgeResult.default(len(closed))
 
             symbol_wr = self._win_rate([t for t in closed if t.get("symbol") == self.symbol])
-            grade_wr  = self._win_rate([t for t in closed if t.get("grade") == trigger.grade])
             regime_wr = self._win_rate([t for t in closed if t.get("regime") == regime.get("label")])
             tag_wr    = self._win_rate([t for t in closed if any(tag in t.get("tags", []) for tag in trigger.tags)])
             overall   = self._win_rate(closed)
 
-            print("[EDGE] " + self.symbol + ": sym=" + str(symbol_wr) + "% grade=" + str(grade_wr) + "% regime=" + str(regime_wr) + "%")
+            # Pass 10 invariant: decouple EdgeAgent historical lookup from the current trigger's grade
+            # to prevent circular dependency trapping signals in C and D grade loops.
+            grade_wr  = overall
+
+            print("[EDGE] " + self.symbol + ": sym=" + str(symbol_wr) + "% regime=" + str(regime_wr) + "% overall=" + str(overall) + "%")
 
             return EdgeResult(
                 symbol_wr=symbol_wr,

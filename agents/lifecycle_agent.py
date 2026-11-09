@@ -12,16 +12,23 @@ from core.memory import load as load_memory, save as save_memory
 SAST         = pytz.timezone("Africa/Johannesburg")
 EXPIRY_HOURS = 48
 
+from agents.data_agent import SYNTHETIC_SYMBOLS, DataAgent
+
 SYMBOL_MAP = {
-    "XAUUSD": "GC=F",
-    "EURUSD": "EURUSD=X",
-    "USDJPY": "USDJPY=X",
-    "GBPJPY": "GBPJPY=X",
-    "GBPUSD": "GBPUSD=X",
-    "BTCUSD": "BTC-USD",
-    "ETHUSD": "ETH-USD",
-    "SOLUSD": "SOL-USD",
-    "NASDAQ": "NQ=F",
+    "XAUUSD":     "GC=F",
+    "EURUSD":     "EURUSD=X",
+    "USDJPY":     "USDJPY=X",
+    "GBPJPY":     "GBPJPY=X",
+    "GBPUSD":     "GBPUSD=X",
+    "BTCUSD":     "BTC-USD",
+    "ETHUSD":     "ETH-USD",
+    "SOLUSD":     "SOL-USD",
+    "NASDAQ":     "NQ=F",
+    "PAIN_999":   "PAIN_999",
+    "GAIN_999":   "GAIN_999",
+    "PAIN_1200":  "PAIN_1200",
+    "GAIN_1200":  "GAIN_1200",
+    "SFX_VOL_75": "SFX_VOL_75",
 }
 
 
@@ -50,7 +57,9 @@ class LifecycleAgent:
                     changed = True
 
             if changed:
-                save_memory(memory)
+                if save_memory(memory) is not True:
+                    print("[LIFECYCLE] Archive update was not persisted; leaving durable state unchanged")
+                    return
                 self._print_streak(archive)
 
         except Exception as e:
@@ -87,10 +96,35 @@ class LifecycleAgent:
                 pass
 
         try:
-            df = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True, threads=False)
+            if symbol in SYNTHETIC_SYMBOLS:
+                df = DataAgent(symbol).fetch(["5m"]).get("5m")
+            else:
+                df = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True, threads=False)
+
             if df is None or df.empty:
                 return False
-            current = float(df["Close"].squeeze().iloc[-1])
+            close = df["Close"]
+            if hasattr(close, "squeeze"):
+                squeezed = close.squeeze()
+                if hasattr(squeezed, "iloc"):
+                    last_val = squeezed.iloc[-1]
+                    if hasattr(last_val, "iloc"):
+                        last_val = last_val.iloc[0]
+                    current = float(last_val)
+                elif hasattr(close, "iloc"):
+                    last_val = close.iloc[-1]
+                    if hasattr(last_val, "iloc"):
+                        last_val = last_val.iloc[0]
+                    current = float(last_val)
+                else:
+                    current = float(squeezed)
+            elif hasattr(close, "iloc"):
+                last_val = close.iloc[-1]
+                if hasattr(last_val, "iloc"):
+                    last_val = last_val.iloc[0]
+                current = float(last_val)
+            else:
+                current = float(close)
         except Exception as e:
             print("[LIFECYCLE] Price fetch error for " + str(symbol) + ": " + str(e))
             return False
