@@ -42,7 +42,7 @@ def _discovery(store, identity=None, symbol_map=None):
     )
 
 
-def _persisted_evidence(path, identity, timeframe="5m", report_id="report-5m"):
+def _persisted_evidence(path, identity, metadata_sha256, timeframe="5m", report_id="report-5m"):
     duration = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}[timeframe]
     open_epoch = 1794132000
     from datetime import datetime, timezone, timedelta
@@ -80,7 +80,20 @@ def _persisted_evidence(path, identity, timeframe="5m", report_id="report-5m"):
         "broker_symbol": "SFX Vol 75",
         "timeframe": timeframe,
         "validator_version": "1",
-        "report": {"received_count": 1, "quarantined_observation_count": 0},
+        "report": {
+            "received_count": 1,
+            "quarantined_observation_count": 0,
+            "account_fingerprint": identity["account_fingerprint"],
+            "account_identity_pinned": True,
+            "instrument_metadata_sha256": metadata_sha256,
+            "history_completeness": {
+                "status": "complete",
+                "account_fingerprint": identity["account_fingerprint"],
+                "instrument_id": "SFX_VOL_75",
+                "broker_symbol": "SFX Vol 75",
+                "timeframe": timeframe,
+            },
+        },
     }
     candle = {
         "instrument_id": "SFX_VOL_75",
@@ -118,7 +131,7 @@ def test_explicit_instrument_verification_is_account_scoped_and_append_only(tmp_
     store = InstrumentRegistryStore(path)
     discovery = _discovery(store)
     metadata_sha = discovery["symbols"][0]["metadata_sha256"]
-    evidence = _persisted_evidence(path, _identity())
+    evidence = _persisted_evidence(path, _identity(), metadata_sha)
 
     verification = store.record_verification(
         _identity(),
@@ -185,7 +198,7 @@ def test_instrument_verification_rejects_canonical_sources_from_another_account(
     path = tmp_path / "evidence.sqlite3"
     store = InstrumentRegistryStore(path)
     discovery_a = _discovery(store, _identity(fingerprint="a" * 64))
-    evidence = _persisted_evidence(path, _identity(fingerprint="a" * 64))
+    evidence = _persisted_evidence(path, _identity(fingerprint="a" * 64), discovery_a["symbols"][0]["metadata_sha256"])
     discovery_b = _discovery(store, _identity(fingerprint="c" * 64))
 
     with pytest.raises(ValueError, match="account identity"):
