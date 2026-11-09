@@ -168,7 +168,7 @@ def test_instrument_verification_rejects_unpersisted_or_mismatched_evidence(tmp_
     store = InstrumentRegistryStore(path)
     discovery = _discovery(store)
     metadata_sha = discovery["symbols"][0]["metadata_sha256"]
-    evidence = _persisted_evidence(path, _identity())
+    evidence = _persisted_evidence(path, _identity(), metadata_sha)
 
     fabricated = dict(evidence, report_id="fabricated-report")
     with pytest.raises(ValueError, match="does not exist"):
