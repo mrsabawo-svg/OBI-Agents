@@ -613,6 +613,12 @@ def test_data_agent_withholds_unverified_instrument_even_with_raw_evidence(monke
                 "status": "ok",
                 "symbol_id": "SFX_VOL_75",
                 "timeframe": "5m",
+                "broker": "Weltrade",
+                "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo",
+                "account_environment": "demo",
+                "source_type": "broker_bars",
+                "platform": "MT5",
                 "raw_persistence": {"persisted": True},
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
