@@ -3,10 +3,14 @@ name: MT5 Connector Tests
 on:
   push:
     branches:
-      - feat/mt5-readonly-connector
+      - feat/data-foundation-raw-observations
   pull_request:
     branches:
+      - main
       - feat/data-foundation-raw-observations
+
+permissions:
+  contents: read
 
 jobs:
   unit-tests:
@@ -21,7 +25,14 @@ jobs:
       - name: Install project dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install Flask pytest
-      - name: Run connector and bridge tests
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+      - name: Run connector, bridge, and data-foundation tests
         run: |
-          python -m pytest -q tests/test_mt5_connector.py tests/test_mt5_bridge.py tests/test_data_foundation.py tests/test_history_completeness.py
+          python -m pytest -q \
+            tests/test_mt5_connector.py \
+            tests/test_mt5_bridge.py \
+            tests/test_data_foundation.py \
+            tests/test_history_completeness.py \
+            tests/test_canonical_data_store.py \
+            tests/test_feature_lineage.py
