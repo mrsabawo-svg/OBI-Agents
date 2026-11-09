@@ -298,3 +298,98 @@ def test_verified_session_model_configuration_is_explicit_and_strict():
         mt5_bridge._load_verified_session_models(
             '{"EURUSD":"assumed_24_5"}'
         )
+
+# Preserved account identity and connector initialization regression tests.
+
+def test_ohlcv_refuses_unpinned_account_even_after_symbol_discovery(monkeypatch, tmp_path):
+    class FakeConnector:
+        def get_account_identity(self):
+            return {
+                "account_fingerprint": "2" * 64,
+                "identity_pinned": False,
+                "broker_company": "Weltrade Ltd",
+                "server": "Weltrade-Demo",
+                "environment": "demo",
+                "platform": "MT5",
+            }
+
+        def discover_symbols(self):
+            return [{
+                "name": "SFX Vol 75",
+                "description": "SFX Vol 75",
+                "selected": True,
+                "visible": True,
+                "metadata": {"name": "SFX Vol 75"},
+            }]
+
+    monkeypatch.setattr(mt5_bridge, "connector", FakeConnector())
+    monkeypatch.setattr(mt5_bridge, "SYMBOL_MAP", {"SFX_VOL_75": "SFX Vol 75"})
+    monkeypatch.setattr(mt5_bridge, "MT5_RAW_DB_PATH", str(tmp_path / "registry.sqlite3"))
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_HOST", "127.0.0.1")
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_TOKEN", "")
+    client = mt5_bridge.app.test_client()
+    discovery = client.get("/symbols")
+    assert discovery.status_code == 200
+    assert discovery.get_json()["account_identity_pinned"] is False
+
+    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
+    assert response.status_code == 409
+    assert "identity is not pinned" in response.get_json()["error"]
+
+def test_init_mt5_requires_stable_fingerprint_key_and_exact_server(monkeypatch):
+    monkeypatch.setattr(mt5_bridge, "mt5", object())
+    monkeypatch.setattr(mt5_bridge, "MT5_BROKER_NAME", "Weltrade")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_ENVIRONMENT", "demo")
+    monkeypatch.setattr(mt5_bridge, "MT5_SERVER", "")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_FINGERPRINT_KEY", "k" * 40)
+    ok, message = mt5_bridge.init_mt5()
+    assert ok is False
+    assert "exact expected broker server" in message
+
+    monkeypatch.setattr(mt5_bridge, "MT5_SERVER", "Weltrade-Demo")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_FINGERPRINT_KEY", "short")
+    ok, message = mt5_bridge.init_mt5()
+    assert ok is False
+    assert "fingerprint_key" in message.lower()
+
+def test_init_mt5_clears_stale_connector_before_rejecting_configuration(monkeypatch):
+    stale_connector = object()
+    monkeypatch.setattr(mt5_bridge, "connector", stale_connector)
+    monkeypatch.setattr(mt5_bridge, "mt5", None)
+
+    ok, message = mt5_bridge.init_mt5()
+
+    assert ok is False
+    assert "package not installed" in message
+    assert mt5_bridge.connector is None
+
+def test_init_mt5_uses_prelogged_terminal_without_triggering_partial_login(monkeypatch):
+    captured = {}
+
+    class FakeConnector:
+        def __init__(self, adapter, identity, **kwargs):
+            captured["identity"] = identity
+            captured["kwargs"] = kwargs
+            self.last_error = None
+
+        def connect(self):
+            return True
+
+    monkeypatch.setattr(mt5_bridge, "mt5", object())
+    monkeypatch.setattr(mt5_bridge, "MT5Connector", FakeConnector)
+    monkeypatch.setattr(mt5_bridge, "MT5_BROKER_NAME", "Weltrade")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_ENVIRONMENT", "demo")
+    monkeypatch.setattr(mt5_bridge, "MT5_SERVER", "Weltrade-Demo")
+    monkeypatch.setattr(mt5_bridge, "MT5_LOGIN", 0)
+    monkeypatch.setattr(mt5_bridge, "MT5_PASSWORD", "")
+    monkeypatch.setattr(mt5_bridge, "MT5_PATH", "")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_FINGERPRINT_KEY", "k" * 40)
+    monkeypatch.setattr(mt5_bridge, "MT5_EXPECTED_ACCOUNT_FINGERPRINT", None)
+    monkeypatch.setattr(mt5_bridge, "connector", None)
+
+    ok, message = mt5_bridge.init_mt5()
+    assert (ok, message) == (True, "connected")
+    assert captured["identity"].server == "Weltrade-Demo"
+    assert captured["kwargs"]["server"] is None
+    assert captured["kwargs"]["fingerprint_key"] == "k" * 40
+    assert captured["kwargs"]["expected_account_fingerprint"] is None

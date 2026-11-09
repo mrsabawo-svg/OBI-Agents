@@ -35,6 +35,8 @@ MT5_BRIDGE_TOKEN = os.environ.get("MT5_BRIDGE_TOKEN", "")
 MT5_BRIDGE_HOST = os.environ.get("MT5_BRIDGE_HOST", "127.0.0.1")
 MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
 MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
+MT5_ACCOUNT_FINGERPRINT_KEY = os.environ.get("MT5_ACCOUNT_FINGERPRINT_KEY", "")
+MT5_EXPECTED_ACCOUNT_FINGERPRINT = os.environ.get("MT5_EXPECTED_ACCOUNT_FINGERPRINT", "")
 MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
 
 
@@ -236,13 +238,29 @@ def require_bridge_authentication():
 
 def init_mt5():
     global connector
+    # Never leave a stale authenticated connector reachable after a failed
+    # reconfiguration attempt.
+    connector = None
     if mt5 is None:
         return False, "MetaTrader5 package not installed"
     if not MT5_BROKER_NAME or MT5_BROKER_NAME.lower() == "unknown":
         return False, "MT5_BROKER_NAME must identify the configured broker"
     if MT5_ACCOUNT_ENVIRONMENT not in {"demo", "live", "contest"}:
         return False, "MT5_ACCOUNT_ENVIRONMENT must be demo, live, or contest"
-    connector = MT5Connector(
+    if not MT5_SERVER.strip():
+        return False, "MT5_SERVER must specify the exact expected broker server"
+    if len(MT5_ACCOUNT_FINGERPRINT_KEY.encode("utf-8")) < 32:
+        return False, "MT5_ACCOUNT_FINGERPRINT_KEY must be at least 32 bytes"
+    if MT5_EXPECTED_ACCOUNT_FINGERPRINT and (
+        len(MT5_EXPECTED_ACCOUNT_FINGERPRINT) != 64
+        or any(char not in "0123456789abcdef" for char in MT5_EXPECTED_ACCOUNT_FINGERPRINT)
+    ):
+        return False, "MT5_EXPECTED_ACCOUNT_FINGERPRINT must be a lowercase SHA-256 hex digest"
+    if bool(MT5_LOGIN) != bool(MT5_PASSWORD):
+        return False, "MT5_LOGIN and MT5_PASSWORD must be configured together"
+
+    explicit_login = bool(MT5_LOGIN and MT5_PASSWORD)
+    candidate = MT5Connector(
         mt5,
         ConnectionIdentity(
             broker=MT5_BROKER_NAME,
@@ -251,14 +269,19 @@ def init_mt5():
         ),
         login=MT5_LOGIN or None,
         password=MT5_PASSWORD or None,
-        server=MT5_SERVER or None,
+        # A pre-authenticated terminal must not receive a partial login call.
+        server=MT5_SERVER if explicit_login else None,
         terminal_path=MT5_PATH or None,
         reconnect_attempts=1,
+        fingerprint_key=MT5_ACCOUNT_FINGERPRINT_KEY,
+        expected_account_fingerprint=MT5_EXPECTED_ACCOUNT_FINGERPRINT or None,
     )
+    connector = candidate
     if not connector.connect():
-        return False, connector.last_error or "MT5 connection failed"
+        message = connector.last_error or "MT5 connection failed"
+        connector = None
+        return False, message
     return True, "connected"
-
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -282,6 +305,7 @@ def get_symbols():
         discovery = InstrumentRegistryStore(MT5_RAW_DB_PATH).record_discovery(
             account_identity, symbols, SYMBOL_MAP
         )
+        account_identity_pinned = bool(account_identity.get("identity_pinned"))
     except Exception:
         app.logger.exception("MT5 symbol discovery or registry persistence failed")
         return jsonify({
@@ -292,6 +316,7 @@ def get_symbols():
         "status": "ok",
         "count": len(symbols),
         "account_identity": account_identity,
+        "account_identity_pinned": account_identity_pinned,
         "discovery": discovery,
         "symbols": symbols,
     })
@@ -326,6 +351,11 @@ def get_ohlcv():
 
     try:
         account_identity = connector.get_account_identity()
+        if not account_identity.get("identity_pinned", False):
+            return jsonify({
+                "status": "error",
+                "error": "MT5 account identity is not pinned; configure MT5_EXPECTED_ACCOUNT_FINGERPRINT before requesting candles",
+            }), 409
         registry = InstrumentRegistryStore(MT5_RAW_DB_PATH)
         latest_discovery = registry.latest_symbol(
             account_identity["account_fingerprint"], broker_symbol

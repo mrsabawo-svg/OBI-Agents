@@ -39,6 +39,8 @@ python mt5_bridge.py
 Do not copy the example placeholder as a real symbol. Confirm it in the connected account first.
 
 If the terminal is already logged in, the bridge can use that session. Alternatively set all three variables `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER`; never commit them to Git or place them in source code.
+MT5_ACCOUNT_FINGERPRINT_KEY=<random secret of at least 32 bytes>
+MT5_EXPECTED_ACCOUNT_FINGERPRINT=<operator-pinned SHA-256 HMAC fingerprint; leave unset until reviewed>
 
 ## Remote access
 

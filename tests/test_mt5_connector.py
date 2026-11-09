@@ -469,3 +469,23 @@ def test_numpy_structured_pages_use_native_concatenation_when_available():
     assert int(rates["time"][0]) == 1001
     assert int(rates["time"][-1]) == 4000
     assert metadata["snapshot_stable"] is True
+
+def test_keyed_fingerprint_is_stable_and_expected_identity_controls_pin_state():
+    first, _ = make_connector(fingerprint_key="k" * 40)
+    assert first.connect() is True
+    first_identity = first.get_account_identity()
+    assert first_identity["identity_pinned"] is False
+
+    pinned, _ = make_connector(
+        fingerprint_key="k" * 40,
+        expected_account_fingerprint=first_identity["account_fingerprint"],
+    )
+    assert pinned.connect() is True
+    pinned_identity = pinned.get_account_identity()
+    assert pinned_identity["identity_pinned"] is True
+
+    wrong_key, _ = make_connector(
+        fingerprint_key="x" * 40,
+        expected_account_fingerprint=first_identity["account_fingerprint"],
+    )
+    assert wrong_key.connect() is False
