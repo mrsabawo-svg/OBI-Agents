@@ -4,7 +4,7 @@ import pytest
 
 from agents.archive_agent import ArchiveAgent
 from agents.signal_reviewer import SignalReviewer, SAST
-from core.signal_identity import build_setup_identity
+from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
 from main import build_signal_id
 
 
@@ -65,6 +65,7 @@ def test_archive_persists_both_signal_and_setup_identity():
     signal = payload()
     entry = ArchiveAgent()._build_entry(signal)
     assert entry["id"] == signal["id"]
+    assert entry["setup_identity_version"] == SETUP_IDENTITY_VERSION
     assert entry["setup_id"] == build_setup_identity(signal)
 
 

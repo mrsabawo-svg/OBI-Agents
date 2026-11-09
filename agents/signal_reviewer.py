@@ -9,7 +9,7 @@ import requests
 from datetime import datetime
 from core.memory import load as load_memory
 from core.models import _payload_to_dict
-from core.signal_identity import build_setup_identity
+from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
 import pytz
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -52,7 +52,12 @@ class SignalReviewer:
                     continue
 
                 archived_setup_id = archived.get("setup_id")
-                if not isinstance(archived_setup_id, str) or not archived_setup_id:
+                archived_setup_version = archived.get("setup_identity_version")
+                if (
+                    archived_setup_version != SETUP_IDENTITY_VERSION
+                    or not isinstance(archived_setup_id, str)
+                    or not archived_setup_id
+                ):
                     legacy_payload = {
                         "symbol": archived.get("symbol"),
                         "trigger": {
