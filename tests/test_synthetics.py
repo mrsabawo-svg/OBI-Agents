@@ -547,12 +547,19 @@ def test_lifecycle_agent_synthetic_trade_resolution():
         "status": "OPEN",
     }
 
-    mock_df = pd.DataFrame({"Close": [100015.0]}, index=[pd.Timestamp.now()])
+    candle_time = SAST.localize(datetime(2025, 3, 1, 11, 55))
+    mock_df = pd.DataFrame(
+        {"High": [100025.0], "Low": [100015.0]},
+        index=[candle_time],
+    )
     with patch.object(DataAgent, "fetch", return_value={"5m": mock_df}):
         changed = lc._check_trade(trade, now)
         assert changed is True
         assert trade["status"] == "CLOSED"
-        assert trade["outcome"] in ["TP1", "TP2"]
+        assert trade["outcome"] == "TP3"
+        assert trade["tp1_hit"] is True
+        assert trade["tp2_hit"] is True
+        assert trade["tp3_hit"] is True
 
 
 def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
