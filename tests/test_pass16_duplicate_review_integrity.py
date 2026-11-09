@@ -57,8 +57,7 @@ def archive_record(payload=None, **overrides):
 @pytest.fixture
 def fresh_memory(monkeypatch):
     snapshot = {"_archive": []}
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: snapshot)
-    monkeypatch.setattr("agents.signal_reviewer.memory_store.is_read_stale", lambda: False)
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: (snapshot, False))
     return snapshot
 
 
@@ -80,15 +79,14 @@ def test_memory_read_failure_fails_closed(monkeypatch):
     def fail_read():
         raise RuntimeError("remote memory unavailable")
 
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", fail_read)
-    monkeypatch.setattr("agents.signal_reviewer.memory_store.is_read_stale", lambda: False)
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", fail_read)
     reviewer = SignalReviewer("XAUUSD")
     assert reviewer.is_duplicate(candidate()) is True
     assert reviewer.duplicate_check_status == "unavailable"
 
 
 def test_stale_last_known_good_snapshot_fails_closed(fresh_memory, monkeypatch):
-    monkeypatch.setattr("agents.signal_reviewer.memory_store.is_read_stale", lambda: True)
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: (fresh_memory, True))
     reviewer = SignalReviewer("XAUUSD")
     assert reviewer.is_duplicate(candidate()) is True
     assert reviewer.duplicate_check_status == "unavailable"
