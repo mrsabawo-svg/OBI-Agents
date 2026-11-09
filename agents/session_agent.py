@@ -1,4 +1,4 @@
-"""
+""" 
 OBI Agents — Session Agent
 Determines which trading session is active (SAST).
 Only fires signals during high-probability kill zones.
@@ -30,19 +30,24 @@ class SessionAgent:
         self.symbol = symbol
 
     def analyse(self) -> dict:
+        # Synthetics are continuously available and must not depend on
+        # forex session clocks or kill-zone calculation.
+        if self.symbol in SYNTHETIC_SYMBOLS:
+            return self._build(True, "Synthetic — 24/7 tradeable", {})
+
         try:
             now       = now_sast()
             kill_zone = is_kill_zone()
             hour      = now.hour
             weekday   = now.weekday()
 
-            is_always_on = self.symbol in CRYPTO_SYMBOLS or self.symbol in SYNTHETIC_SYMBOLS
+            is_always_on = self.symbol in CRYPTO_SYMBOLS
 
-            # Weekends: crypto and synthetics trade 24/7, forex/indices closed
+            # Weekends: crypto trades 24/7; forex/indices are closed.
             if weekday >= 5 and not is_always_on:
                 return self._build(False, "Weekend — market closed", kill_zone)
 
-            # Dead hours block: only applies to traditional forex/indices
+            # Dead hours block: only applies to traditional forex/indices.
             if hour == 23 and not is_always_on:
                 return self._build(False, "Dead hours — no liquidity", kill_zone)
 
@@ -51,10 +56,6 @@ class SessionAgent:
             if kill_zone["active"] and kill_zone["name"] in preferred:
                 reason = f"{kill_zone['name']} — optimal for {self.symbol}"
                 return self._build(True, reason, kill_zone)
-
-            # Crypto & Synthetics: always tradeable 24/7
-            if self.symbol in SYNTHETIC_SYMBOLS:
-                return self._build(True, "Synthetic — 24/7 tradeable", kill_zone)
 
             if self.symbol in CRYPTO_SYMBOLS:
                 return self._build(True, "Crypto — 24/7 tradeable", kill_zone)

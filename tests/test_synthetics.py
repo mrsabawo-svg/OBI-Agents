@@ -51,6 +51,17 @@ def test_synthetic_session_rules():
         assert "Dead hours" in sess_fx["reason"]
 
 
+
+def test_synthetic_session_does_not_depend_on_forex_clock_or_kill_zone():
+    with patch("agents.session_agent.now_sast", side_effect=RuntimeError("clock unavailable")), \
+         patch("agents.session_agent.is_kill_zone", side_effect=RuntimeError("kill-zone unavailable")):
+        for sym in EXPECTED_SYNTHETICS:
+            session = SessionAgent(sym).analyse()
+            assert session["tradeable"] is True
+            assert session["reason"] == "Synthetic — 24/7 tradeable"
+            assert session["kill_zone"] is False
+
+
 def test_chief_agent_synthetics_prioritisation():
     context = SymbolContext()
     # Mock context to give a synthetic top confidence so it appears in top3 of brief
@@ -83,19 +94,67 @@ def test_chief_agent_synthetics_prioritisation():
         assert "⚡ Synthetic" in brief
 
 
-def test_data_agent_synthetic_fetch_and_indicators():
-    for sym in EXPECTED_SYNTHETICS:
-        agent = DataAgent(sym)
-        data = agent.fetch(["4h", "1h", "15m", "5m"])
-        for tf in ["4h", "1h", "15m", "5m"]:
-            assert tf in data
-            df = data[tf]
-            assert isinstance(df, pd.DataFrame)
-            assert not df.empty
-            assert len(df) > 50
-            for col in ["Open", "High", "Low", "Close", "Volume", "ADX_14", "EMA_20", "EMA_50", "ATRr_14"]:
-                assert col in df.columns
-                assert not df[col].isna().all()
+def test_data_agent_refuses_simulated_synthetic_fallback(monkeypatch):
+    monkeypatch.delenv("MT5_BRIDGE_URL", raising=False)
+    data = DataAgent("SFX_VOL_75").fetch(["5m"])
+    assert data == {}
+
+
+def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+
+    timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=80, freq="5min")
+    rows = []
+    price = 5000.0
+    for timestamp in timestamps:
+        rows.append({
+            "timestamp": timestamp.isoformat(),
+            "Open": price,
+            "High": price + 2,
+            "Low": price - 2,
+            "Close": price + 1,
+            "Volume": 100,
+        })
+        price += 1
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": rows}
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
+
+    assert "5m" in data
+    assert not data["5m"].empty
+    assert {"Open", "High", "Low", "Close", "Volume"}.issubset(data["5m"].columns)
+
+
+def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+
+    rows = [{
+        "timestamp": "2026-11-08T00:00:00Z",
+        "Open": 5000,
+        "High": 4990,
+        "Low": 5010,
+        "Close": 5005,
+        "Volume": 100,
+    }]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": rows}
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
+
+    assert data == {}
 
 
 def test_lifecycle_agent_synthetic_trade_resolution():

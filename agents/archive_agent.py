@@ -88,8 +88,13 @@ class ArchiveAgent:
             bias_score = bias.get("score")
             bias_factors = bias.get("factors", [])
 
-        score = signal.get("score", {})
+        score = signal.get("score") or {}
         final_grade = score.grade if hasattr(score, "grade") else score.get("grade") if isinstance(score, dict) else None
+        obi_score = (
+            score.confidence if hasattr(score, "confidence")
+            else score.get("confidence") if isinstance(score, dict)
+            else None
+        )
 
         if hasattr(trigger, "direction"):
             direction = trigger.direction
@@ -142,7 +147,10 @@ class ArchiveAgent:
             "htf_bias": htf.get("bias"),
             "htf_conf": htf.get("confidence"),
             "bias_score": bias_score,
-            "bias_factors": bias_factors,
+            # Canonical analytics schema consumed by FactorAgent.
+            "factors": list(bias_factors or []),
+            "bias_factors": list(bias_factors or []),  # compatibility alias
+            "obi_score": obi_score,
             "bos": mtf.get("bos"),
             "sweep": mtf.get("sweep"),
             "ob": mtf.get("order_block"),
