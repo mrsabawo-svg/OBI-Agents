@@ -6,7 +6,10 @@ Renamed: Devil's Advocate -> Skeptic (blunt, single purpose, no theatre)
 import os
 import json
 import requests
+import threading
+from contextlib import contextmanager
 from datetime import datetime
+import core.memory as memory_store
 from core.memory import load as load_memory
 from core.models import _payload_to_dict
 from core.signal_identity import SETUP_IDENTITY_VERSION, resolve_setup_identity
@@ -15,10 +18,28 @@ import pytz
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 SAST         = pytz.timezone("Africa/Johannesburg")
 
+_REVIEW_LOCKS = {}
+_REVIEW_LOCKS_GUARD = threading.Lock()
+
+
+@contextmanager
+def duplicate_review_guard(symbol: str):
+    """Serialize duplicate-check through archive commit within this process."""
+    key = str(symbol).strip().upper()
+    with _REVIEW_LOCKS_GUARD:
+        lock = _REVIEW_LOCKS.setdefault(key, threading.RLock())
+    with lock:
+        yield
+
+
+class DuplicateReviewUnavailable(RuntimeError):
+    """Duplicate status cannot be established from trustworthy archive state."""
+
 
 class SignalReviewer:
     def __init__(self, symbol: str):
         self.symbol = symbol
+        self.duplicate_check_status = "not_checked"
 
     @staticmethod
     def setup_identity(payload: dict) -> str:
@@ -26,65 +47,106 @@ class SignalReviewer:
         return resolve_setup_identity(payload)
 
     def is_duplicate(self, payload: dict) -> bool:
+        """Return True for duplicates OR when safe duplicate status is unavailable."""
         try:
-            memory = load_memory() or {}
-            archive = memory.get("_archive", [])
+            if not isinstance(payload, dict):
+                raise DuplicateReviewUnavailable("candidate payload is not an object")
+            if payload.get("symbol") != self.symbol:
+                raise DuplicateReviewUnavailable("candidate instrument does not match reviewer")
             signal_id = payload.get("id")
+            if not isinstance(signal_id, str) or not signal_id.strip():
+                raise DuplicateReviewUnavailable("candidate event identity is missing")
             setup_id = self.setup_identity(payload)
-            now = datetime.now(SAST)
 
+            memory = load_memory()
+            if not isinstance(memory, dict):
+                raise DuplicateReviewUnavailable("canonical memory root is not an object")
+            if memory_store.is_read_stale():
+                raise DuplicateReviewUnavailable("canonical memory is stale/read-only")
+            archive = memory.get("_archive", [])
+            if not isinstance(archive, list):
+                raise DuplicateReviewUnavailable("archive is not a list")
+
+            now = datetime.now(SAST)
             for archived in archive:
-                if not isinstance(archived, dict) or archived.get("symbol") != self.symbol:
+                if not isinstance(archived, dict):
+                    raise DuplicateReviewUnavailable("archive contains a malformed record")
+                archived_symbol = archived.get("symbol")
+                if not isinstance(archived_symbol, str) or not archived_symbol.strip():
+                    raise DuplicateReviewUnavailable("archive record has no valid instrument")
+                if archived_symbol != self.symbol:
                     continue
 
-                # Exact event identity is permanent, including after closure.
-                if signal_id and archived.get("id") == signal_id:
+                archived_id = archived.get("id")
+                if archived_id is not None and (
+                    not isinstance(archived_id, str) or not archived_id.strip()
+                ):
+                    raise DuplicateReviewUnavailable("archive record has malformed event identity")
+                if archived_id == signal_id:
+                    self.duplicate_check_status = "duplicate"
                     return True
 
-                # Setup-level suppression applies only to currently OPEN records.
-                if archived.get("status") != "OPEN":
+                status = archived.get("status")
+                if not isinstance(status, str):
+                    raise DuplicateReviewUnavailable("archive record has malformed lifecycle status")
+                if status != "OPEN":
                     continue
 
                 opened_value = archived.get("opened") or archived.get("timestamp")
                 opened = self._parse_opened_at(opened_value)
                 if opened is None:
-                    continue
+                    raise DuplicateReviewUnavailable("open archive record has invalid timestamp")
                 age_seconds = (now - opened).total_seconds()
-                if not 0 <= age_seconds < 7200:
+                if age_seconds < 0:
+                    raise DuplicateReviewUnavailable("open archive record has a future timestamp")
+                if age_seconds >= 7200:
                     continue
 
                 archived_setup_id = archived.get("setup_id")
                 archived_setup_version = archived.get("setup_identity_version")
-                if (
-                    archived_setup_version != SETUP_IDENTITY_VERSION
-                    or not isinstance(archived_setup_id, str)
-                    or not archived_setup_id
-                ):
-                    legacy_payload = {
-                        "symbol": archived.get("symbol"),
-                        "trigger": {
-                            "direction": archived.get("direction"),
-                            "entry": archived.get("entry"),
-                            "sl": archived.get("sl"),
-                            "tp1": archived.get("tp1"),
-                            "tp2": archived.get("tp2"),
-                            "tp3": archived.get("tp3"),
-                            "tags": archived.get("tags", []),
-                        },
-                        "regime": {"label": archived.get("regime")},
-                    }
+                legacy_payload = {
+                    "symbol": archived.get("symbol"),
+                    "trigger": {
+                        "direction": archived.get("direction"),
+                        "entry": archived.get("entry"),
+                        "sl": archived.get("sl"),
+                        "tp1": archived.get("tp1"),
+                        "tp2": archived.get("tp2"),
+                        "tp3": archived.get("tp3"),
+                        "tags": archived.get("tags", []),
+                    },
+                    "regime": {"label": archived.get("regime")},
+                }
+
+                if archived_setup_version == SETUP_IDENTITY_VERSION:
+                    if (
+                        not isinstance(archived_setup_id, str)
+                        or len(archived_setup_id) != 64
+                        or any(ch not in "0123456789abcdef" for ch in archived_setup_id)
+                    ):
+                        raise DuplicateReviewUnavailable("versioned archive setup identity is malformed")
+                    reconstructed = self.setup_identity(legacy_payload)
+                    if reconstructed != archived_setup_id:
+                        raise DuplicateReviewUnavailable("archive setup identity conflicts with stored material")
+                elif archived_setup_version is None and archived_setup_id is None:
+                    # Legacy records may be reconstructed only when all material fields exist.
                     try:
                         archived_setup_id = self.setup_identity(legacy_payload)
-                    except (TypeError, ValueError):
-                        continue
+                    except (TypeError, ValueError) as exc:
+                        raise DuplicateReviewUnavailable("legacy archive setup cannot be reconstructed") from exc
+                else:
+                    raise DuplicateReviewUnavailable("unsupported or conflicting archive identity version")
 
                 if archived_setup_id == setup_id:
+                    self.duplicate_check_status = "duplicate"
                     return True
 
+            self.duplicate_check_status = "clear"
             return False
         except Exception as e:
-            print("[REVIEWER] Duplicate check error: " + str(e))
-            return False
+            self.duplicate_check_status = "unavailable"
+            print("[REVIEWER] Duplicate check unavailable; blocking signal: " + str(e))
+            return True
 
     @staticmethod
     def _parse_opened_at(value):
