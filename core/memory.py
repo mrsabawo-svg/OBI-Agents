@@ -63,9 +63,9 @@ def load() -> dict:
             if _LAST_KNOWN_GOOD is not None:
                 print("[MEMORY] Remote read failed; using read-only last-known-good snapshot: " + str(exc))
                 return copy.deepcopy(_LAST_KNOWN_GOOD)
-            if isinstance(exc, MemoryReadError):
-                raise
-            raise MemoryReadError("memory unavailable; refusing an empty fallback") from exc
+            raise MemoryReadError(
+                "memory unavailable; refusing an empty fallback: " + str(exc)
+            ) from exc
 
 
 def save(data: dict) -> bool:
@@ -95,8 +95,7 @@ def save(data: dict) -> bool:
             print(
                 "[MEMORY] Save failed - status "
                 + str(response.status_code)
-                + ": "
-                + response.text[:200]
+                + "; refusing to treat the write as durable"
             )
             return False
         except Exception as exc:
