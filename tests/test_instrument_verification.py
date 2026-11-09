@@ -194,6 +194,22 @@ def test_instrument_verification_rejects_unpersisted_or_mismatched_evidence(tmp_
     assert store.instrument_verification_count() == 0
 
 
+def test_instrument_verification_rejects_report_with_stale_metadata_proof(tmp_path):
+    path = tmp_path / "evidence.sqlite3"
+    store = InstrumentRegistryStore(path)
+    discovery = _discovery(store)
+    current_metadata_sha = discovery["symbols"][0]["metadata_sha256"]
+    stale_evidence = _persisted_evidence(path, _identity(), "c" * 64)
+
+    with pytest.raises(ValueError, match="metadata proof"):
+        store.record_verification(
+            _identity(), "SFX_VOL_75", "SFX Vol 75", current_metadata_sha,
+            [stale_evidence], "operator-review",
+        )
+
+    assert store.instrument_verification_count() == 0
+
+
 def test_instrument_verification_rejects_canonical_sources_from_another_account(tmp_path):
     path = tmp_path / "evidence.sqlite3"
     store = InstrumentRegistryStore(path)
