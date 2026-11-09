@@ -89,6 +89,7 @@ def test_same_setup_is_duplicate_even_with_a_new_signal_id(monkeypatch):
         "symbol": "XAUUSD",
         "status": "OPEN",
         "opened": opened(1),
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(existing),
     }]
     monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
@@ -104,6 +105,7 @@ def test_same_entry_with_materially_different_risk_is_not_a_duplicate(monkeypatc
         "symbol": "XAUUSD",
         "status": "OPEN",
         "opened": opened(1),
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(existing),
         "entry": 4000.0,
     }]
@@ -119,6 +121,7 @@ def test_old_setup_is_not_blocked_after_duplicate_window(monkeypatch):
         "symbol": "XAUUSD",
         "status": "OPEN",
         "opened": opened(3),
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(existing),
     }]
     monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
