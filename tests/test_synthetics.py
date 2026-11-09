@@ -196,10 +196,11 @@ def test_data_agent_refuses_unpinned_account_identity(monkeypatch):
         assert DataAgent("SFX_VOL_75").fetch(["5m"]) == {}
 
 
-def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
+@pytest.mark.parametrize("candle_count, accepted", [(59, False), (60, True)])
+def test_data_agent_enforces_reported_closed_candle_floor(monkeypatch, candle_count, accepted):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
 
-    timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=80, freq="5min")
+    timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=candle_count, freq="5min")
     rows = []
     price = 5000.0
     for index, timestamp in enumerate(timestamps):
@@ -270,6 +271,10 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
         data = DataAgent("SFX_VOL_75").fetch(["5m"])
 
+    if not accepted:
+        assert data == {}
+        return
+
     assert "5m" in data
     assert not data["5m"].empty
     assert {"Open", "High", "Low", "Close", "Volume"}.issubset(data["5m"].columns)
@@ -280,7 +285,7 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     assert lineage["status"] == "complete"
     assert lineage["timeframes"]["5m"]["validation_report_id"] == "accepted-report"
     assert lineage["timeframes"]["5m"]["account_fingerprint"] == "a" * 64
-    assert lineage["timeframes"]["5m"]["quality_summary"]["received_count"] == 80
+    assert lineage["timeframes"]["5m"]["quality_summary"]["received_count"] == candle_count
     assert lineage["timeframes"]["5m"]["quality_summary"]["durable_quarantined_count"] == 0
     assert lineage["timeframes"]["5m"]["feature_lineage_status"] == "complete"
     assert lineage["feature_lineage_status"] == "complete"
@@ -555,9 +560,10 @@ def test_lifecycle_agent_synthetic_trade_resolution():
         assert trade["outcome"] in ["TP1", "TP2"]
 
 
-def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
+@pytest.mark.parametrize("candle_count, accepted", [(60, False), (61, True)])
+def test_data_agent_enforces_post_quarantine_closed_candle_floor(monkeypatch, candle_count, accepted):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
-    timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=80, freq="5min")
+    timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=candle_count, freq="5min")
     rows = []
     for index, timestamp in enumerate(timestamps):
         price = 5000 + index
@@ -628,8 +634,12 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
     with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
         data = DataAgent("SFX_VOL_75").fetch(["5m"])
 
+    if not accepted:
+        assert data == {}
+        return
+
     assert "5m" in data
-    assert len(data["5m"]) == 79
+    assert len(data["5m"]) == candle_count - 1
     assert data["5m"].attrs["quality_report"]["durable_quarantined_count"] == 1
 
 
