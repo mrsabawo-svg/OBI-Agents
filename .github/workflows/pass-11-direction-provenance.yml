@@ -1,0 +1,24 @@
+name: Pass 11 Direction Provenance
+
+on:
+  push:
+    branches:
+      - pass-11-direction-provenance
+  workflow_dispatch:
+
+jobs:
+  direction-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: pip install pandas numpy pytest
+
+      - name: Run direction provenance test
+        run: python -m pytest -q tests/test_direction_provenance.py

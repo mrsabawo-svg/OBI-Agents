@@ -16,27 +16,35 @@ class NotifierAgent:
     def send(self, result: dict, narrative: str) -> None:
         print("[NOTIFY] sending Telegram for " + self.symbol)
         try:
+            score_data = result.get("score")
+            if hasattr(score_data, "grade"):
+                grade = score_data.grade
+                risk  = score_data.risk
+            elif isinstance(score_data, dict):
+                grade = score_data.get("grade", "N/A")
+                risk  = score_data.get("risk", "N/A")
+            else:
+                grade = result.get("grade", "N/A")
+                risk  = result.get("risk", "N/A")
+
             tags = " + ".join(result.get("tags", [])) or "none"
-            gv   = str(result.get("groq_verdict", ""))[:400]
-            sv   = str(result.get("skeptic_verdict", ""))[:400]
+            confluence = result.get("confluence", "")
+            conf_str = f" | Confluence: {confluence}" if confluence else ""
+
             msg = (
-                "OBI SIGNAL - " + result["symbol"] + "\n"
+                f"OBI SIGNAL - {result['symbol']} [Grade: {grade} | Risk: {risk}]\n"
+                "------------------------------\n"
+                f"Direction: {result['direction']}{conf_str}\n"
+                f"Entry: {round(float(result['entry']), 5)}\n"
+                f"SL:    {result['sl']}\n"
+                f"TP1:   {result['tp1']}\n"
+                f"TP2:   {result['tp2']}\n"
+                f"TP3:   {result['tp3']}\n"
+                f"RR:    {result['rr']}\n"
                 "------------------------------\n"
                 + narrative + "\n"
                 "------------------------------\n"
-                "Direction: " + str(result["direction"]) + " | Tags: " + tags + "\n"
-                "Entry: " + str(round(float(result["entry"]), 5)) + "\n"
-                "SL: "    + str(result["sl"]) + "\n"
-                "TP1: "   + str(result["tp1"]) + "\n"
-                "TP2: "   + str(result["tp2"]) + "\n"
-                "TP3: "   + str(result["tp3"]) + "\n"
-                "RR: "    + str(result["rr"]) + "\n"
-                "------------------------------\n"
-                "ANALYST:\n" + gv + "\n"
-                "------------------------------\n"
-                "SKEPTIC:\n" + sv + "\n"
-                "------------------------------\n"
-                + str(result["timestamp"])
+                + str(result.get("timestamp", ""))
             )
             resp = requests.post(
                 "https://api.telegram.org/bot" + str(TELEGRAM_TOKEN) + "/sendMessage",

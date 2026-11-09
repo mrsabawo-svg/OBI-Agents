@@ -9,15 +9,20 @@ import requests
 EXA_API_KEY = os.environ.get("EXA_API_KEY")
 
 SYMBOL_SEARCH_TERMS = {
-    "XAUUSD": "gold price forecast today XAU USD",
-    "EURUSD": "EUR USD euro dollar forecast today",
-    "USDJPY": "USD JPY dollar yen forecast today",
-    "GBPJPY": "GBP JPY pound yen forecast today",
-    "GBPUSD": "GBP USD pound dollar forecast today",
-    "BTCUSD": "Bitcoin BTC price analysis today",
-    "ETHUSD": "Ethereum ETH price analysis today",
-    "SOLUSD": "Solana SOL price analysis today",
-    "NASDAQ": "NASDAQ QQQ market analysis today",
+    "XAUUSD":     "gold price forecast today XAU USD",
+    "EURUSD":     "EUR USD euro dollar forecast today",
+    "USDJPY":     "USD JPY dollar yen forecast today",
+    "GBPJPY":     "GBP JPY pound yen forecast today",
+    "GBPUSD":     "GBP USD pound dollar forecast today",
+    "BTCUSD":     "Bitcoin BTC price analysis today",
+    "ETHUSD":     "Ethereum ETH price analysis today",
+    "SOLUSD":     "Solana SOL price analysis today",
+    "NASDAQ":     "NASDAQ QQQ market analysis today",
+    "PAIN_999":   "Weltrade SyntX PainX 999 synthetic index analysis",
+    "GAIN_999":   "Weltrade SyntX GainX 999 synthetic index analysis",
+    "PAIN_1200":  "Weltrade SyntX PainX 1200 synthetic index analysis",
+    "GAIN_1200":  "Weltrade SyntX GainX 1200 synthetic index analysis",
+    "SFX_VOL_75": "Weltrade SyntX SFX Vol 75 synthetic index analysis",
 }
 
 

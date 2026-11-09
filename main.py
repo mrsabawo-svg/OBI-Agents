@@ -14,15 +14,20 @@ from agents.zone_agent         import ZoneAgent
 from agents.trigger_agent      import TriggerAgent
 from agents.regime_agent       import RegimeAgent
 from agents.health_agent       import HealthAgent
-from agents.archive_agent      import ArchiveAgent
 from agents.lifecycle_agent    import LifecycleAgent
 from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
 from core.utils                import sast_str
+from core.data_lineage          import build_data_lineage
+from core.decision_lineage      import build_decision_lineage
 
-SYMBOLS = ["XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD", "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ"]
+SYMBOLS = [
+    "XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD",
+    "BTCUSD", "ETHUSD", "SOLUSD", "NASDAQ",
+    "PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"
+]
 ALL_TF  = ["4h", "1h", "15m", "5m"]
 
 def run(symbol: str, news: dict = None) -> dict:
@@ -39,6 +44,12 @@ def run(symbol: str, news: dict = None) -> dict:
         if len(data) == 0:
             print("[MAIN] " + symbol + ": no data - skipping")
             return {"data_empty": True}
+
+        data_lineage = build_data_lineage(
+            data,
+            instrument_id=symbol,
+            expected_timeframes=ALL_TF,
+        )
 
         ticker = DataAgent(symbol).ticker
         check_outcome(symbol, ticker)
@@ -65,8 +76,35 @@ def run(symbol: str, news: dict = None) -> dict:
             print("[MAIN] " + symbol + ": no trigger - " + trigger.reason)
             return {"blocked": "trigger"}
 
-        edge  = EdgeAgent(symbol).analyse(trigger, bias, regime)
+        edge_agent = EdgeAgent(symbol)
+        edge = edge_agent.analyse(trigger, bias, regime)
         score = ScoreAgent(symbol).compute(bias, trigger, regime, edge, session)
+
+        decision_lineage = build_decision_lineage(
+            symbol=symbol,
+            market_data=data,
+            agent_outputs={
+                "Session": session,
+                "HTF": htf,
+                "Regime": regime,
+                "MTF": mtf,
+                "Bias": bias,
+                "Zone": zone,
+                "LTF": ltf,
+                "Trigger": trigger,
+                "Edge": edge,
+                "Score": score,
+            },
+            data_lineage=data_lineage,
+            external_inputs={
+                "Session": {
+                    "evaluated_at_sast": session.get("evaluated_at_sast"),
+                },
+                "Edge": {
+                    "archive_snapshot_sha256": edge_agent.archive_snapshot_sha256,
+                },
+            },
+        )
 
         payload = {
             "symbol":  symbol,
@@ -80,10 +118,13 @@ def run(symbol: str, news: dict = None) -> dict:
             "session": session,
             "edge":    edge,
             "score":   score,
+            "data_lineage": data_lineage,
+            "decision_lineage": decision_lineage,
         }
 
-        IntelligenceAgent(symbol).verdict(payload)
-        ArchiveAgent().log(payload)
+        intelligence_result = IntelligenceAgent(symbol).verdict(payload)
+        if not intelligence_result:
+            return {"blocked": "duplicate_or_archive_persistence"}
 
         try:
             ExecutionAgent(symbol).propose(payload)
