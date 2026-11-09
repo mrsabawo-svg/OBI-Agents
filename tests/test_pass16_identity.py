@@ -36,7 +36,7 @@ def test_signal_event_id_is_unique_even_inside_the_same_second():
     second = build_signal_id("XAUUSD")
     assert first != second
     assert first.startswith("XAUUSD_")
-    assert len(first.rsplit("_", 1)[-1]) == 8
+    assert len(first.rsplit("_", 1)[-1]) == 16
 
 
 def test_signal_identity_and_setup_identity_are_distinct():
