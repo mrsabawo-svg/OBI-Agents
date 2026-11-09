@@ -435,3 +435,103 @@ def test_decision_lineage_distinguishes_manifest_integrity_from_provenance_compl
     assert any("Edge: closed archive snapshot hash unavailable" in item for item in manifest["warnings"])
     assert any("pipeline data lineage is unavailable" in item for item in manifest["warnings"])
     assert verify_decision_lineage(manifest)
+
+
+
+def _identity():
+    from core.signal_identity import SETUP_IDENTITY_VERSION
+    return {
+        "signal_id": "EURUSD_20261109_abc123",
+        "setup_id": "a" * 64,
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
+    }
+
+
+def test_decision_lineage_binds_signal_and_setup_identity():
+    identity = _identity()
+    manifest = build_decision_lineage(
+        "EURUSD", _market_data(), _outputs(),
+        {"schema_version": "obi-data-lineage-v5", "status": "complete", "timeframes": {}},
+        signal_identity=identity,
+    )
+    assert manifest["signal_identity"] == identity
+    assert verify_decision_lineage(manifest)
+
+
+def test_decision_lineage_rejects_malformed_signal_identity():
+    with pytest.raises(ValueError, match="setup_id"):
+        build_decision_lineage(
+            "EURUSD", _market_data(), _outputs(),
+            {"status": "complete"},
+            signal_identity={
+                "signal_id": "event-1",
+                "setup_id": "not-a-digest",
+                "setup_identity_version": "obi-setup-identity-v1",
+            },
+        )
+
+
+def test_decision_lineage_verification_detects_identity_tampering():
+    manifest = build_decision_lineage(
+        "EURUSD", _market_data(), _outputs(),
+        {"status": "complete"},
+        signal_identity=_identity(),
+    )
+    manifest["signal_identity"]["signal_id"] = "different-event"
+    assert not verify_decision_lineage(manifest)
+
+
+def test_archive_agent_accepts_matching_identity_bound_lineage():
+    from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
+    outputs = _outputs()
+    signal = {
+        "id": "EURUSD_20261109_abc123",
+        "symbol": "EURUSD",
+        "trigger": outputs["Trigger"],
+        "bias": outputs["Bias"],
+        "score": outputs["Score"],
+        "regime": outputs["Regime"],
+        "htf": outputs["HTF"],
+        "mtf": outputs["MTF"],
+    }
+    setup_id = build_setup_identity(signal)
+    signal["decision_lineage"] = build_decision_lineage(
+        "EURUSD", _market_data(), outputs,
+        {"schema_version": "obi-data-lineage-v5", "status": "complete", "timeframes": {}},
+        signal_identity={
+            "signal_id": signal["id"],
+            "setup_id": setup_id,
+            "setup_identity_version": SETUP_IDENTITY_VERSION,
+        },
+    )
+    entry = ArchiveAgent()._build_entry(signal)
+    assert entry["decision_lineage_status"] == "complete"
+    assert entry["decision_lineage_identity_status"] == "bound"
+
+
+def test_archive_agent_rejects_lineage_bound_to_another_signal_event():
+    from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
+    outputs = _outputs()
+    signal = {
+        "id": "EURUSD_20261109_actual",
+        "symbol": "EURUSD",
+        "trigger": outputs["Trigger"],
+        "bias": outputs["Bias"],
+        "score": outputs["Score"],
+        "regime": outputs["Regime"],
+        "htf": outputs["HTF"],
+        "mtf": outputs["MTF"],
+    }
+    signal["decision_lineage"] = build_decision_lineage(
+        "EURUSD", _market_data(), outputs,
+        {"schema_version": "obi-data-lineage-v5", "status": "complete", "timeframes": {}},
+        signal_identity={
+            "signal_id": "EURUSD_20261109_other",
+            "setup_id": build_setup_identity(signal),
+            "setup_identity_version": SETUP_IDENTITY_VERSION,
+        },
+    )
+    entry = ArchiveAgent()._build_entry(signal)
+    assert entry["decision_lineage_status"] == "unavailable"
+    assert entry["decision_lineage_identity_status"] == "mismatch"
+    assert entry["decision_lineage_sha256"] is None
