@@ -145,6 +145,15 @@ def test_legacy_archive_without_setup_id_is_reconstructed(monkeypatch):
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
+
+def test_incomplete_legacy_archive_payload_is_preserved_without_fabricated_setup_identity():
+    entry = ArchiveAgent()._build_entry({"id": "legacy-minimal", "symbol": "EURUSD"})
+    assert entry["id"] == "legacy-minimal"
+    assert entry["setup_identity_status"] == "unavailable"
+    assert entry["setup_identity_version"] is None
+    assert entry["setup_id"] is None
+
+
 def test_setup_identity_rejects_non_finite_price_fields():
     candidate = payload()
     candidate["trigger"]["entry"] = float("nan")
