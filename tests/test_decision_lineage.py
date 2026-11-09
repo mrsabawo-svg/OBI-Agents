@@ -570,7 +570,12 @@ def _production_signal_with_lineage(signal_id="EURUSD_20261109_actual", symbol="
 
 def test_archive_agent_rejects_unbound_lineage_when_production_identity_is_required():
     signal = _production_signal_with_lineage()
-    signal["decision_lineage"].pop("signal_identity")
+    signal["decision_lineage"] = build_decision_lineage(
+        "EURUSD",
+        _market_data(),
+        _outputs(),
+        {"schema_version": "obi-data-lineage-v5", "status": "complete", "timeframes": {}},
+    )
     entry = ArchiveAgent()._build_entry(signal)
 
     assert entry["decision_lineage_status"] == "unavailable"
