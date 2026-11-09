@@ -385,6 +385,8 @@ class InstrumentRegistryStore:
                     raise ValueError("canonical evidence report JSON is invalid") from exc
                 quality = persisted_report.get("report")
                 history = quality.get("history_completeness") if isinstance(quality, dict) else None
+                if isinstance(quality, dict) and quality.get("account_fingerprint") != account_fingerprint:
+                    raise ValueError("canonical evidence report account identity does not match pinned account")
                 if (
                     persisted_report.get("report_id") != evidence["report_id"]
                     or persisted_report.get("instrument_id") != instrument_id
