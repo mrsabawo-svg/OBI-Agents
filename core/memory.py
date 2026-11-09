@@ -99,6 +99,13 @@ def load() -> dict:
             raise MemoryReadError("memory unavailable; refusing an empty fallback: " + str(exc)) from exc
 
 
+def load_with_status() -> tuple[dict, bool]:
+    """Return a snapshot and its freshness atomically under the memory lock."""
+    with _LOCK:
+        snapshot = load()
+        return snapshot, _READ_IS_STALE
+
+
 def save(data: dict, transaction_id: Optional[str] = None) -> bool:
     """Revision-check, write, then read back exact content before success."""
     global _LAST_KNOWN_GOOD, _READ_IS_STALE, _BASE_REVISION

@@ -13,6 +13,11 @@ from core.signal_identity import (
 from main import build_signal_id
 
 
+@pytest.fixture(autouse=True)
+def duplicate_review_uses_fresh_test_snapshot(monkeypatch):
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({}, False))
+
+
 def payload(signal_id="SIGNAL_001"):
     return {
         "id": signal_id,
@@ -135,7 +140,7 @@ def test_exact_signal_id_is_duplicate_even_if_open_timestamp_is_unavailable(monk
         "status": "OPEN",
         "setup_id": "different-setup",
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -149,7 +154,7 @@ def test_exact_signal_id_remains_duplicate_after_archive_closure(monkeypatch):
         "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(candidate),
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -161,10 +166,18 @@ def test_same_setup_is_duplicate_even_with_a_new_signal_id(monkeypatch):
         "symbol": "XAUUSD",
         "status": "OPEN",
         "opened": opened(1),
+        "direction": existing["trigger"]["direction"],
+        "entry": existing["trigger"]["entry"],
+        "sl": existing["trigger"]["sl"],
+        "tp1": existing["trigger"]["tp1"],
+        "tp2": existing["trigger"]["tp2"],
+        "tp3": existing["trigger"]["tp3"],
+        "tags": existing["trigger"]["tags"],
+        "regime": existing["regime"]["label"],
         "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(existing),
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -177,11 +190,19 @@ def test_same_entry_with_materially_different_risk_is_not_a_duplicate(monkeypatc
         "symbol": "XAUUSD",
         "status": "OPEN",
         "opened": opened(1),
+        "direction": existing["trigger"]["direction"],
+        "entry": existing["trigger"]["entry"],
+        "sl": existing["trigger"]["sl"],
+        "tp1": existing["trigger"]["tp1"],
+        "tp2": existing["trigger"]["tp2"],
+        "tp3": existing["trigger"]["tp3"],
+        "tags": existing["trigger"]["tags"],
+        "regime": existing["regime"]["label"],
         "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(existing),
         "entry": 4000.0,
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert not SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -196,7 +217,7 @@ def test_old_setup_is_not_blocked_after_duplicate_window(monkeypatch):
         "setup_identity_version": SETUP_IDENTITY_VERSION,
         "setup_id": build_setup_identity(existing),
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert not SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
@@ -216,7 +237,7 @@ def test_legacy_archive_without_setup_id_is_reconstructed(monkeypatch):
         "tags": ["OB", "FVG"],
         "regime": "TRENDING",
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 

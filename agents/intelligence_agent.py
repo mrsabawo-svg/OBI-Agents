@@ -4,7 +4,7 @@ Thin orchestrator. Delegates to SignalReviewer, PersistenceAgent, NotifierAgent.
 """
 from core.utils import sast_str
 from core.memory import load as load_memory
-from agents.signal_reviewer import SignalReviewer
+from agents.signal_reviewer import SignalReviewer, duplicate_review_guard
 from agents.archive_agent import ArchiveAgent
 from agents.persistence_agent import PersistenceAgent
 from agents.notifier_agent import NotifierAgent
@@ -15,12 +15,21 @@ class IntelligenceAgent:
         self.symbol = symbol
 
     def verdict(self, payload: dict) -> dict:
+        # Keep duplicate review and archive commit in one per-symbol critical section.
+        # This closes the in-process check/append race between concurrent scanner workers.
+        with duplicate_review_guard(self.symbol):
+            return self._verdict_under_duplicate_guard(payload)
+
+    def _verdict_under_duplicate_guard(self, payload: dict) -> dict:
         print("[INTEL] " + self.symbol + ": starting")
 
         reviewer = SignalReviewer(self.symbol)
 
         if reviewer.is_duplicate(payload):
-            print("[INTEL] " + self.symbol + ": DUPLICATE BLOCKED")
+            if getattr(reviewer, "duplicate_check_status", None) == "unavailable":
+                print("[INTEL] " + self.symbol + ": DUPLICATE REVIEW UNAVAILABLE - SIGNAL BLOCKED")
+            else:
+                print("[INTEL] " + self.symbol + ": DUPLICATE BLOCKED")
             return {}
 
         memory   = load_memory()
