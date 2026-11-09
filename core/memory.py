@@ -99,10 +99,11 @@ def load() -> dict:
             raise MemoryReadError("memory unavailable; refusing an empty fallback: " + str(exc)) from exc
 
 
-def is_read_stale() -> bool:
-    """Return whether the latest load returned a stale read-only fallback."""
+def load_with_status() -> tuple[dict, bool]:
+    """Return a snapshot and its freshness atomically under the memory lock."""
     with _LOCK:
-        return _READ_IS_STALE
+        snapshot = load()
+        return snapshot, _READ_IS_STALE
 
 
 def save(data: dict, transaction_id: Optional[str] = None) -> bool:
