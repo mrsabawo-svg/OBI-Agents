@@ -102,10 +102,39 @@ def create_signal_identity(symbol: str, trigger: Any, regime: dict | None = None
     }
 
 
+def validate_signal_identity(payload: dict, identity: dict | None = None) -> bool:
+    """Validate an issued bundle against both its event and material setup."""
+    if not isinstance(payload, dict):
+        return False
+    if identity is None:
+        identity = payload.get("signal_identity")
+    if identity is None and isinstance(payload.get("decision_lineage"), dict):
+        identity = payload["decision_lineage"].get("signal_identity")
+    if not isinstance(identity, dict):
+        return False
+
+    signal_id = identity.get("signal_id")
+    setup_id = identity.get("setup_id")
+    if (
+        not isinstance(signal_id, str)
+        or not signal_id.strip()
+        or (payload.get("id") is not None and signal_id != payload.get("id"))
+        or identity.get("setup_identity_version") != SETUP_IDENTITY_VERSION
+        or not isinstance(setup_id, str)
+        or len(setup_id) != 64
+        or not all(character in "0123456789abcdef" for character in setup_id)
+    ):
+        return False
+    try:
+        return build_setup_identity(payload) == setup_id
+    except (TypeError, ValueError):
+        return False
+
+
 def resolve_setup_identity(payload: dict) -> str:
     """Resolve a candidate setup identity through the canonical identity module.
 
-    Existing issued identity is reused when valid; older callers without an
+    Existing issued identity is validated and reused; older callers without an
     issued bundle are normalized through the same versioned algorithm.
     """
     if not isinstance(payload, dict):
@@ -114,20 +143,7 @@ def resolve_setup_identity(payload: dict) -> str:
     if identity is None and isinstance(payload.get("decision_lineage"), dict):
         identity = payload["decision_lineage"].get("signal_identity")
     if identity is not None:
-        if not isinstance(identity, dict):
-            raise ValueError("signal_identity must be a dictionary")
-        signal_id = identity.get("signal_id")
-        setup_id = identity.get("setup_id")
-        version = identity.get("setup_identity_version")
-        if (
-            not isinstance(signal_id, str)
-            or not signal_id.strip()
-            or (payload.get("id") is not None and signal_id != payload.get("id"))
-            or version != SETUP_IDENTITY_VERSION
-            or not isinstance(setup_id, str)
-            or len(setup_id) != 64
-            or not all(character in "0123456789abcdef" for character in setup_id)
-        ):
-            raise ValueError("signal_identity is invalid or does not match the signal event")
-        return setup_id
+        if not validate_signal_identity(payload, identity):
+            raise ValueError("signal_identity is invalid or does not match the signal event/setup")
+        return identity["setup_id"]
     return build_setup_identity(payload)
