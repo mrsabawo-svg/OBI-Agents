@@ -13,6 +13,11 @@ from core.signal_identity import (
 from main import build_signal_id
 
 
+@pytest.fixture(autouse=True)
+def duplicate_review_uses_fresh_test_snapshot(monkeypatch):
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.is_read_stale", lambda: False)
+
+
 def payload(signal_id="SIGNAL_001"):
     return {
         "id": signal_id,
