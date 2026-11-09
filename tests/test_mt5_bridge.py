@@ -230,13 +230,18 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     from core.raw_observation_store import RawObservationStore
     store = RawObservationStore(tmp_path / "raw.sqlite3")
     quarantine = store.get_quarantine_records()
-    assert len(quarantine) == 1
-    assert quarantine[0]["observation_id"] == payload["data"][1]["observation_id"]
-    assert quarantine[0]["reason_code"] == "INVALID_OHLC"
+    # The first and post-verification OHLCV requests are distinct append-only
+    # source batches; both invalid observations must remain in the evidence log.
+    assert len(quarantine) == 2
+    assert {item["reason_code"] for item in quarantine} == {"INVALID_OHLC"}
+    assert len({item["batch_id"] for item in quarantine}) == 2
+    assert payload["data"][1]["observation_id"] in {
+        item["observation_id"] for item in quarantine
+    }
 
     from core.canonical_data_store import CanonicalCandleStore
     canonical = CanonicalCandleStore(tmp_path / "raw.sqlite3")
-    assert canonical.count() == 1
+    assert canonical.count() == 2
     saved = canonical.get(payload["canonical_persistence"]["candle_ids"][0])
     assert saved["source_observation_ids"] == [payload["data"][0]["observation_id"]]
     assert saved["validation_report_id"] == payload["quality_report"]["report_id"]
