@@ -10,6 +10,7 @@ import yfinance as yf
 import pandas as pd
 import ta as ta_lib
 from core.feature_lineage import build_indicator_lineage
+from core.data_foundation_contract import MINIMUM_ANALYSIS_CANDLES
 
 yf.set_tz_cache_location("/tmp/yfinance_cache")
 
@@ -261,7 +262,7 @@ class DataAgent:
                     or history_report.get("requested_count") != history_report.get("returned_count")
                     or history_report.get("returned_count") != len(rows)
                     or closed_count != len(rows) - forming_count
-                    or closed_count < 1
+                    or closed_count < MINIMUM_ANALYSIS_CANDLES
                     or forming_count != len(expected_forming_indexes)
                     or not forming_valid
                     or not pagination_valid
@@ -478,6 +479,13 @@ class DataAgent:
                 forming = df["bar_status"].astype(str).str.lower().eq("forming")
                 quality["forming_excluded_count"] = int(forming.sum())
                 df = df.loc[~forming].sort_index().copy()
+                if len(df) < MINIMUM_ANALYSIS_CANDLES:
+                    print(
+                        f"[DATA] {self.symbol} {tf}: only {len(df)} valid closed canonical "
+                        f"candles remain after local validation; "
+                        f"{MINIMUM_ANALYSIS_CANDLES} required"
+                    )
+                    continue
                 if df.empty:
                     print("[DATA_QUALITY] " + json.dumps({
                         "symbol": self.symbol, "timeframe": tf,
