@@ -399,6 +399,25 @@ class CanonicalCandleStore:
             "validation_report_sha256": report_hash,
         }
 
+    def get_validation_report(self, report_id: str) -> dict[str, Any] | None:
+        """Return an immutable validation report and its canonical row count."""
+        with self._connect() as connection:
+            row = connection.execute("""
+                SELECT report_json, report_sha256
+                FROM canonical_validation_reports
+                WHERE report_id = ?
+            """, (report_id,)).fetchone()
+            if row is None:
+                return None
+            canonical_count = int(connection.execute("""
+                SELECT COUNT(*) FROM canonical_candles
+                WHERE validation_report_id = ?
+            """, (report_id,)).fetchone()[0])
+        result = json.loads(row["report_json"])
+        result["report_sha256"] = row["report_sha256"]
+        result["canonical_candle_count"] = canonical_count
+        return result
+
     def count(self) -> int:
         with self._connect() as connection:
             return int(connection.execute(

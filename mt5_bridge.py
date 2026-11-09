@@ -322,6 +322,72 @@ def get_symbols():
     })
 
 
+@app.route("/instruments/verify", methods=["POST"])
+def verify_instrument():
+    if connector is None:
+        return jsonify({"status": "error", "error": "MT5 connector is not initialized"}), 503
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"status": "error", "error": "JSON request body is required"}), 400
+
+    instrument_id = payload.get("instrument_id")
+    broker_symbol = payload.get("broker_symbol")
+    reviewer = payload.get("reviewer")
+    evidence_ids = payload.get("evidence_report_ids")
+    if (
+        not isinstance(instrument_id, str) or not instrument_id.strip()
+        or not isinstance(broker_symbol, str) or not broker_symbol.strip()
+        or not isinstance(reviewer, str) or not reviewer.strip()
+        or not isinstance(evidence_ids, list) or not evidence_ids
+        or any(not isinstance(item, str) or not item for item in evidence_ids)
+    ):
+        return jsonify({
+            "status": "error",
+            "error": "instrument_id, exact broker_symbol, reviewer, and evidence_report_ids are required",
+        }), 400
+
+    try:
+        account_identity = connector.get_account_identity()
+        if not account_identity.get("identity_pinned", False):
+            return jsonify({
+                "status": "error",
+                "error": "MT5 account identity is not pinned; instrument verification is unavailable",
+            }), 409
+        canonical_store = CanonicalCandleStore(MT5_RAW_DB_PATH)
+        evidence_reports = []
+        for report_id in evidence_ids:
+            report = canonical_store.get_validation_report(report_id)
+            if report is None:
+                return jsonify({
+                    "status": "error",
+                    "error": f"persisted validation report not found: {report_id}",
+                }), 409
+            evidence_reports.append(report)
+        verification = InstrumentRegistryStore(
+            MT5_RAW_DB_PATH
+        ).record_verification(
+            account_identity,
+            instrument_id.strip(),
+            broker_symbol.strip(),
+            reviewer.strip(),
+            evidence_reports,
+        )
+    except ValueError as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 409
+    except Exception:
+        app.logger.exception("Instrument verification failed")
+        return jsonify({
+            "status": "error",
+            "error": "instrument verification failed; no approval was recorded",
+        }), 503
+
+    return jsonify({
+        "status": "ok",
+        "instrument_verification_status": "verified",
+        **verification,
+    }), 201
+
+
 @app.route("/ohlcv", methods=["GET"])
 def get_ohlcv():
     symbol_id = request.args.get("symbol", "").strip()
@@ -573,6 +639,24 @@ def get_ohlcv():
             "error": "canonical candle persistence failed; data withheld",
         }), 503
 
+    instrument_verification = registry.latest_verification(
+        account_identity["account_fingerprint"],
+        symbol_id,
+        timeframe,
+        latest_discovery["metadata_sha256"],
+    )
+    analysis_eligible_timeframes = registry.verified_timeframes(
+        account_identity["account_fingerprint"],
+        symbol_id,
+        latest_discovery["metadata_sha256"],
+    )
+    timeframe_verified = instrument_verification is not None
+    analysis_eligible = bool(
+        timeframe_verified
+        and history_completeness.get("status") == "complete"
+        and canonical_persistence.get("inserted_count", 0) > 0
+    )
+
     return jsonify({
         "status": "ok",
         "symbol_id": symbol_id,
@@ -583,6 +667,16 @@ def get_ohlcv():
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
         "account_identity": account_identity,
         "platform": "MT5",
+        "instrument_verification_status": (
+            "verified" if timeframe_verified else "partially_verified"
+        ),
+        "instrument_verification_id": (
+            instrument_verification["verification_id"]
+            if instrument_verification else None
+        ),
+        "timeframe_verified": timeframe_verified,
+        "analysis_eligible": analysis_eligible,
+        "analysis_eligible_timeframes": analysis_eligible_timeframes,
         "timeframe": timeframe,
         "start_pos": start_pos,
         "source_type": "broker_bars",
