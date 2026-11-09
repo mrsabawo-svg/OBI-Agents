@@ -423,10 +423,23 @@ class InstrumentRegistryStore:
     ) -> list[str]:
         with self._connect() as db:
             rows = db.execute("""
-                SELECT DISTINCT timeframe FROM mt5_instrument_verifications
-                WHERE account_fingerprint = ? AND instrument_id = ?
-                  AND metadata_sha256 = ? AND analysis_eligible = 1
-                ORDER BY timeframe
+                SELECT current.timeframe
+                FROM mt5_instrument_verifications AS current
+                WHERE current.account_fingerprint = ?
+                  AND current.instrument_id = ?
+                  AND current.metadata_sha256 = ?
+                  AND current.analysis_eligible = 1
+                  AND current.verification_id = (
+                      SELECT latest.verification_id
+                      FROM mt5_instrument_verifications AS latest
+                      WHERE latest.account_fingerprint = current.account_fingerprint
+                        AND latest.instrument_id = current.instrument_id
+                        AND latest.timeframe = current.timeframe
+                        AND latest.metadata_sha256 = current.metadata_sha256
+                      ORDER BY latest.verified_at DESC, latest.rowid DESC
+                      LIMIT 1
+                  )
+                ORDER BY current.timeframe
             """, (
                 account_fingerprint, instrument_id, metadata_sha256,
             )).fetchall()

@@ -61,6 +61,29 @@ The default loopback binding is intended for OBI and MT5 to run on the same mach
 
 A GitHub-hosted Actions runner cannot reach a bridge at your computer's `localhost`. Either run OBI beside the bridge or provide a private, authenticated route from the runner. Do not solve this by exposing an unauthenticated public endpoint.
 
+## Instrument and timeframe verification
+
+A symbol appearing in MT5 Market Watch is discovery evidence only. After account identity is pinned and a successful `/ohlcv` request has persisted its validation report, an operator can attest the exact instrument/timeframe using the report ID returned as `quality_report.report_id`.
+
+Example request from the trusted bridge host:
+
+```powershell
+$body = @{
+  instrument_id = "SFX_VOL_75"
+  broker_symbol = "EXACT SYMBOL FROM MARKET WATCH"
+  reviewer = "operator identifier"
+  evidence_report_ids = @("<quality_report.report_id>")
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:5000/instruments/verify" -ContentType "application/json" -Body $body
+```
+
+The bridge accepts only persisted reports matching the pinned account, exact server, instrument, broker symbol, timeframe, complete requested-window history, and at least one valid closed canonical candle. Verification is append-only and tied to the discovered symbol metadata fingerprint; a metadata change invalidates the prior verification for that symbol.
+
+**Verification is not analysis eligibility.** A timeframe is only marked analysis-eligible when its latest operator verification is backed by at least 60 valid closed canonical candles. OBI's DataAgent applies its own response, lineage, and history checks before admitting the data. Neither status grants execution permission.
+
+The `reviewer` value is an operator attestation label, not a digital signature. Invoke this endpoint only from a trusted local session or a separately reviewed private authenticated route.
+
 ## Data persistence and eligibility
 
 The bridge writes original MT5 rate fields to SQLite before returning data. If persistence fails, the request fails and OBI withholds the data. SQLite update/delete triggers prevent application-level mutation; the database file itself still requires normal filesystem access controls and backups.
