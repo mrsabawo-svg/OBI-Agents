@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 from typing import Any
+import uuid
 
 
 SETUP_IDENTITY_VERSION = "obi-setup-identity-v1"
@@ -77,3 +78,47 @@ def build_setup_identity(payload: dict) -> str:
     }
     encoded = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+
+def create_signal_event_id(symbol: str) -> str:
+    """Create the unique event identity for one fired signal."""
+    normalized_symbol = str(symbol).strip().upper()
+    if not normalized_symbol:
+        raise ValueError("symbol must be a non-empty string")
+    from core.utils import now_sast
+
+    stamp = now_sast().strftime("%Y%m%d%H%M%S")
+    return normalized_symbol + "_" + stamp + "_" + uuid.uuid4().hex
+
+
+def create_signal_identity(symbol: str, trigger: Any, regime: dict | None = None) -> dict:
+    """Issue the canonical event and setup identity bundle for a new signal."""
+    payload = {"symbol": symbol, "trigger": trigger, "regime": regime or {}}
+    return {
+        "signal_id": create_signal_event_id(symbol),
+        "setup_id": build_setup_identity(payload),
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
+    }
+
+
+def resolve_setup_identity(payload: dict) -> str:
+    """Resolve a candidate setup identity through the canonical identity module.
+
+    Existing issued identity is reused when valid; older callers without an
+    issued bundle are normalized through the same versioned algorithm.
+    """
+    if not isinstance(payload, dict):
+        raise TypeError("signal payload must be a dictionary")
+    identity = payload.get("signal_identity")
+    if isinstance(identity, dict):
+        setup_id = identity.get("setup_id")
+        version = identity.get("setup_identity_version")
+        if (
+            version == SETUP_IDENTITY_VERSION
+            and isinstance(setup_id, str)
+            and len(setup_id) == 64
+            and all(character in "0123456789abcdef" for character in setup_id)
+        ):
+            return setup_id
+    return build_setup_identity(payload)
