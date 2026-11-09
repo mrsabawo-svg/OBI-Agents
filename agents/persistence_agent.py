@@ -55,9 +55,9 @@ class PersistenceAgent:
             }
 
             if save_memory(memory) is not True:
-                print("[PERSIST] Memory summary update was not persisted: " + signal_id)
+                print("[PERSIST] Memory summary update was not persisted: " + str(signal_id))
                 return
-            print("[PERSIST] Memory updated - archive untouched: " + signal_id)
+            print("[PERSIST] Memory updated - archive untouched: " + str(signal_id))
         except Exception as e:
             print("[PERSIST] Memory error: " + str(e))
 
