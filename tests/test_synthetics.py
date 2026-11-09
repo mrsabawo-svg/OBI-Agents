@@ -600,3 +600,34 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
     with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
         data = DataAgent("SFX_VOL_75").fetch(["5m"])
     assert data == {}
+
+def test_data_agent_withholds_unverified_instrument_even_with_raw_evidence(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ok",
+                "symbol_id": "SFX_VOL_75",
+                "timeframe": "5m",
+                "raw_persistence": {"persisted": True},
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "identity_pinned": True,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
+                "instrument_verification_status": "partially_verified",
+                "timeframe_verified": False,
+                "analysis_eligible": False,
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        data = DataAgent("SFX_VOL_75").fetch(["5m"])
+
+    assert data == {}

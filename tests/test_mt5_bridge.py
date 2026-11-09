@@ -194,7 +194,9 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     verification_payload = verification_response.get_json()
     assert verification_response.status_code == 201
     assert verification_payload["instrument_verification_status"] == "verified"
-    assert verification_payload["analysis_eligible_timeframes"] == ["5m"]
+    assert verification_payload["verified_timeframes"] == ["5m"]
+    # Two closed/valid candles are enough to attest the source, not enough for OBI analysis.
+    assert verification_payload["analysis_eligible_timeframes"] == []
 
     response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
     payload = response.get_json()
@@ -203,7 +205,8 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     assert payload["instrument_verification_status"] == "verified"
     assert payload["instrument_verification_id"] == verification_payload["verification"]["verification_id"]
     assert payload["timeframe_verified"] is True
-    assert payload["analysis_eligible"] is True
+    assert payload["analysis_eligible"] is False
+    assert payload["analysis_eligible_timeframes"] == []
     assert payload["account_identity"]["account_fingerprint"] == "e" * 64
     assert payload["history_completeness"]["status"] == "complete"
     assert payload["history_completeness"]["session_model"] == "continuous_24_7"
