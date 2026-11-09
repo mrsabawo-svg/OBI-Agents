@@ -54,35 +54,6 @@ class ArchiveAgent:
             print("[ARCHIVE] Get history error: " + str(e))
             return []
 
-    def update_outcome(self, signal_id: str, outcome: str, pnl_pips: float = 0):
-        try:
-            memory = load_memory() or {}
-            archive = memory.setdefault("_archive", [])
-            found = False
-
-            for entry in archive:
-                if entry.get("id") == signal_id:
-                    entry["outcome"] = outcome
-                    entry["pnl_pips"] = pnl_pips
-                    entry["closed_at"] = datetime.now(SAST).strftime("%Y-%m-%d %H:%M SAST")
-                    entry["closed"] = entry["closed_at"]
-                    entry["status"] = "CLOSED"
-                    found = True
-                    break
-
-            if not found:
-                print("[ARCHIVE] Outcome update skipped; signal not found: " + str(signal_id))
-                return False
-
-            if save_memory(memory) is not True:
-                print("[ARCHIVE] Outcome persistence failed: " + str(signal_id))
-                return False
-            print("[ARCHIVE] Outcome updated: " + str(signal_id) + " -> " + str(outcome))
-            return True
-        except Exception as e:
-            print("[ARCHIVE] Update error: " + str(e))
-            return False
-
     def _build_entry(self, signal: dict) -> dict:
         trigger = signal.get("trigger", {})
         regime = signal.get("regime", {})
@@ -192,6 +163,16 @@ class ArchiveAgent:
             "ob": mtf.get("order_block"),
             "outcome": "PENDING",
             "pnl_pips": 0,
+            "tp1_hit": False,
+            "tp2_hit": False,
+            "tp3_hit": False,
+            "terminal_outcome": None,
+            "terminal_pnl_pips": None,
+            "realized_pnl_pips": None,
+            "pnl_basis": None,
+            "milestones": [],
+            "lifecycle_last_candle": None,
+            "lifecycle_events": [],
             "status": "OPEN",
             "closed_at": None,
             "closed": None,
