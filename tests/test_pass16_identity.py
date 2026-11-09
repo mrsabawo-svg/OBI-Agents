@@ -15,7 +15,7 @@ from main import build_signal_id
 
 @pytest.fixture(autouse=True)
 def duplicate_review_uses_fresh_test_snapshot(monkeypatch):
-    monkeypatch.setattr("agents.signal_reviewer.memory_store.is_read_stale", lambda: False)
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({}, False))
 
 
 def payload(signal_id="SIGNAL_001"):
@@ -140,7 +140,7 @@ def test_exact_signal_id_is_duplicate_even_if_open_timestamp_is_unavailable(monk
         "status": "OPEN",
         "setup_id": "different-setup",
     }]
-    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    monkeypatch.setattr("agents.signal_reviewer.memory_store.load_with_status", lambda: ({"_archive": archive}, False))
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)
 
 
