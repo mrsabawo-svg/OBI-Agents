@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import hmac
 import json
 import math
 from enum import Enum
@@ -82,6 +83,8 @@ class MT5Connector:
         server: Optional[str] = None,
         terminal_path: Optional[str] = None,
         reconnect_attempts: int = 1,
+        fingerprint_key: Optional[str] = None,
+        expected_account_fingerprint: Optional[str] = None,
     ) -> None:
         self._lock = RLock()
         self.adapter = adapter
@@ -92,6 +95,8 @@ class MT5Connector:
         self.login_server = server
         self.terminal_path = terminal_path
         self.reconnect_attempts = max(0, int(reconnect_attempts))
+        self.fingerprint_key = fingerprint_key
+        self.expected_account_fingerprint = expected_account_fingerprint
         self.state = ConnectionState.DISCONNECTED
         self.last_error = None
         self._timeframes = self._build_timeframes(adapter)
@@ -159,9 +164,8 @@ class MT5Connector:
             return False
         return True
 
-    @staticmethod
-    def _fingerprint_for_account(account: Any) -> str:
-        """Create a stable opaque account key without storing the account login."""
+    def _fingerprint_for_account(self, account: Any) -> str:
+        """Create a stable opaque account key; production bridges use keyed HMAC."""
         identity = {
             "company": str(getattr(account, "company", "") or "").strip().casefold(),
             "server": str(getattr(account, "server", "") or "").strip().casefold(),
@@ -171,6 +175,12 @@ class MT5Connector:
         if not identity["company"] or not identity["server"] or not identity["login"]:
             raise ValueError("account identity is incomplete")
         canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+        payload = canonical.encode("utf-8")
+        if self.fingerprint_key:
+            key = self.fingerprint_key.encode("utf-8")
+            return hmac.new(key, payload, hashlib.sha256).hexdigest()
+        # Compatibility for direct connector consumers. The bridge refuses to
+        # initialize in production unless a sufficiently strong key is set.
         return hashlib.sha256(("obi-mt5-account-v1:" + canonical).encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -212,8 +222,15 @@ class MT5Connector:
         if self._authenticated_fingerprint and fingerprint != self._authenticated_fingerprint:
             self.state = ConnectionState.DISCONNECTED
             raise RuntimeError("MT5 account fingerprint changed")
+        identity_pinned = self.expected_account_fingerprint is not None
+        if identity_pinned and not hmac.compare_digest(
+            fingerprint, self.expected_account_fingerprint
+        ):
+            self.state = ConnectionState.DISCONNECTED
+            raise RuntimeError("connected account does not match configured expected account fingerprint")
         return {
             "account_fingerprint": fingerprint,
+            "identity_pinned": identity_pinned,
             "broker_company": str(getattr(account, "company", "") or "").strip(),
             "server": str(getattr(account, "server", "") or "").strip(),
             "environment": self.identity.environment,
@@ -273,6 +290,12 @@ class MT5Connector:
             ):
                 return self._fail(
                     "connected account fingerprint differs from the previously authenticated account"
+                )
+            if self.expected_account_fingerprint is not None and not hmac.compare_digest(
+                candidate_fingerprint, self.expected_account_fingerprint
+            ):
+                return self._fail(
+                    "connected account does not match configured expected account fingerprint"
                 )
             self._authenticated_fingerprint = candidate_fingerprint
 

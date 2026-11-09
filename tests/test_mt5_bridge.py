@@ -117,6 +117,7 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
         def get_account_identity(self):
             return {
                 "account_fingerprint": "e" * 64,
+                "identity_pinned": True,
                 "broker_company": "Weltrade Ltd",
                 "server": "Weltrade-Demo",
                 "environment": "demo",
@@ -177,10 +178,35 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     discovery_response = client.get("/symbols")
     assert discovery_response.status_code == 200
     assert discovery_response.get_json()["discovery"]["symbol_count"] == 1
+    first_response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
+    first_payload = first_response.get_json()
+
+    assert first_response.status_code == 200
+    assert first_payload["instrument_verification_status"] == "partially_verified"
+    assert first_payload["timeframe_verified"] is False
+    assert first_payload["analysis_eligible"] is False
+    verification_response = client.post("/instruments/verify", json={
+        "instrument_id": "SFX_VOL_75",
+        "broker_symbol": "SFX Vol 75",
+        "reviewer": "test-operator",
+        "evidence_report_ids": [first_payload["quality_report"]["report_id"]],
+    })
+    verification_payload = verification_response.get_json()
+    assert verification_response.status_code == 201
+    assert verification_payload["instrument_verification_status"] == "verified"
+    assert verification_payload["verified_timeframes"] == ["5m"]
+    # Two closed/valid candles are enough to attest the source, not enough for OBI analysis.
+    assert verification_payload["analysis_eligible_timeframes"] == []
+
     response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
     payload = response.get_json()
 
     assert response.status_code == 200
+    assert payload["instrument_verification_status"] == "verified"
+    assert payload["instrument_verification_id"] == verification_payload["verification"]["verification_id"]
+    assert payload["timeframe_verified"] is True
+    assert payload["analysis_eligible"] is False
+    assert payload["analysis_eligible_timeframes"] == []
     assert payload["account_identity"]["account_fingerprint"] == "e" * 64
     assert payload["history_completeness"]["status"] == "complete"
     assert payload["history_completeness"]["session_model"] == "continuous_24_7"
@@ -204,13 +230,18 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     from core.raw_observation_store import RawObservationStore
     store = RawObservationStore(tmp_path / "raw.sqlite3")
     quarantine = store.get_quarantine_records()
-    assert len(quarantine) == 1
-    assert quarantine[0]["observation_id"] == payload["data"][1]["observation_id"]
-    assert quarantine[0]["reason_code"] == "INVALID_OHLC"
+    # The first and post-verification OHLCV requests are distinct append-only
+    # source batches; both invalid observations must remain in the evidence log.
+    assert len(quarantine) == 2
+    assert {item["reason_code"] for item in quarantine} == {"INVALID_OHLC"}
+    assert len({item["batch_id"] for item in quarantine}) == 2
+    assert payload["data"][1]["observation_id"] in {
+        item["observation_id"] for item in quarantine
+    }
 
     from core.canonical_data_store import CanonicalCandleStore
     canonical = CanonicalCandleStore(tmp_path / "raw.sqlite3")
-    assert canonical.count() == 1
+    assert canonical.count() == 2
     saved = canonical.get(payload["canonical_persistence"]["candle_ids"][0])
     assert saved["source_observation_ids"] == [payload["data"][0]["observation_id"]]
     assert saved["validation_report_id"] == payload["quality_report"]["report_id"]
@@ -224,6 +255,7 @@ def test_ohlcv_requires_account_scoped_symbol_discovery(monkeypatch, tmp_path):
         def get_account_identity(self):
             return {
                 "account_fingerprint": "f" * 64,
+                "identity_pinned": True,
                 "broker_company": "Weltrade Ltd",
                 "server": "Weltrade-Demo",
                 "environment": "demo",
@@ -256,6 +288,7 @@ def test_ohlcv_blocks_metadata_drift_after_symbol_discovery(monkeypatch, tmp_pat
         def get_account_identity(self):
             return {
                 "account_fingerprint": "1" * 64,
+                "identity_pinned": True,
                 "broker_company": "Weltrade Ltd",
                 "server": "Weltrade-Demo",
                 "environment": "demo",
@@ -298,3 +331,98 @@ def test_verified_session_model_configuration_is_explicit_and_strict():
         mt5_bridge._load_verified_session_models(
             '{"EURUSD":"assumed_24_5"}'
         )
+
+# Preserved account identity and connector initialization regression tests.
+
+def test_ohlcv_refuses_unpinned_account_even_after_symbol_discovery(monkeypatch, tmp_path):
+    class FakeConnector:
+        def get_account_identity(self):
+            return {
+                "account_fingerprint": "2" * 64,
+                "identity_pinned": False,
+                "broker_company": "Weltrade Ltd",
+                "server": "Weltrade-Demo",
+                "environment": "demo",
+                "platform": "MT5",
+            }
+
+        def discover_symbols(self):
+            return [{
+                "name": "SFX Vol 75",
+                "description": "SFX Vol 75",
+                "selected": True,
+                "visible": True,
+                "metadata": {"name": "SFX Vol 75"},
+            }]
+
+    monkeypatch.setattr(mt5_bridge, "connector", FakeConnector())
+    monkeypatch.setattr(mt5_bridge, "SYMBOL_MAP", {"SFX_VOL_75": "SFX Vol 75"})
+    monkeypatch.setattr(mt5_bridge, "MT5_RAW_DB_PATH", str(tmp_path / "registry.sqlite3"))
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_HOST", "127.0.0.1")
+    monkeypatch.setattr(mt5_bridge, "MT5_BRIDGE_TOKEN", "")
+    client = mt5_bridge.app.test_client()
+    discovery = client.get("/symbols")
+    assert discovery.status_code == 200
+    assert discovery.get_json()["account_identity_pinned"] is False
+
+    response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
+    assert response.status_code == 409
+    assert "identity is not pinned" in response.get_json()["error"]
+
+def test_init_mt5_requires_stable_fingerprint_key_and_exact_server(monkeypatch):
+    monkeypatch.setattr(mt5_bridge, "mt5", object())
+    monkeypatch.setattr(mt5_bridge, "MT5_BROKER_NAME", "Weltrade")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_ENVIRONMENT", "demo")
+    monkeypatch.setattr(mt5_bridge, "MT5_SERVER", "")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_FINGERPRINT_KEY", "k" * 40)
+    ok, message = mt5_bridge.init_mt5()
+    assert ok is False
+    assert "exact expected broker server" in message
+
+    monkeypatch.setattr(mt5_bridge, "MT5_SERVER", "Weltrade-Demo")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_FINGERPRINT_KEY", "short")
+    ok, message = mt5_bridge.init_mt5()
+    assert ok is False
+    assert "fingerprint_key" in message.lower()
+
+def test_init_mt5_clears_stale_connector_before_rejecting_configuration(monkeypatch):
+    stale_connector = object()
+    monkeypatch.setattr(mt5_bridge, "connector", stale_connector)
+    monkeypatch.setattr(mt5_bridge, "mt5", None)
+
+    ok, message = mt5_bridge.init_mt5()
+
+    assert ok is False
+    assert "package not installed" in message
+    assert mt5_bridge.connector is None
+
+def test_init_mt5_uses_prelogged_terminal_without_triggering_partial_login(monkeypatch):
+    captured = {}
+
+    class FakeConnector:
+        def __init__(self, adapter, identity, **kwargs):
+            captured["identity"] = identity
+            captured["kwargs"] = kwargs
+            self.last_error = None
+
+        def connect(self):
+            return True
+
+    monkeypatch.setattr(mt5_bridge, "mt5", object())
+    monkeypatch.setattr(mt5_bridge, "MT5Connector", FakeConnector)
+    monkeypatch.setattr(mt5_bridge, "MT5_BROKER_NAME", "Weltrade")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_ENVIRONMENT", "demo")
+    monkeypatch.setattr(mt5_bridge, "MT5_SERVER", "Weltrade-Demo")
+    monkeypatch.setattr(mt5_bridge, "MT5_LOGIN", 0)
+    monkeypatch.setattr(mt5_bridge, "MT5_PASSWORD", "")
+    monkeypatch.setattr(mt5_bridge, "MT5_PATH", "")
+    monkeypatch.setattr(mt5_bridge, "MT5_ACCOUNT_FINGERPRINT_KEY", "k" * 40)
+    monkeypatch.setattr(mt5_bridge, "MT5_EXPECTED_ACCOUNT_FINGERPRINT", None)
+    monkeypatch.setattr(mt5_bridge, "connector", None)
+
+    ok, message = mt5_bridge.init_mt5()
+    assert (ok, message) == (True, "connected")
+    assert captured["identity"].server == "Weltrade-Demo"
+    assert captured["kwargs"]["server"] is None
+    assert captured["kwargs"]["fingerprint_key"] == "k" * 40
+    assert captured["kwargs"]["expected_account_fingerprint"] is None

@@ -33,12 +33,22 @@ $env:MT5_ACCOUNT_ENVIRONMENT = "demo"
 $env:MT5_SYMBOL_MAP_JSON = '{"SFX_VOL_75":"EXACT SYMBOL FROM MARKET WATCH"}'
 $env:MT5_RAW_DB_PATH = "D:\OBI\data\raw_observations.sqlite3"
 $env:MT5_BRIDGE_HOST = "127.0.0.1"
+$env:MT5_ACCOUNT_FINGERPRINT_KEY = "<store a random secret of at least 32 bytes>"
+# Leave MT5_EXPECTED_ACCOUNT_FINGERPRINT unset for initial discovery only.
 python mt5_bridge.py
 ```
 
 Do not copy the example placeholder as a real symbol. Confirm it in the connected account first.
 
 If the terminal is already logged in, the bridge can use that session. Alternatively set all three variables `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER`; never commit them to Git or place them in source code.
+First-run identity pinning:
+
+1. Start the bridge with the fingerprint key set and `MT5_EXPECTED_ACCOUNT_FINGERPRINT` unset.
+2. Call the authenticated `/symbols` endpoint and inspect the returned account fingerprint, broker company, exact server, and environment.
+3. Independently confirm that this is the intended account. Only then set `MT5_EXPECTED_ACCOUNT_FINGERPRINT` to the exact 64-character fingerprint returned by `/symbols` and restart the bridge.
+4. Until the fingerprint is pinned, `/ohlcv` deliberately returns HTTP 409. Discovery does not authorize candle retrieval.
+
+Never commit either secret or the expected fingerprint to Git.
 
 ## Remote access
 
@@ -50,6 +60,29 @@ The default loopback binding is intended for OBI and MT5 to run on the same mach
 4. Restrict network ingress to the OBI caller. Do not expose the bridge publicly without a reviewed network security design.
 
 A GitHub-hosted Actions runner cannot reach a bridge at your computer's `localhost`. Either run OBI beside the bridge or provide a private, authenticated route from the runner. Do not solve this by exposing an unauthenticated public endpoint.
+
+## Instrument and timeframe verification
+
+A symbol appearing in MT5 Market Watch is discovery evidence only. After account identity is pinned and a successful `/ohlcv` request has persisted its validation report, an operator can attest the exact instrument/timeframe using the report ID returned as `quality_report.report_id`.
+
+Example request from the trusted bridge host:
+
+```powershell
+$body = @{
+  instrument_id = "SFX_VOL_75"
+  broker_symbol = "EXACT SYMBOL FROM MARKET WATCH"
+  reviewer = "operator identifier"
+  evidence_report_ids = @("<quality_report.report_id>")
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:5000/instruments/verify" -ContentType "application/json" -Body $body
+```
+
+The bridge accepts only persisted reports matching the pinned account, exact server, instrument, broker symbol, timeframe, complete requested-window history, and at least one valid closed canonical candle. Verification is append-only and tied to the discovered symbol metadata fingerprint; a metadata change invalidates the prior verification for that symbol.
+
+**Verification is not analysis eligibility.** A timeframe is only marked analysis-eligible when its latest operator verification is backed by at least 60 valid closed canonical candles. OBI's DataAgent applies its own response, lineage, and history checks before admitting the data. Neither status grants execution permission.
+
+The `reviewer` value is an operator attestation label, not a digital signature. Invoke this endpoint only from a trusted local session or a separately reviewed private authenticated route.
 
 ## Data persistence and eligibility
 

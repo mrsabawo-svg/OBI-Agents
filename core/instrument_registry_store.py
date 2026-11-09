@@ -15,6 +15,7 @@ from typing import Any
 
 
 REGISTRY_VERSION = "obi-instrument-registry-v1"
+MIN_ANALYSIS_CLOSED_CANDLES = 60
 
 
 def _json(value: Any) -> str:
@@ -88,7 +89,42 @@ class InstrumentRegistryStore:
                     account_fingerprint, broker_symbol, discovered_at
                 )
             """)
-            for table in ("mt5_account_observations", "mt5_instrument_discoveries"):
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS mt5_instrument_verifications (
+                    verification_id TEXT PRIMARY KEY,
+                    account_fingerprint TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    broker_symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    reviewer TEXT NOT NULL,
+                    evidence_report_ids_json TEXT NOT NULL,
+                    metadata_sha256 TEXT NOT NULL,
+                    analysis_eligible INTEGER NOT NULL DEFAULT 0,
+                    verified_at TEXT NOT NULL,
+                    registry_version TEXT NOT NULL
+                )
+            """)
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_mt5_instrument_verification_lookup
+                ON mt5_instrument_verifications(
+                    account_fingerprint, instrument_id, timeframe, verified_at
+                )
+            """)
+            verification_columns = {
+                row["name"] for row in db.execute(
+                    "PRAGMA table_info(mt5_instrument_verifications)"
+                ).fetchall()
+            }
+            if "analysis_eligible" not in verification_columns:
+                db.execute("""
+                    ALTER TABLE mt5_instrument_verifications
+                    ADD COLUMN analysis_eligible INTEGER NOT NULL DEFAULT 0
+                """)
+            for table in (
+                "mt5_account_observations",
+                "mt5_instrument_discoveries",
+                "mt5_instrument_verifications",
+            ):
                 db.execute(f"""
                     CREATE TRIGGER IF NOT EXISTS {table}_no_update
                     BEFORE UPDATE ON {table}
@@ -229,6 +265,185 @@ class InstrumentRegistryStore:
         )
         result["mapping_conflict"] = bool(result["mapping_conflict"])
         return result
+
+    def record_verification(
+        self,
+        account_identity: dict[str, Any],
+        instrument_id: str,
+        broker_symbol: str,
+        reviewer: str,
+        evidence_reports: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Append an operator attestation backed by persisted, matching evidence."""
+        fingerprint = account_identity.get("account_fingerprint")
+        if not account_identity.get("identity_pinned"):
+            raise ValueError("account identity must be pinned before instrument verification")
+        if not fingerprint or not instrument_id or not broker_symbol:
+            raise ValueError("account, instrument, and exact broker symbol are required")
+        if not isinstance(reviewer, str) or not reviewer.strip():
+            raise ValueError("reviewer is required")
+        if not isinstance(evidence_reports, list) or not evidence_reports:
+            raise ValueError("at least one persisted evidence report is required")
+
+        discovery = self.latest_symbol(fingerprint, broker_symbol)
+        if discovery is None:
+            raise ValueError("broker symbol must be discovered for this account before verification")
+        if discovery["mapping_conflict"]:
+            raise ValueError("broker symbol mapping is ambiguous")
+        if instrument_id not in discovery["mapped_instrument_ids"]:
+            raise ValueError("instrument is not mapped to the discovered broker symbol")
+
+        reports_by_timeframe: dict[str, list[str]] = {}
+        analysis_eligible_by_timeframe: dict[str, bool] = {}
+        for evidence in evidence_reports:
+            if not isinstance(evidence, dict):
+                raise ValueError("evidence reports must be persisted report objects")
+            report = evidence.get("report")
+            if not isinstance(report, dict):
+                raise ValueError("evidence report payload is missing")
+            if (
+                evidence.get("instrument_id") != instrument_id
+                or evidence.get("broker_symbol") != broker_symbol
+                or evidence.get("server_name") != account_identity.get("server")
+                or evidence.get("account_environment") != account_identity.get("environment")
+                or report.get("account_fingerprint") != fingerprint
+            ):
+                raise ValueError("evidence report identity does not match the pinned account and instrument")
+            timeframe = evidence.get("timeframe")
+            if timeframe not in {"5m", "15m", "1h", "4h"}:
+                raise ValueError("evidence report has an unsupported timeframe")
+            completeness = report.get("history_completeness")
+            if not isinstance(completeness, dict) or completeness.get("status") != "complete":
+                raise ValueError("instrument verification requires complete history evidence")
+            closed_count = int(evidence.get("closed_candle_count", 0))
+            if closed_count < 1:
+                raise ValueError("instrument verification requires at least one persisted closed canonical candle")
+            report_id = evidence.get("report_id")
+            if not isinstance(report_id, str) or not report_id:
+                raise ValueError("evidence report ID is required")
+            reports_by_timeframe.setdefault(timeframe, []).append(report_id)
+            analysis_eligible_by_timeframe[timeframe] = (
+                analysis_eligible_by_timeframe.get(timeframe, False)
+                or (
+                    completeness.get("status") == "complete"
+                    and closed_count >= MIN_ANALYSIS_CLOSED_CANDLES
+                )
+            )
+
+        verified_at = datetime.now(timezone.utc).isoformat()
+        verification_rows = []
+        with self._connect() as db:
+            for timeframe, report_ids in sorted(reports_by_timeframe.items()):
+                verification_id = str(uuid.uuid4())
+                unique_report_ids = sorted(set(report_ids))
+                db.execute("""
+                    INSERT INTO mt5_instrument_verifications (
+                        verification_id, account_fingerprint, instrument_id,
+                        broker_symbol, timeframe, reviewer,
+                        evidence_report_ids_json, metadata_sha256,
+                        analysis_eligible, verified_at, registry_version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    verification_id, fingerprint, instrument_id, broker_symbol,
+                    timeframe, reviewer.strip(), _json(unique_report_ids),
+                    discovery["metadata_sha256"],
+                    int(analysis_eligible_by_timeframe.get(timeframe, False)),
+                    verified_at, REGISTRY_VERSION,
+                ))
+                verification_rows.append({
+                    "verification_id": verification_id,
+                    "account_fingerprint": fingerprint,
+                    "instrument_id": instrument_id,
+                    "broker_symbol": broker_symbol,
+                    "timeframe": timeframe,
+                    "reviewer": reviewer.strip(),
+                    "evidence_report_ids": unique_report_ids,
+                    "metadata_sha256": discovery["metadata_sha256"],
+                    "analysis_eligible": analysis_eligible_by_timeframe.get(timeframe, False),
+                    "verified_at": verified_at,
+                    "registry_version": REGISTRY_VERSION,
+                })
+        return {
+            "verification": verification_rows[0],
+            "verifications": verification_rows,
+            "verified_timeframes": sorted(reports_by_timeframe),
+            "analysis_eligible_timeframes": sorted(
+                timeframe for timeframe, eligible in analysis_eligible_by_timeframe.items()
+                if eligible
+            ),
+        }
+
+    def latest_verification(
+        self,
+        account_fingerprint: str,
+        instrument_id: str,
+        timeframe: str,
+        metadata_sha256: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute("""
+                SELECT * FROM mt5_instrument_verifications
+                WHERE account_fingerprint = ? AND instrument_id = ?
+                  AND timeframe = ? AND metadata_sha256 = ?
+                ORDER BY verified_at DESC, rowid DESC LIMIT 1
+            """, (
+                account_fingerprint, instrument_id, timeframe, metadata_sha256,
+            )).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["evidence_report_ids"] = json.loads(
+            result.pop("evidence_report_ids_json")
+        )
+        result["analysis_eligible"] = bool(result["analysis_eligible"])
+        return result
+
+    def verified_timeframes(
+        self,
+        account_fingerprint: str,
+        instrument_id: str,
+        metadata_sha256: str,
+    ) -> list[str]:
+        with self._connect() as db:
+            rows = db.execute("""
+                SELECT DISTINCT timeframe FROM mt5_instrument_verifications
+                WHERE account_fingerprint = ? AND instrument_id = ?
+                  AND metadata_sha256 = ?
+                ORDER BY timeframe
+            """, (
+                account_fingerprint, instrument_id, metadata_sha256,
+            )).fetchall()
+        return [row[0] for row in rows]
+
+    def analysis_eligible_timeframes(
+        self,
+        account_fingerprint: str,
+        instrument_id: str,
+        metadata_sha256: str,
+    ) -> list[str]:
+        with self._connect() as db:
+            rows = db.execute("""
+                SELECT current.timeframe
+                FROM mt5_instrument_verifications AS current
+                WHERE current.account_fingerprint = ?
+                  AND current.instrument_id = ?
+                  AND current.metadata_sha256 = ?
+                  AND current.analysis_eligible = 1
+                  AND current.verification_id = (
+                      SELECT latest.verification_id
+                      FROM mt5_instrument_verifications AS latest
+                      WHERE latest.account_fingerprint = current.account_fingerprint
+                        AND latest.instrument_id = current.instrument_id
+                        AND latest.timeframe = current.timeframe
+                        AND latest.metadata_sha256 = current.metadata_sha256
+                      ORDER BY latest.verified_at DESC, latest.rowid DESC
+                      LIMIT 1
+                  )
+                ORDER BY current.timeframe
+            """, (
+                account_fingerprint, instrument_id, metadata_sha256,
+            )).fetchall()
+        return [row[0] for row in rows]
 
     def account_observation_count(self) -> int:
         with self._connect() as db:
