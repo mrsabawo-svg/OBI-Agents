@@ -75,6 +75,10 @@ def save(data: dict) -> bool:
         if _READ_IS_STALE:
             print("[MEMORY] Save blocked: no fresh trusted read is available")
             return False
+        if not GIST_ID or not GH_TOKEN:
+            _READ_IS_STALE = True
+            print("[MEMORY] Save blocked: GIST_ID and GIST_TOKEN must be configured")
+            return False
         if not isinstance(data, dict):
             print("[MEMORY] Save blocked: memory root must be a dictionary")
             return False

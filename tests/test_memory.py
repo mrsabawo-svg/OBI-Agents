@@ -27,6 +27,13 @@ def _gist_payload(data):
     }
 
 
+@pytest.fixture(autouse=True)
+def _configure_gist(monkeypatch):
+    monkeypatch.setattr(memory, "GIST_ID", "test-gist")
+    monkeypatch.setattr(memory, "GH_TOKEN", "test-token")
+    monkeypatch.setattr(memory, "HEADERS", {"Authorization": "token test-token"})
+
+
 def test_load_returns_last_known_good_but_blocks_writes_after_remote_read_failure():
     known_good = {"_archive": [{"id": "durable-1"}]}
     with patch.object(memory, "_LAST_KNOWN_GOOD", None), patch.object(
