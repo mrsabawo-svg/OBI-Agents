@@ -252,7 +252,7 @@ class LifecycleAgent:
 
     def _check_trade(self, trade: dict, now: datetime) -> bool:
         symbol = trade.get("symbol")
-        opened = self._parse_timestamp(trade.get("opened"))
+        opened = self._parse_timestamp(trade.get("opened") or trade.get("timestamp"))
         if opened is None and not trade.get("lifecycle_last_candle"):
             print("[LIFECYCLE] Missing opened timestamp for " + str(trade.get("id", "")))
             return False
