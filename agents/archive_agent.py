@@ -117,23 +117,6 @@ class ArchiveAgent:
         else:
             data_lineage = deepcopy(data_lineage)
 
-        decision_lineage = signal.get("decision_lineage")
-        if (
-            isinstance(decision_lineage, dict)
-            and decision_lineage.get("status") == "complete"
-            and verify_decision_lineage(decision_lineage)
-        ):
-            decision_lineage = deepcopy(decision_lineage)
-        else:
-            decision_lineage = {
-                "schema_version": DECISION_LINEAGE_SCHEMA_VERSION,
-                "status": "unavailable",
-                "agent_order": [],
-                "agent_specs": {},
-                "agent_traces": {},
-                "manifest_sha256": None,
-            }
-
         try:
             setup_id = build_setup_identity(signal)
             setup_identity_version = SETUP_IDENTITY_VERSION
@@ -145,6 +128,43 @@ class ArchiveAgent:
             setup_id = None
             setup_identity_version = None
             setup_identity_status = "unavailable"
+
+        decision_lineage = signal.get("decision_lineage")
+        lineage_identity_status = "unbound"
+        identity_matches = True
+        if isinstance(decision_lineage, dict) and decision_lineage.get("signal_identity") is not None:
+            bound_identity = decision_lineage.get("signal_identity")
+            identity_matches = (
+                isinstance(bound_identity, dict)
+                and bound_identity.get("signal_id") == signal_id
+                and bound_identity.get("setup_id") == setup_id
+                and bound_identity.get("setup_identity_version") == setup_identity_version
+                and decision_lineage.get("instrument_id") == signal.get("symbol")
+            )
+            lineage_identity_status = "bound" if identity_matches else "mismatch"
+
+        if (
+            isinstance(decision_lineage, dict)
+            and decision_lineage.get("status") == "complete"
+            and verify_decision_lineage(decision_lineage)
+            and identity_matches
+        ):
+            decision_lineage = deepcopy(decision_lineage)
+            if decision_lineage.get("signal_identity") is not None:
+                lineage_identity_status = "bound"
+        else:
+            decision_lineage = {
+                "schema_version": DECISION_LINEAGE_SCHEMA_VERSION,
+                "status": "unavailable",
+                "agent_order": [],
+                "agent_specs": {},
+                "agent_traces": {},
+                "manifest_sha256": None,
+            }
+            if lineage_identity_status == "mismatch":
+                lineage_identity_status = "mismatch"
+            else:
+                lineage_identity_status = "unavailable"
 
         return {
             "id": signal_id,
@@ -196,6 +216,7 @@ class ArchiveAgent:
             "data_lineage_status": data_lineage.get("status", "unavailable"),
             "decision_lineage": decision_lineage,
             "decision_lineage_status": decision_lineage.get("status", "unavailable"),
+            "decision_lineage_identity_status": lineage_identity_status,
             "decision_lineage_provenance_status": decision_lineage.get("provenance_status", "unavailable"),
             "decision_lineage_sha256": decision_lineage.get("manifest_sha256"),
         }
