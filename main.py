@@ -21,6 +21,7 @@ from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
 from core.utils                import sast_str
+from core.data_lineage          import build_data_lineage
 
 SYMBOLS = [
     "XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD",
@@ -43,6 +44,12 @@ def run(symbol: str, news: dict = None) -> dict:
         if len(data) == 0:
             print("[MAIN] " + symbol + ": no data - skipping")
             return {"data_empty": True}
+
+        data_lineage = build_data_lineage(
+            data,
+            instrument_id=symbol,
+            expected_timeframes=ALL_TF,
+        )
 
         ticker = DataAgent(symbol).ticker
         check_outcome(symbol, ticker)
@@ -84,6 +91,7 @@ def run(symbol: str, news: dict = None) -> dict:
             "session": session,
             "edge":    edge,
             "score":   score,
+            "data_lineage": data_lineage,
         }
 
         IntelligenceAgent(symbol).verdict(payload)

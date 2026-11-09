@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   tests:
-    name: Unit tests (archive and synthetic-data scope)
+    name: Unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,10 +25,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
-      # The legacy MT5 bridge contract already fails on the PR #10 base.
-      # Its implementation and full-suite gate are handled by stacked PR #12.
-      - name: Run archive and synthetic-data tests
-        run: python -m pytest -q tests/test_archive_analytics_schema.py tests/test_synthetics.py
+      - name: Run test suite
+        run: python -m pytest -q
 
   scan:
     name: Manual live scan
@@ -55,4 +53,5 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           MT5_BRIDGE_URL: ${{ secrets.MT5_BRIDGE_URL }}
+          MT5_BRIDGE_TOKEN: ${{ secrets.MT5_BRIDGE_TOKEN }}
         run: python main.py

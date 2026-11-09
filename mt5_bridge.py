@@ -1,21 +1,28 @@
-"""
-Weltrade MT5 Bridge Server
-Exposes live Weltrade MT5 OHLCV data via a lightweight FastAPI/Flask HTTP endpoint
-for DataAgent (MT5_BRIDGE_URL).
+"""Authenticated read-only MT5 bridge with raw-observation persistence.
 
-Usage:
-1. Run MT5 terminal on Windows (or VPS with Wine/Windows).
-2. pip install MetaTrader5 flask pytz
-3. Set your account credentials below or via environment variables:
-   MT5_LOGIN, MT5_PASSWORD, MT5_SERVER (e.g. "Weltrade-Demo" or "Weltrade-Live")
-4. python mt5_bridge.py
-5. Export MT5_BRIDGE_URL="http://localhost:5000" in your OBI environment.
+This service retrieves market data only. It intentionally has no trading or
+order-management routes.
 """
-
+import ipaddress
+import json
+import math
 import os
-from datetime import datetime
-import pytz
-from flask import Flask, request, jsonify
+import secrets
+import socket
+from datetime import datetime, timezone, timedelta
+import uuid
+
+from flask import Flask, jsonify, request
+
+from core.mt5_connector import ConnectionIdentity, MT5Connector
+from core.raw_observation_store import RawObservationStore
+from core.canonical_data_store import CanonicalCandleStore
+from core.instrument_registry_store import (
+    InstrumentRegistryStore,
+    metadata_fingerprint,
+    MIN_ANALYSIS_CLOSED_CANDLES,
+)
+from core.history_completeness import assess_history_completeness, TIMEFRAME_SECONDS
 
 try:
     import MetaTrader5 as mt5
@@ -24,92 +31,692 @@ except ImportError:
 
 app = Flask(__name__)
 
-MT5_LOGIN    = int(os.environ.get("MT5_LOGIN", "0"))
+MT5_LOGIN = int(os.environ.get("MT5_LOGIN", "0"))
 MT5_PASSWORD = os.environ.get("MT5_PASSWORD", "")
-MT5_SERVER   = os.environ.get("MT5_SERVER", "Weltrade-Demo")
-MT5_PATH     = os.environ.get("MT5_PATH", "")
+MT5_SERVER = os.environ.get("MT5_SERVER", "")
+MT5_PATH = os.environ.get("MT5_PATH", "")
+MT5_BRIDGE_TOKEN = os.environ.get("MT5_BRIDGE_TOKEN", "")
+MT5_BRIDGE_HOST = os.environ.get("MT5_BRIDGE_HOST", "127.0.0.1")
+MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
+MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
+MT5_ACCOUNT_FINGERPRINT_KEY = os.environ.get("MT5_ACCOUNT_FINGERPRINT_KEY", "")
+MT5_EXPECTED_ACCOUNT_FINGERPRINT = os.environ.get("MT5_EXPECTED_ACCOUNT_FINGERPRINT", "")
+MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
 
-TIMEFRAME_MAP = {
-    "5m":  getattr(mt5, "TIMEFRAME_M5", 5) if mt5 else 5,
-    "15m": getattr(mt5, "TIMEFRAME_M15", 15) if mt5 else 15,
-    "1h":  getattr(mt5, "TIMEFRAME_H1", 60) if mt5 else 60,
-    "4h":  getattr(mt5, "TIMEFRAME_H4", 240) if mt5 else 240,
-}
 
-SYMBOL_NAME_MAP = {
-    "PAIN_999":   "PainX 999",
-    "GAIN_999":   "GainX 999",
-    "PAIN_1200":  "PainX 1200",
-    "GAIN_1200":  "GainX 1200",
-    "SFX_VOL_75": "SFX Vol 75",
-}
+def _load_verified_session_models(raw_value):
+    if not raw_value:
+        return {}
+    try:
+        parsed = json.loads(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("MT5_VERIFIED_SESSION_MODEL_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("MT5_VERIFIED_SESSION_MODEL_JSON must be an object")
+    models = {}
+    for instrument_id, model in parsed.items():
+        if not isinstance(instrument_id, str) or not instrument_id.strip():
+            raise ValueError("verified session model keys must be instrument IDs")
+        if model != "continuous_24_7":
+            raise ValueError(
+                "verified session models may only declare continuous_24_7"
+            )
+        models[instrument_id] = model
+    return models
+
+
+# Operator assertions only: never infer a 24/7 calendar from an instrument name
+# or from SessionAgent's trading eligibility rules.
+MT5_VERIFIED_SESSION_MODELS = _load_verified_session_models(
+    os.environ.get("MT5_VERIFIED_SESSION_MODEL_JSON", "")
+)
+MAX_COUNT = 20000
+CANONICAL_TRANSFORMATION_VERSION = "mt5-broker-bars-v1"
+connector = None
+
+
+def _symbol_map():
+    raw = os.environ.get("MT5_SYMBOL_MAP_JSON", "{}")
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("MT5_SYMBOL_MAP_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict) or any(
+        not isinstance(k, str) or not isinstance(v, str) or not v.strip()
+        for k, v in parsed.items()
+    ):
+        raise RuntimeError("MT5_SYMBOL_MAP_JSON must map internal IDs to exact broker symbols")
+    return parsed
+
+
+SYMBOL_MAP = _symbol_map()
+
+
+def _is_loopback(host):
+    try:
+        return ipaddress.ip_address(socket.gethostbyname(host)).is_loopback
+    except (ValueError, OSError):
+        return False
+
+
+def _authorized():
+    if not MT5_BRIDGE_TOKEN:
+        return _is_loopback(MT5_BRIDGE_HOST)
+    supplied = request.headers.get("Authorization", "")
+    return secrets.compare_digest(supplied, "Bearer " + MT5_BRIDGE_TOKEN)
+
+
+def _bar_status(index, forming_indexes):
+    """Use UTC bar-boundary evidence, not array position, to label forming bars."""
+    return "forming" if index in forming_indexes else "closed"
+
+
+def _finite_number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _quarantine_reasons(raw_rows):
+    """Return durable reason records for malformed broker observations."""
+    reasons = []
+    timestamp_indexes = {}
+    for index, raw in enumerate(raw_rows):
+        timestamp = _finite_number(raw.get("time"))
+        timestamp_valid = timestamp is not None and timestamp > 0 and timestamp.is_integer()
+        if timestamp_valid:
+            try:
+                datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                timestamp_valid = False
+        if not timestamp_valid:
+            reasons.append({
+                "observation_index": index,
+                "reason_code": "INVALID_TIMESTAMP",
+                "reason_detail": "MT5 time must be a positive, representable Unix-second integer",
+            })
+        else:
+            timestamp_indexes.setdefault(int(timestamp), []).append(index)
+
+        fields = {
+            "open": _finite_number(raw.get("open")),
+            "high": _finite_number(raw.get("high")),
+            "low": _finite_number(raw.get("low")),
+            "close": _finite_number(raw.get("close")),
+            "tick_volume": _finite_number(raw.get("tick_volume")),
+            "real_volume": _finite_number(raw.get("real_volume", 0)),
+            "spread": _finite_number(raw.get("spread", 0)),
+        }
+        integer_fields_valid = all(
+            fields[key] is not None and fields[key].is_integer()
+            for key in ("tick_volume", "real_volume", "spread")
+        )
+        if any(value is None for value in fields.values()) or not integer_fields_valid:
+            reasons.append({
+                "observation_index": index,
+                "reason_code": "INVALID_NUMERIC",
+                "reason_detail": "One or more MT5 numeric fields are non-finite, non-numeric, or not integer-valued",
+            })
+
+        volume_values = (fields["tick_volume"], fields["real_volume"], fields["spread"])
+        if any(value is not None and value < 0 for value in volume_values):
+            reasons.append({
+                "observation_index": index,
+                "reason_code": "INVALID_VOLUME",
+                "reason_detail": "Volume and spread fields must be non-negative",
+            })
+
+        o, h, l, close = fields["open"], fields["high"], fields["low"], fields["close"]
+        if (
+            all(value is not None for value in (o, h, l, close))
+            and (
+                min(o, h, l, close) <= 0
+                or h < max(o, close)
+                or l > min(o, close)
+                or h < l
+            )
+        ):
+            reasons.append({
+                "observation_index": index,
+                "reason_code": "INVALID_OHLC",
+                "reason_detail": "OHLC values violate positive-price or candle-boundary constraints",
+            })
+
+    for timestamp, indexes in timestamp_indexes.items():
+        if len(indexes) > 1:
+            for index in indexes:
+                reasons.append({
+                    "observation_index": index,
+                    "reason_code": "DUPLICATE_TIMESTAMP",
+                    "reason_detail": f"Timestamp {timestamp} occurs {len(indexes)} times in this batch",
+                })
+    return reasons
+
+
+def _response_row(raw, index, forming_indexes, quarantine_codes, observation_id):
+    timestamp_value = _finite_number(raw.get("time"))
+    timestamp = None
+    if timestamp_value is not None and timestamp_value > 0 and timestamp_value.is_integer():
+        try:
+            timestamp = datetime.fromtimestamp(int(timestamp_value), tz=timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            timestamp = None
+
+    def safe_int(key):
+        value = _finite_number(raw.get(key, 0))
+        return int(value) if value is not None and value.is_integer() else None
+
+    open_value = _finite_number(raw.get("open"))
+    high_value = _finite_number(raw.get("high"))
+    low_value = _finite_number(raw.get("low"))
+    close_value = _finite_number(raw.get("close"))
+    tick_volume = _finite_number(raw.get("tick_volume"))
+
+    return {
+        "observation_id": observation_id,
+        "timestamp": timestamp,
+        "Open": open_value,
+        "High": high_value,
+        "Low": low_value,
+        "Close": close_value,
+        "Volume": tick_volume,
+        "tick_volume": safe_int("tick_volume"),
+        "real_volume": safe_int("real_volume"),
+        "spread": safe_int("spread"),
+        "volume_type": "tick_volume",
+        "bar_status": _bar_status(index, forming_indexes),
+        "quarantine_reasons": quarantine_codes,
+    }
+
+
+@app.before_request
+def require_bridge_authentication():
+    if request.endpoint == "health":
+        return None
+    if not _authorized():
+        return jsonify({"status": "error", "error": "unauthorized"}), 401
+    return None
+
 
 def init_mt5():
+    global connector
+    # Never leave a stale authenticated connector reachable after a failed
+    # reconfiguration attempt.
+    connector = None
     if mt5 is None:
         return False, "MetaTrader5 package not installed"
+    if not MT5_BROKER_NAME or MT5_BROKER_NAME.lower() == "unknown":
+        return False, "MT5_BROKER_NAME must identify the configured broker"
+    if MT5_ACCOUNT_ENVIRONMENT not in {"demo", "live", "contest"}:
+        return False, "MT5_ACCOUNT_ENVIRONMENT must be demo, live, or contest"
+    if not MT5_SERVER.strip():
+        return False, "MT5_SERVER must specify the exact expected broker server"
+    if len(MT5_ACCOUNT_FINGERPRINT_KEY.encode("utf-8")) < 32:
+        return False, "MT5_ACCOUNT_FINGERPRINT_KEY must be at least 32 bytes"
+    if MT5_EXPECTED_ACCOUNT_FINGERPRINT and (
+        len(MT5_EXPECTED_ACCOUNT_FINGERPRINT) != 64
+        or any(char not in "0123456789abcdef" for char in MT5_EXPECTED_ACCOUNT_FINGERPRINT)
+    ):
+        return False, "MT5_EXPECTED_ACCOUNT_FINGERPRINT must be a lowercase SHA-256 hex digest"
+    if bool(MT5_LOGIN) != bool(MT5_PASSWORD):
+        return False, "MT5_LOGIN and MT5_PASSWORD must be configured together"
 
-    init_kwargs = {}
-    if MT5_PATH:
-        init_kwargs["path"] = MT5_PATH
-
-    if not mt5.initialize(**init_kwargs):
-        return False, f"MT5 initialize failed: {mt5.last_error()}"
-
-    if MT5_LOGIN and MT5_PASSWORD:
-        authorized = mt5.login(login=MT5_LOGIN, password=MT5_PASSWORD, server=MT5_SERVER)
-        if not authorized:
-            return False, f"MT5 login failed: {mt5.last_error()}"
-
-    return True, "OK"
-
+    explicit_login = bool(MT5_LOGIN and MT5_PASSWORD)
+    candidate = MT5Connector(
+        mt5,
+        ConnectionIdentity(
+            broker=MT5_BROKER_NAME,
+            server=MT5_SERVER,
+            environment=MT5_ACCOUNT_ENVIRONMENT,
+        ),
+        login=MT5_LOGIN or None,
+        password=MT5_PASSWORD or None,
+        # A pre-authenticated terminal must not receive a partial login call.
+        server=MT5_SERVER if explicit_login else None,
+        terminal_path=MT5_PATH or None,
+        reconnect_attempts=1,
+        fingerprint_key=MT5_ACCOUNT_FINGERPRINT_KEY,
+        expected_account_fingerprint=MT5_EXPECTED_ACCOUNT_FINGERPRINT or None,
+    )
+    connector = candidate
+    if not connector.connect():
+        message = connector.last_error or "MT5 connection failed"
+        connector = None
+        return False, message
+    return True, "connected"
 
 @app.route("/health", methods=["GET"])
 def health():
-    if mt5 is None:
-        return jsonify({"status": "error", "message": "MetaTrader5 library not installed"}), 500
-    terminal_info = mt5.terminal_info()
-    if terminal_info is None:
-        return jsonify({"status": "disconnected"}), 503
-    return jsonify({"status": "connected", "connected": terminal_info.connected})
+    if connector is None:
+        return jsonify({"status": "disconnected", "connected": False}), 503
+    connected = connector.is_connected()
+    return jsonify({
+        "status": "connected" if connected else "disconnected",
+        "connected": connected,
+        "state": connector.state.value,
+    }), (200 if connected else 503)
+
+
+@app.route("/symbols", methods=["GET"])
+def get_symbols():
+    if connector is None:
+        return jsonify({"status": "error", "error": "MT5 connector is not initialized"}), 503
+    try:
+        account_identity = connector.get_account_identity()
+        symbols = connector.discover_symbols()
+        discovery = InstrumentRegistryStore(MT5_RAW_DB_PATH).record_discovery(
+            account_identity, symbols, SYMBOL_MAP
+        )
+        account_identity_pinned = bool(account_identity.get("identity_pinned"))
+    except Exception:
+        app.logger.exception("MT5 symbol discovery or registry persistence failed")
+        return jsonify({
+            "status": "error",
+            "error": "symbol discovery or registry persistence failed",
+        }), 503
+    return jsonify({
+        "status": "ok",
+        "count": len(symbols),
+        "account_identity": account_identity,
+        "account_identity_pinned": account_identity_pinned,
+        "discovery": discovery,
+        "symbols": symbols,
+    })
+
+
+@app.route("/instruments/verify", methods=["POST"])
+def verify_instrument():
+    if connector is None:
+        return jsonify({"status": "error", "error": "MT5 connector is not initialized"}), 503
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"status": "error", "error": "JSON request body is required"}), 400
+
+    instrument_id = payload.get("instrument_id")
+    broker_symbol = payload.get("broker_symbol")
+    reviewer = payload.get("reviewer")
+    evidence_ids = payload.get("evidence_report_ids")
+    if (
+        not isinstance(instrument_id, str) or not instrument_id.strip()
+        or not isinstance(broker_symbol, str) or not broker_symbol.strip()
+        or not isinstance(reviewer, str) or not reviewer.strip()
+        or not isinstance(evidence_ids, list) or not evidence_ids
+        or any(not isinstance(item, str) or not item for item in evidence_ids)
+    ):
+        return jsonify({
+            "status": "error",
+            "error": "instrument_id, exact broker_symbol, reviewer, and evidence_report_ids are required",
+        }), 400
+
+    try:
+        account_identity = connector.get_account_identity()
+        if not account_identity.get("identity_pinned", False):
+            return jsonify({
+                "status": "error",
+                "error": "MT5 account identity is not pinned; instrument verification is unavailable",
+            }), 409
+        canonical_store = CanonicalCandleStore(MT5_RAW_DB_PATH)
+        evidence_reports = []
+        for report_id in evidence_ids:
+            report = canonical_store.get_validation_report(report_id)
+            if report is None:
+                return jsonify({
+                    "status": "error",
+                    "error": f"persisted validation report not found: {report_id}",
+                }), 409
+            evidence_reports.append(report)
+        verification = InstrumentRegistryStore(
+            MT5_RAW_DB_PATH
+        ).record_verification(
+            account_identity,
+            instrument_id.strip(),
+            broker_symbol.strip(),
+            reviewer.strip(),
+            evidence_reports,
+        )
+    except ValueError as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 409
+    except Exception:
+        app.logger.exception("Instrument verification failed")
+        return jsonify({
+            "status": "error",
+            "error": "instrument verification failed; no approval was recorded",
+        }), 503
+
+    return jsonify({
+        "status": "ok",
+        "instrument_verification_status": "verified",
+        **verification,
+    }), 201
 
 
 @app.route("/ohlcv", methods=["GET"])
 def get_ohlcv():
-    symbol_arg = request.args.get("symbol", "PAIN_999").upper()
-    tf_arg     = request.args.get("timeframe", "15m").lower()
-    count      = int(request.args.get("count", "300"))
+    symbol_id = request.args.get("symbol", "").strip()
+    timeframe = request.args.get("timeframe", "").lower().strip()
+    try:
+        count = int(request.args.get("count", "300"))
+        start_pos = int(request.args.get("start_pos", "0"))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "error": "count and start_pos must be integers"}), 400
 
-    if mt5 is None:
-        return jsonify({"error": "MetaTrader5 not installed"}), 500
+    if not symbol_id:
+        return jsonify({"status": "error", "error": "symbol is required"}), 400
+    if timeframe not in {"5m", "15m", "1h", "4h"}:
+        return jsonify({"status": "error", "error": "unsupported timeframe"}), 400
+    if count < 1 or count > MAX_COUNT:
+        return jsonify({"status": "error", "error": f"count must be between 1 and {MAX_COUNT}"}), 400
+    if connector is None:
+        return jsonify({"status": "error", "error": "MT5 connector is not initialized"}), 503
 
-    mt5_symbol = SYMBOL_NAME_MAP.get(symbol_arg, symbol_arg)
-    mt5_tf     = TIMEFRAME_MAP.get(tf_arg, mt5.TIMEFRAME_M15)
+    broker_symbol = SYMBOL_MAP.get(symbol_id)
+    if not broker_symbol:
+        return jsonify({
+            "status": "error",
+            "error": "instrument is not mapped to an exact broker symbol",
+            "symbol_id": symbol_id,
+        }), 404
 
-    # Ensure symbol is selected in Market Watch
-    if not mt5.symbol_select(mt5_symbol, True):
-        return jsonify({"error": f"Symbol {mt5_symbol} not found in MT5"}), 404
+    try:
+        account_identity = connector.get_account_identity()
+        if not account_identity.get("identity_pinned", False):
+            return jsonify({
+                "status": "error",
+                "error": "MT5 account identity is not pinned; configure MT5_EXPECTED_ACCOUNT_FINGERPRINT before requesting candles",
+            }), 409
+        registry = InstrumentRegistryStore(MT5_RAW_DB_PATH)
+        latest_discovery = registry.latest_symbol(
+            account_identity["account_fingerprint"], broker_symbol
+        )
+        if latest_discovery is None:
+            return jsonify({
+                "status": "error",
+                "error": "exact broker symbol has not been discovered for this account; call /symbols first",
+            }), 409
+        if latest_discovery["mapping_conflict"]:
+            return jsonify({
+                "status": "error",
+                "error": "broker symbol is ambiguously mapped to multiple OBI instruments",
+            }), 409
+        if symbol_id not in latest_discovery["mapped_instrument_ids"]:
+            return jsonify({
+                "status": "error",
+                "error": "exact OBI-to-broker mapping is not present in the account registry",
+            }), 409
+        selected_symbol = connector.select_symbol(broker_symbol)
+        current_metadata = selected_symbol.get("metadata", {})
+        if metadata_fingerprint(current_metadata) != latest_discovery["metadata_sha256"]:
+            return jsonify({
+                "status": "error",
+                "error": "broker symbol contract metadata changed; rediscover symbols before requesting data",
+            }), 409
+        rates, fetch_metadata = connector.fetch_rates_detailed(
+            broker_symbol, timeframe, count, start_pos
+        )
+        symbol_info = mt5.symbol_info(broker_symbol)
+    except ValueError as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 400
+    except LookupError:
+        return jsonify({"status": "error", "error": "broker symbol unavailable"}), 404
+    except Exception:
+        app.logger.exception("MT5 rate retrieval failed")
+        return jsonify({"status": "error", "error": "broker rate retrieval failed"}), 503
 
-    rates = mt5.copy_rates_from_pos(mt5_symbol, mt5_tf, 0, count)
-    if rates is None or len(rates) == 0:
-        return jsonify({"error": f"Failed to fetch rates: {mt5.last_error()}"}), 500
-
-    data = []
-    for r in rates:
-        dt = datetime.fromtimestamp(r["time"], tz=pytz.UTC).strftime("%Y-%m-%d %H:%M:%S")
-        data.append({
-            "timestamp": dt,
-            "Open":   float(r["open"]),
-            "High":   float(r["high"]),
-            "Low":    float(r["low"]),
-            "Close":  float(r["close"]),
-            "Volume": float(r["tick_volume"]),
+    raw_rows = []
+    field_names = getattr(getattr(rates, "dtype", None), "names", None)
+    if not field_names:
+        return jsonify({
+            "status": "error",
+            "error": "MT5 returned an unsupported rate payload; data withheld",
+        }), 503
+    for rate in rates:
+        raw_rows.append({
+            name: (value.item() if hasattr(value, "item") else value)
+            for name, value in zip(field_names, rate)
         })
 
-    return jsonify({"symbol": symbol_arg, "timeframe": tf_arg, "data": data})
+    quarantine_records = _quarantine_reasons(raw_rows)
+    reasons_by_index = {}
+    reason_counts = {}
+    for record in quarantine_records:
+        index = record["observation_index"]
+        reasons_by_index.setdefault(index, []).append(record["reason_code"])
+        reason_counts[record["reason_code"]] = reason_counts.get(record["reason_code"], 0) + 1
+
+    # Re-check the authenticated account after rate retrieval. If the
+    # terminal/account changed or disconnected mid-request, withhold the batch.
+    try:
+        account_identity_after = connector.get_account_identity()
+    except Exception:
+        account_identity_after = None
+    if (
+        account_identity_after is None
+        or account_identity_after["account_fingerprint"] != account_identity["account_fingerprint"]
+        or not connector.is_connected()
+    ):
+        return jsonify({
+            "status": "error",
+            "error": "MT5 account session changed during retrieval; data withheld",
+        }), 503
+    retrieved_at = datetime.now(timezone.utc)
+    history_completeness = assess_history_completeness(
+        raw_rows,
+        timeframe,
+        count,
+        fetch_metadata,
+        start_pos=start_pos,
+        retrieved_at=retrieved_at,
+        session_model=MT5_VERIFIED_SESSION_MODELS.get(symbol_id, "unknown"),
+    )
+    history_completeness.update({
+        "account_fingerprint": account_identity["account_fingerprint"],
+        "instrument_id": symbol_id,
+        "broker_symbol": broker_symbol,
+    })
+    forming_indexes = set(
+        history_completeness["forming_observation_indexes"]
+    )
+
+    server_name = account_identity["server"]
+    if not server_name:
+        return jsonify({
+            "status": "error",
+            "error": "broker server identity unavailable; data withheld",
+        }), 503
+    envelope = {
+        "instrument_id": symbol_id,
+        "broker": MT5_BROKER_NAME,
+        "server_name": server_name,
+        "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+        "account_fingerprint": account_identity["account_fingerprint"],
+        "platform": "MT5",
+        "broker_symbol": broker_symbol,
+        "timeframe": timeframe,
+        "start_pos": start_pos,
+        "source_type": "broker_bars",
+        "retrieved_at": retrieved_at.isoformat(),
+        "batch_id": None,
+    }
+
+    try:
+        persisted = RawObservationStore(MT5_RAW_DB_PATH).append_batch(
+            envelope, raw_rows, quarantine_records=quarantine_records
+        )
+    except Exception:
+        app.logger.exception("Raw observation persistence failed")
+        return jsonify({
+            "status": "error",
+            "error": "raw observation persistence failed; data withheld",
+        }), 503
+
+    response_rows = [
+        _response_row(
+            raw, index, forming_indexes,
+            reasons_by_index.get(index, []),
+            persisted["observation_ids"][index],
+        )
+        for index, raw in enumerate(raw_rows)
+    ]
+
+    validation_report_id = str(uuid.uuid4())
+    quality_report = {
+        "report_id": validation_report_id,
+        "account_fingerprint": account_identity["account_fingerprint"],
+        "received_count": len(raw_rows),
+        "quarantined_observation_count": len({
+            record["observation_index"] for record in quarantine_records
+        }),
+        "quarantine_record_count": len(quarantine_records),
+        "reason_counts": reason_counts,
+        "validator_version": "2",
+        "history_completeness": history_completeness,
+    }
+    validation_report = {
+        "report_id": validation_report_id,
+        "batch_id": persisted["batch_id"],
+        "instrument_id": symbol_id,
+        "broker": MT5_BROKER_NAME,
+        "server_name": server_name,
+        "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+        "account_fingerprint": account_identity["account_fingerprint"],
+        "broker_symbol": broker_symbol,
+        "timeframe": timeframe,
+        "validator_version": quality_report["validator_version"],
+        "report": quality_report,
+        "history_completeness": history_completeness,
+    }
+
+    canonical_records = []
+    for index, raw in enumerate(raw_rows):
+        if reasons_by_index.get(index):
+            continue
+        timestamp_value = _finite_number(raw.get("time"))
+        numeric_values = {
+            key: _finite_number(raw.get(key))
+            for key in ("open", "high", "low", "close", "tick_volume")
+        }
+        if (
+            timestamp_value is None
+            or not timestamp_value.is_integer()
+            or timestamp_value <= 0
+            or any(value is None for value in numeric_values.values())
+        ):
+            continue
+        open_time = datetime.fromtimestamp(
+            int(timestamp_value), tz=timezone.utc
+        )
+        canonical_records.append({
+            "instrument_id": symbol_id,
+            "broker": MT5_BROKER_NAME,
+            "server_name": server_name,
+            "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+            "broker_symbol": broker_symbol,
+            "timeframe": timeframe,
+            "open_time": open_time.isoformat(),
+            "close_time": (
+                open_time + timedelta(seconds=TIMEFRAME_SECONDS[timeframe])
+            ).isoformat(),
+            "open": numeric_values["open"],
+            "high": numeric_values["high"],
+            "low": numeric_values["low"],
+            "close": numeric_values["close"],
+            "volume": numeric_values["tick_volume"],
+            "volume_type": "tick_volume",
+            "source_class": "broker_bar",
+            "bar_status": _bar_status(index, forming_indexes),
+            "source_observation_ids": [persisted["observation_ids"][index]],
+            "transformation_version": CANONICAL_TRANSFORMATION_VERSION,
+            "validation_report_id": validation_report_id,
+            "validation_status": "valid",
+        })
+
+    try:
+        canonical_persistence = CanonicalCandleStore(
+            MT5_RAW_DB_PATH
+        ).append_batch(canonical_records, validation_report=validation_report)
+    except Exception:
+        app.logger.exception("Canonical candle persistence failed")
+        return jsonify({
+            "status": "error",
+            "error": "canonical candle persistence failed; data withheld",
+        }), 503
+
+    canonical_evidence = CanonicalCandleStore(
+        MT5_RAW_DB_PATH
+    ).get_validation_report(validation_report_id)
+    closed_canonical_count = (
+        int(canonical_evidence.get("closed_candle_count", 0))
+        if canonical_evidence else 0
+    )
+    instrument_verification = registry.latest_verification(
+        account_identity["account_fingerprint"],
+        symbol_id,
+        timeframe,
+        latest_discovery["metadata_sha256"],
+    )
+    verified_timeframes = registry.verified_timeframes(
+        account_identity["account_fingerprint"],
+        symbol_id,
+        latest_discovery["metadata_sha256"],
+    )
+    analysis_eligible_timeframes = registry.analysis_eligible_timeframes(
+        account_identity["account_fingerprint"],
+        symbol_id,
+        latest_discovery["metadata_sha256"],
+    )
+    timeframe_verified = instrument_verification is not None
+    analysis_eligible = bool(
+        timeframe_verified
+        and history_completeness.get("status") == "complete"
+        and closed_canonical_count >= MIN_ANALYSIS_CLOSED_CANDLES
+        and bool(instrument_verification.get("analysis_eligible"))
+    )
+
+    return jsonify({
+        "status": "ok",
+        "symbol_id": symbol_id,
+        "broker": MT5_BROKER_NAME,
+        "broker_symbol": broker_symbol,
+        "broker_display_name": str(getattr(symbol_info, "description", "") or ""),
+        "server_name": server_name,
+        "account_environment": MT5_ACCOUNT_ENVIRONMENT,
+        "account_identity": account_identity,
+        "platform": "MT5",
+        "instrument_verification_status": (
+            "verified" if timeframe_verified else "partially_verified"
+        ),
+        "instrument_verification_id": (
+            instrument_verification["verification_id"]
+            if instrument_verification else None
+        ),
+        "timeframe_verified": timeframe_verified,
+        "analysis_eligible": analysis_eligible,
+        "verified_timeframes": verified_timeframes,
+        "analysis_eligible_timeframes": analysis_eligible_timeframes,
+        "timeframe": timeframe,
+        "start_pos": start_pos,
+        "source_type": "broker_bars",
+        "volume_type": "tick_volume",
+        "retrieved_at": envelope["retrieved_at"],
+        "raw_persistence": persisted,
+        "quality_report": quality_report,
+        "history_completeness": history_completeness,
+        "canonical_persistence": {
+            "persisted": True,
+            **canonical_persistence,
+        },
+        "data": response_rows,
+    })
 
 
 if __name__ == "__main__":
-    ok, msg = init_mt5()
-    print(f"[BRIDGE] MT5 init status: {ok} ({msg})")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    ok, message = init_mt5()
+    if not ok:
+        raise SystemExit("[BRIDGE] Refusing to start: " + message)
+    if not _is_loopback(MT5_BRIDGE_HOST) and not MT5_BRIDGE_TOKEN:
+        raise SystemExit("[BRIDGE] Non-loopback binding requires MT5_BRIDGE_TOKEN")
+    port = int(os.environ.get("PORT", "5000"))
+    from waitress import serve
+    serve(app, host=MT5_BRIDGE_HOST, port=port, threads=8)
