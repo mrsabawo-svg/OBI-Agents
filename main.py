@@ -51,6 +51,9 @@ def run(symbol: str, news: dict = None) -> dict:
             expected_timeframes=ALL_TF,
         )
 
+        ticker = DataAgent(symbol).ticker
+        check_outcome(symbol, ticker)
+
         session = SessionAgent(symbol).analyse()
         if not session["tradeable"]:
             print("[MAIN] " + symbol + ": session blocked - " + session["reason"])

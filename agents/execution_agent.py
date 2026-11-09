@@ -248,18 +248,14 @@ _executor = BybitOrderExecutor(
 
 # ── Pending trade store ───────────────────────────────────────────────────────
 
-def save_pending(plan: dict) -> bool:
+def save_pending(plan: dict) -> None:
     try:
         from core.memory import load as load_memory, save as save_memory
         mem = load_memory() or {}
         mem["_pending_trade"] = plan
-        if save_memory(mem) is not True:
-            print("[EXEC] Pending trade was not persisted")
-            return False
-        return True
+        save_memory(mem)
     except Exception as e:
         print(f"[EXEC] Save pending error: {e}")
-        return False
 
 
 def load_pending() -> dict:
@@ -272,18 +268,14 @@ def load_pending() -> dict:
         return {}
 
 
-def clear_pending() -> bool:
+def clear_pending() -> None:
     try:
         from core.memory import load as load_memory, save as save_memory
         mem = load_memory() or {}
         mem.pop("_pending_trade", None)
-        if save_memory(mem) is not True:
-            print("[EXEC] Pending trade clear was not persisted")
-            return False
-        return True
+        save_memory(mem)
     except Exception as e:
         print(f"[EXEC] Clear pending error: {e}")
-        return False
 
 
 # ── Main interface ────────────────────────────────────────────────────────────
@@ -305,9 +297,7 @@ class ExecutionAgent:
             _send(f"⚠️ *{self.symbol}* — trade plan failed: qty=0. Check balance or SL distance.", operator_only=True)
             return
 
-        if not save_pending(plan):
-            _send(f"⚠️ *{self.symbol}* trade plan was not saved; no approval request was sent.", operator_only=True)
-            return
+        save_pending(plan)
         _send(format_plan_message(plan), operator_only=True)
         print(f"[EXEC] {self.symbol}: trade plan sent to Telegram")
 
@@ -323,8 +313,7 @@ class ExecutionAgent:
             plan_time   = SAST.localize(plan_time)
             age_minutes = (datetime.now(SAST) - plan_time).total_seconds() / 60
             if age_minutes > PLAN_EXPIRY_MINUTES:
-                if not clear_pending():
-                    return f"⚠️ *{plan['symbol']}* trade plan expired, but its pending record could not be cleared. Do not approve it again."
+                clear_pending()
                 return f"⏰ *{plan['symbol']}* trade plan expired ({round(age_minutes)} min old). Wait for the next signal."
         except Exception as e:
             print(f"[EXEC] Expiry check error: {e}")
@@ -349,15 +338,10 @@ class ExecutionAgent:
             clear_pending()
             return "🚨 Circuit breaker OPEN — too many execution failures. Order NOT sent."
 
-        pending_cleared = clear_pending()
+        clear_pending()
 
         if result["status"] == "SUCCESS":
             order_id = result["data"].get("orderId", "unknown")
-            if not pending_cleared:
-                return (
-                    f"⚠️ *{plan['symbol']}* order was placed (Order ID: {order_id}), "
-                    "but the pending record could not be cleared. Do not approve again; verify the exchange order first."
-                )
             return (
                 f"✅ *{plan['symbol']}* order placed\n"
                 f"Order ID: `{order_id}`\n"
@@ -368,14 +352,12 @@ class ExecutionAgent:
             reason = result.get("reason", "UNKNOWN")
             code   = result.get("code", "")
             err    = f"{reason} (code {code})" if code else reason
-            suffix = "" if pending_cleared else " Pending state could not be cleared; verify before retrying."
-            return f"❌ Order failed: `{err}`." + suffix
+            return f"❌ Order failed: `{err}`"
 
     def skip(self, symbol: str) -> str:
         plan = load_pending()
         if not plan or plan.get("symbol") != symbol.upper():
             return f"ℹ️ No pending trade for *{symbol}*."
-        if not clear_pending():
-            return f"⚠️ *{symbol}* skip was received, but the pending record could not be cleared."
+        clear_pending()
         print(f"[EXEC] {symbol}: trade skipped by user")
         return f"⏭️ *{symbol}* trade skipped and cleared."

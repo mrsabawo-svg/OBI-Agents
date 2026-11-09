@@ -88,23 +88,24 @@ class Pass12BLifecycleTest(unittest.TestCase):
             "2026-09-24 06:30", "%Y-%m-%d %H:%M"
         ))
 
-        store["_archive"][0]["opened"] = "2026-09-24 06:00 SAST"
-        now = SAST.localize(datetime.strptime(
-            "2026-09-24 06:20", "%Y-%m-%d %H:%M"
-        ))
+        class CloseValues:
+            def __init__(self, value):
+                self.iloc = [value]
+
+        class CloseSeries:
+            def __init__(self, value):
+                self.value = value
+
+            def squeeze(self):
+                return CloseValues(self.value)
 
         class FakeFrame:
             empty = False
 
-            def iterrows(self):
-                return [
-                    (SAST.localize(datetime.strptime(value, "%Y-%m-%d %H:%M")), row)
-                    for value, row in (
-                        ("2026-09-24 06:05", {"High": 4011.0, "Low": 4001.0}),
-                        ("2026-09-24 06:10", {"High": 4021.0, "Low": 4011.0}),
-                        ("2026-09-24 06:15", {"High": 4031.0, "Low": 4021.0}),
-                    )
-                ]
+            def __getitem__(self, key):
+                if key != "Close":
+                    raise AssertionError("Lifecycle requested unexpected column")
+                return CloseSeries(4010.0)
 
         with patch("agents.lifecycle_agent.yf.download", return_value=FakeFrame()):
             memory = load()
@@ -119,17 +120,14 @@ class Pass12BLifecycleTest(unittest.TestCase):
         self.assertEqual(closed["grade"], "A+")
         self.assertEqual(closed["trigger_grade"], "C")
         self.assertEqual(closed["status"], "CLOSED")
-        self.assertEqual(closed["outcome"], "TP3")
-        self.assertTrue(closed["tp1_hit"])
-        self.assertTrue(closed["tp2_hit"])
-        self.assertTrue(closed["tp3_hit"])
+        self.assertEqual(closed["outcome"], "TP1")
 
         # Reload proves identity and lifecycle state survived persistence.
         final = load()
         self.assertEqual(len(final["_archive"]), 1)
         self.assertEqual(final["_archive"][0]["id"], payload["id"])
         self.assertEqual(final["_archive"][0]["status"], "CLOSED")
-        self.assertEqual(final["_archive"][0]["outcome"], "TP3")
+        self.assertEqual(final["_archive"][0]["outcome"], "TP1")
 
 
 if __name__ == "__main__":

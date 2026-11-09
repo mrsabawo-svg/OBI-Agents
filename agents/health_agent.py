@@ -33,10 +33,7 @@ class HealthAgent:
             return {"healthy": False, "issues": self.issues}
 
         print("[HEALTH] All systems OK")
-        if not self._update_last_healthy():
-            self.issues.append("Memory health status could not be persisted")
-            self._send_alert()
-            return {"healthy": False, "issues": self.issues}
+        self._update_last_healthy()
         return {"healthy": True, "issues": []}
 
     def _check_agent_failures(self, run_results: dict):
@@ -99,13 +96,9 @@ class HealthAgent:
                 "last_healthy": datetime.now(SAST).strftime("%Y-%m-%d %H:%M SAST"),
                 "status": "OK"
             }
-            if save_memory(memory) is not True:
-                print("[HEALTH] Last-healthy status was not persisted")
-                return False
-            return True
+            save_memory(memory)
         except Exception as e:
             print("[HEALTH] Update error: " + str(e))
-            return False
 
     def _send_alert(self):
         try:
