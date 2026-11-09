@@ -24,6 +24,7 @@ from agents.execution_agent    import ExecutionAgent
 from core.utils                import now_sast, sast_str
 from core.data_lineage          import build_data_lineage
 from core.decision_lineage      import build_decision_lineage
+from core.signal_identity       import SETUP_IDENTITY_VERSION, build_setup_identity
 
 SYMBOLS = [
     "XAUUSD", "EURUSD", "USDJPY", "GBPJPY", "GBPUSD",
@@ -88,6 +89,13 @@ def run(symbol: str, news: dict = None) -> dict:
         edge = edge_agent.analyse(trigger, bias, regime)
         score = ScoreAgent(symbol).compute(bias, trigger, regime, edge, session)
 
+        signal_id = build_signal_id(symbol)
+        setup_id = build_setup_identity({
+            "symbol": symbol,
+            "trigger": trigger,
+            "regime": regime,
+        })
+
         decision_lineage = build_decision_lineage(
             symbol=symbol,
             market_data=data,
@@ -104,6 +112,11 @@ def run(symbol: str, news: dict = None) -> dict:
                 "Score": score,
             },
             data_lineage=data_lineage,
+            signal_identity={
+                "signal_id": signal_id,
+                "setup_id": setup_id,
+                "setup_identity_version": SETUP_IDENTITY_VERSION,
+            },
             external_inputs={
                 "Session": {
                     "evaluated_at_sast": session.get("evaluated_at_sast"),
@@ -115,7 +128,7 @@ def run(symbol: str, news: dict = None) -> dict:
         )
 
         payload = {
-            "id":      build_signal_id(symbol),
+            "id":      signal_id,
             "symbol":  symbol,
             "htf":     htf,
             "regime":  regime,
