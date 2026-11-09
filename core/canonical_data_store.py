@@ -413,9 +413,16 @@ class CanonicalCandleStore:
                 SELECT COUNT(*) FROM canonical_candles
                 WHERE validation_report_id = ?
             """, (report_id,)).fetchone()[0])
+            closed_candle_count = int(connection.execute("""
+                SELECT COUNT(*) FROM canonical_candles
+                WHERE validation_report_id = ?
+                  AND bar_status = 'closed'
+                  AND validation_status = 'valid'
+            """, (report_id,)).fetchone()[0])
         result = json.loads(row["report_json"])
         result["report_sha256"] = row["report_sha256"]
         result["canonical_candle_count"] = canonical_count
+        result["closed_candle_count"] = closed_candle_count
         return result
 
     def count(self) -> int:
