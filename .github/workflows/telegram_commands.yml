@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     concurrency:
-      group: obi-gist-writer-\${{ github.repository }}
+      group: obi-gist-writer-${{ github.repository }}
       cancel-in-progress: false
 
     steps:
@@ -26,18 +26,18 @@ jobs:
 
       - name: Poll 1
         env:
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
-          GIST_TOKEN: \${{ secrets.OBI_GIST_PAT }}
-          GROQ_API_KEY: \${{ secrets.GROQ_API_KEY }}
-          JSONBIN_KEY: \${{ secrets.JSONBIN_KEY }}
-          JSONBIN_BIN_ID: \${{ secrets.JSONBIN_BIN_ID }}
-          TELEGRAM_OPERATOR_ID: \${{ secrets.TELEGRAM_OPERATOR_ID }}
-          TWELVEDATA_KEY: \${{ secrets.TWELVEDATA_KEY }}
-          GIST_ID: \${{ secrets.GIST_ID }}
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          BYBIT_API_KEY: \${{ secrets.BYBIT_API_KEY }}
-          BYBIT_API_SECRET: \${{ secrets.BYBIT_API_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GIST_TOKEN: ${{ secrets.OBI_GIST_PAT }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          JSONBIN_KEY: ${{ secrets.JSONBIN_KEY }}
+          JSONBIN_BIN_ID: ${{ secrets.JSONBIN_BIN_ID }}
+          TELEGRAM_OPERATOR_ID: ${{ secrets.TELEGRAM_OPERATOR_ID }}
+          TWELVEDATA_KEY: ${{ secrets.TWELVEDATA_KEY }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
         run: python telegram_runner.py
 
       - name: Wait 90s
@@ -45,18 +45,18 @@ jobs:
 
       - name: Poll 2
         env:
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
-          GIST_TOKEN: \${{ secrets.OBI_GIST_PAT }}
-          GROQ_API_KEY: \${{ secrets.GROQ_API_KEY }}
-          JSONBIN_KEY: \${{ secrets.JSONBIN_KEY }}
-          JSONBIN_BIN_ID: \${{ secrets.JSONBIN_BIN_ID }}
-          TELEGRAM_OPERATOR_ID: \${{ secrets.TELEGRAM_OPERATOR_ID }}
-          TWELVEDATA_KEY: \${{ secrets.TWELVEDATA_KEY }}
-          GIST_ID: \${{ secrets.GIST_ID }}
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          BYBIT_API_KEY: \${{ secrets.BYBIT_API_KEY }}
-          BYBIT_API_SECRET: \${{ secrets.BYBIT_API_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GIST_TOKEN: ${{ secrets.OBI_GIST_PAT }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          JSONBIN_KEY: ${{ secrets.JSONBIN_KEY }}
+          JSONBIN_BIN_ID: ${{ secrets.JSONBIN_BIN_ID }}
+          TELEGRAM_OPERATOR_ID: ${{ secrets.TELEGRAM_OPERATOR_ID }}
+          TWELVEDATA_KEY: ${{ secrets.TWELVEDATA_KEY }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
         run: python telegram_runner.py
 
       - name: Wait 90s
@@ -64,16 +64,16 @@ jobs:
 
       - name: Poll 3
         env:
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
-          GIST_TOKEN: \${{ secrets.OBI_GIST_PAT }}
-          GROQ_API_KEY: \${{ secrets.GROQ_API_KEY }}
-          JSONBIN_KEY: \${{ secrets.JSONBIN_KEY }}
-          JSONBIN_BIN_ID: \${{ secrets.JSONBIN_BIN_ID }}
-          TELEGRAM_OPERATOR_ID: \${{ secrets.TELEGRAM_OPERATOR_ID }}
-          TWELVEDATA_KEY: \${{ secrets.TWELVEDATA_KEY }}
-          GIST_ID: \${{ secrets.GIST_ID }}
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          BYBIT_API_KEY: \${{ secrets.BYBIT_API_KEY }}
-          BYBIT_API_SECRET: \${{ secrets.BYBIT_API_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GIST_TOKEN: ${{ secrets.OBI_GIST_PAT }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          JSONBIN_KEY: ${{ secrets.JSONBIN_KEY }}
+          JSONBIN_BIN_ID: ${{ secrets.JSONBIN_BIN_ID }}
+          TELEGRAM_OPERATOR_ID: ${{ secrets.TELEGRAM_OPERATOR_ID }}
+          TWELVEDATA_KEY: ${{ secrets.TWELVEDATA_KEY }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BYBIT_API_KEY: ${{ secrets.BYBIT_API_KEY }}
+          BYBIT_API_SECRET: ${{ secrets.BYBIT_API_SECRET }}
         run: python telegram_runner.py
