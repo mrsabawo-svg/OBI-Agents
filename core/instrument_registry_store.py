@@ -333,6 +333,117 @@ class InstrumentRegistryStore:
                 "closed_candle_count": candle_count,
             })
 
+        # Verification must be grounded in the latest account-scoped discovery
+        # and in immutable canonical evidence persisted in this same evidence DB.
+        with self._connect() as db:
+            discovery = db.execute("""
+                SELECT metadata_sha256, mapped_instrument_ids_json, mapping_conflict
+                FROM mt5_instrument_discoveries
+                WHERE account_fingerprint = ? AND broker_symbol = ?
+                ORDER BY discovered_at DESC, rowid DESC LIMIT 1
+            """, (account_fingerprint, broker_symbol)).fetchone()
+            if discovery is None:
+                raise ValueError("instrument verification requires a persisted account-scoped discovery")
+            if discovery["metadata_sha256"] != metadata_sha256:
+                raise ValueError("metadata fingerprint does not match latest instrument discovery")
+            if discovery["mapping_conflict"]:
+                raise ValueError("instrument discovery has an unresolved mapping conflict")
+            if instrument_id not in json.loads(discovery["mapped_instrument_ids_json"]):
+                raise ValueError("instrument ID is not mapped to the discovered broker symbol")
+
+            for evidence in normalized_refs:
+                report_row = db.execute("""
+                    SELECT batch_id, instrument_id, broker, server_name,
+                           account_environment, broker_symbol, timeframe,
+                           report_json, report_sha256
+                    FROM canonical_validation_reports
+                    WHERE report_id = ?
+                """, (evidence["report_id"],)).fetchone()
+                if report_row is None:
+                    raise ValueError("canonical evidence report does not exist")
+                report_json = report_row["report_json"]
+                actual_hash = hashlib.sha256(report_json.encode("utf-8")).hexdigest()
+                if actual_hash != report_row["report_sha256"]:
+                    raise ValueError("stored canonical evidence report hash mismatch")
+                if actual_hash != evidence["report_sha256"]:
+                    raise ValueError("evidence report hash does not match persisted canonical report")
+
+                expected_identity = (
+                    instrument_id, report_row["broker"], account_identity.get("server"),
+                    account_identity.get("environment"), broker_symbol, evidence["timeframe"],
+                )
+                actual_identity = (
+                    report_row["instrument_id"], report_row["broker"], report_row["server_name"],
+                    report_row["account_environment"], report_row["broker_symbol"], report_row["timeframe"],
+                )
+                if actual_identity != expected_identity:
+                    raise ValueError("canonical evidence report identity does not match instrument verification")
+
+                try:
+                    persisted_report = json.loads(report_json)
+                except (TypeError, json.JSONDecodeError) as exc:
+                    raise ValueError("canonical evidence report JSON is invalid") from exc
+                quality = persisted_report.get("report")
+                history = quality.get("history_completeness") if isinstance(quality, dict) else None
+                if isinstance(quality, dict) and quality.get("account_fingerprint") != account_fingerprint:
+                    raise ValueError("canonical evidence report account identity does not match pinned account")
+                if (
+                    persisted_report.get("report_id") != evidence["report_id"]
+                    or persisted_report.get("instrument_id") != instrument_id
+                    or persisted_report.get("server_name") != account_identity.get("server")
+                    or persisted_report.get("account_environment") != account_identity.get("environment")
+                    or persisted_report.get("broker_symbol") != broker_symbol
+                    or persisted_report.get("timeframe") != evidence["timeframe"]
+                    or not isinstance(quality, dict)
+                    or quality.get("account_fingerprint") != account_fingerprint
+                    or quality.get("account_identity_pinned") is not True
+                    or quality.get("instrument_metadata_sha256") != metadata_sha256
+                    or not isinstance(history, dict)
+                    or history.get("status") != "complete"
+                    or history.get("account_fingerprint") != account_fingerprint
+                    or history.get("instrument_id") != instrument_id
+                    or history.get("broker_symbol") != broker_symbol
+                    or history.get("timeframe") != evidence["timeframe"]
+                ):
+                    raise ValueError("canonical evidence report payload identity or metadata proof mismatch")
+
+                candle_rows = db.execute("""
+                    SELECT c.candle_id, r.account_fingerprint
+                    FROM canonical_candles AS c
+                    JOIN canonical_candle_sources AS s ON s.candle_id = c.candle_id
+                    JOIN raw_observations AS r ON r.observation_id = s.observation_id
+                    WHERE c.validation_report_id = ?
+                      AND c.bar_status = 'closed'
+                      AND c.validation_status = 'valid'
+                      AND c.instrument_id = ?
+                      AND c.broker = ?
+                      AND c.server_name = ?
+                      AND c.account_environment = ?
+                      AND c.broker_symbol = ?
+                      AND c.timeframe = ?
+                """, (
+                    evidence["report_id"], instrument_id, report_row["broker"],
+                    account_identity.get("server"), account_identity.get("environment"),
+                    broker_symbol, evidence["timeframe"],
+                )).fetchall()
+                actual_count = db.execute("""
+                    SELECT COUNT(*) FROM canonical_candles
+                    WHERE validation_report_id = ?
+                      AND bar_status = 'closed'
+                      AND validation_status = 'valid'
+                """, (evidence["report_id"],)).fetchone()[0]
+                if actual_count < 1:
+                    raise ValueError("canonical evidence must contain at least one valid closed candle")
+                if actual_count != evidence["closed_candle_count"]:
+                    raise ValueError("evidence closed candle count does not match persisted canonical candles")
+                if not candle_rows or any(
+                    row["account_fingerprint"] != account_fingerprint for row in candle_rows
+                ):
+                    raise ValueError("canonical evidence source account identity does not match pinned account")
+                distinct_candles = {row["candle_id"] for row in candle_rows}
+                if len(distinct_candles) != actual_count:
+                    raise ValueError("canonical evidence candles do not match requested instrument identity")
+
         verified_timeframes = sorted(seen_timeframes)
         verified_at = datetime.now(timezone.utc).isoformat()
         verification_id = str(uuid.uuid4())
