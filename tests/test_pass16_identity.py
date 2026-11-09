@@ -105,6 +105,18 @@ def test_resolver_rejects_malformed_issued_identity_instead_of_recomputing():
 
 
 
+def test_resolver_rejects_well_formed_but_stale_setup_digest():
+    candidate = payload()
+    candidate["signal_identity"] = {
+        "signal_id": candidate["id"],
+        "setup_id": "a" * 64,
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
+    }
+    with pytest.raises(ValueError, match="invalid"):
+        resolve_setup_identity(candidate)
+
+
+
 def test_archive_log_rejects_missing_event_identity_without_writing(monkeypatch):
     memory = {"_archive": []}
     saved = []
