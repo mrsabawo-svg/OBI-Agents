@@ -10,6 +10,7 @@ from copy import deepcopy
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
+from core.signal_identity import build_setup_identity
 from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
@@ -135,6 +136,7 @@ class ArchiveAgent:
 
         return {
             "id": signal_id,
+            "setup_id": build_setup_identity(signal),
             "symbol": signal.get("symbol"),
             "timestamp": timestamp,
             "opened": timestamp,

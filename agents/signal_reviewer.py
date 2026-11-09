@@ -9,6 +9,7 @@ import requests
 from datetime import datetime
 from core.memory import load as load_memory
 from core.models import _payload_to_dict
+from core.signal_identity import build_setup_identity
 import pytz
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -19,26 +20,89 @@ class SignalReviewer:
     def __init__(self, symbol: str):
         self.symbol = symbol
 
+    @staticmethod
+    def setup_identity(payload: dict) -> str:
+        """Return the versioned deterministic identity of a material trade setup."""
+        return build_setup_identity(payload)
+
     def is_duplicate(self, payload: dict) -> bool:
         try:
-            memory    = load_memory()
-            archive   = memory.get("_archive", [])
-            new_entry = float(payload["trigger"].entry)
-            now       = datetime.now(SAST)
-            recent    = [t for t in archive if t.get("symbol") == self.symbol and t.get("status") == "OPEN"]
-            for t in recent:
-                try:
-                    opened = datetime.strptime(t.get("opened", "").replace(" SAST", ""), "%Y-%m-%d %H:%M")
-                    opened = SAST.localize(opened)
-                    if (now - opened).total_seconds() < 7200:
-                        if abs(float(t.get("entry", 0)) - new_entry) < 0.01:
-                            return True
-                except:
+            memory = load_memory() or {}
+            archive = memory.get("_archive", [])
+            signal_id = payload.get("id")
+            setup_id = self.setup_identity(payload)
+            now = datetime.now(SAST)
+
+            for archived in archive:
+                if not isinstance(archived, dict):
                     continue
+                if archived.get("status") != "OPEN" or archived.get("symbol") != self.symbol:
+                    continue
+
+                # Exact signal identity is distinct from material setup identity.
+                if signal_id and archived.get("id") == signal_id:
+                    return True
+
+                opened_value = archived.get("opened") or archived.get("timestamp")
+                opened = self._parse_opened_at(opened_value)
+                if opened is None:
+                    continue
+                age_seconds = (now - opened).total_seconds()
+                if not 0 <= age_seconds < 7200:
+                    continue
+
+                archived_setup_id = archived.get("setup_id")
+                if not isinstance(archived_setup_id, str) or not archived_setup_id:
+                    legacy_payload = {
+                        "symbol": archived.get("symbol"),
+                        "trigger": {
+                            "direction": archived.get("direction"),
+                            "entry": archived.get("entry"),
+                            "sl": archived.get("sl"),
+                            "tp1": archived.get("tp1"),
+                            "tp2": archived.get("tp2"),
+                            "tp3": archived.get("tp3"),
+                            "tags": archived.get("tags", []),
+                        },
+                        "regime": {"label": archived.get("regime")},
+                    }
+                    try:
+                        archived_setup_id = self.setup_identity(legacy_payload)
+                    except (TypeError, ValueError):
+                        continue
+
+                if archived_setup_id == setup_id:
+                    return True
+
             return False
         except Exception as e:
             print("[REVIEWER] Duplicate check error: " + str(e))
             return False
+
+    @staticmethod
+    def _parse_opened_at(value):
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str) and value.strip():
+            label = value.strip().replace(" SAST", "")
+            parsed = None
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+                try:
+                    parsed = datetime.strptime(label, fmt)
+                    break
+                except ValueError:
+                    pass
+            if parsed is None:
+                try:
+                    parsed = datetime.fromisoformat(label.replace("Z", "+00:00"))
+                except ValueError:
+                    return None
+        else:
+            return None
+
+        if parsed.tzinfo is None:
+            return SAST.localize(parsed)
+        return parsed.astimezone(SAST)
 
     def review(self, payload: dict, accuracy: str) -> dict:
         groq_verdict     = self._ask_groq(payload, accuracy)
