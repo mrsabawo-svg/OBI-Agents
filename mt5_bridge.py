@@ -19,6 +19,7 @@ from core.raw_observation_store import RawObservationStore
 from core.canonical_data_store import CanonicalCandleStore
 from core.instrument_registry_store import InstrumentRegistryStore, metadata_fingerprint
 from core.history_completeness import assess_history_completeness, TIMEFRAME_SECONDS
+from core.data_foundation_contract import MINIMUM_ANALYSIS_CANDLES
 
 try:
     import MetaTrader5 as mt5
@@ -69,7 +70,7 @@ MT5_VERIFIED_SESSION_MODELS = _load_verified_session_models(
     os.environ.get("MT5_VERIFIED_SESSION_MODEL_JSON", "")
 )
 MAX_COUNT = 20000
-MIN_ANALYSIS_CLOSED_CANDLES = 60
+MIN_ANALYSIS_CLOSED_CANDLES = MINIMUM_ANALYSIS_CANDLES
 CANONICAL_TRANSFORMATION_VERSION = "mt5-broker-bars-v1"
 connector = None
 
