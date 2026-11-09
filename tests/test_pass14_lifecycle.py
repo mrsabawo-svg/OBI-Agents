@@ -119,18 +119,3 @@ class Pass14OutcomeStateMachineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    def test_repeated_candle_is_idempotent(self):
-        trade = self.trade("BUY")
-        self.assertTrue(self.lifecycle._apply_candle(trade, 4011, 4001, self.now))
-        snapshot = dict(trade)
-        self.assertFalse(self.lifecycle._apply_candle(trade, 4011, 4001, self.now))
-        self.assertEqual(trade, snapshot)
-
-    def test_expiry_does_not_fabricate_stop_loss_pnl(self):
-        trade = self.trade("BUY")
-        self.lifecycle._close(trade, "EXPIRED", self.now)
-        self.assertEqual(trade["status"], "CLOSED")
-        self.assertEqual(trade["outcome"], "EXPIRED")
-        self.assertIsNone(trade["terminal_pnl_pips"])
-        self.assertIsNone(trade["pnl_basis"])

@@ -110,6 +110,22 @@ class LifecycleAgent:
         return parsed
 
     @staticmethod
+    def _parse_candle_timestamp(value):
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            text = str(value).strip()
+            if " SAST" in text:
+                return LifecycleAgent._parse_timestamp(text)
+            try:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        if parsed.tzinfo is None:
+            parsed = pytz.utc.localize(parsed)
+        return parsed
+
+    @staticmethod
     def _row_number(row, field: str) -> float:
         value = row.get(field) if hasattr(row, "get") else row[field]
         if value is None and hasattr(row, "get"):
@@ -287,7 +303,7 @@ class LifecycleAgent:
             changed = False
             processed = 0
             for index, row in df.iterrows():
-                candle_dt = self._parse_timestamp(index)
+                candle_dt = self._parse_candle_timestamp(index)
                 if candle_dt is None:
                     continue
                 candle_utc = candle_dt.astimezone(pytz.utc)
@@ -312,7 +328,7 @@ class LifecycleAgent:
                 if quarantine_reasons:
                     continue
                 closed_flag = row.get("closed") if hasattr(row, "get") else None
-                if closed_flag is False:
+                if closed_flag is not None and not bool(closed_flag):
                     continue
 
                 try:
