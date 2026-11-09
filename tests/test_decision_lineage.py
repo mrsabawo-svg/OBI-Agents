@@ -535,3 +535,62 @@ def test_archive_agent_rejects_lineage_bound_to_another_signal_event():
     assert entry["decision_lineage_status"] == "unavailable"
     assert entry["decision_lineage_identity_status"] == "mismatch"
     assert entry["decision_lineage_sha256"] is None
+
+
+
+def _production_signal_with_lineage(signal_id="EURUSD_20261109_actual", symbol="EURUSD", bound_setup_id=None, manifest_symbol=None):
+    from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
+
+    outputs = _outputs()
+    signal = {
+        "id": signal_id,
+        "symbol": symbol,
+        "trigger": outputs["Trigger"],
+        "bias": outputs["Bias"],
+        "score": outputs["Score"],
+        "regime": outputs["Regime"],
+        "htf": outputs["HTF"],
+        "mtf": outputs["MTF"],
+        "decision_lineage_identity_required": True,
+    }
+    setup_id = bound_setup_id or build_setup_identity(signal)
+    signal["decision_lineage"] = build_decision_lineage(
+        manifest_symbol or symbol,
+        _market_data(),
+        outputs,
+        {"schema_version": "obi-data-lineage-v5", "status": "complete", "timeframes": {}},
+        signal_identity={
+            "signal_id": signal_id,
+            "setup_id": setup_id,
+            "setup_identity_version": SETUP_IDENTITY_VERSION,
+        },
+    )
+    return signal
+
+
+def test_archive_agent_rejects_unbound_lineage_when_production_identity_is_required():
+    signal = _production_signal_with_lineage()
+    signal["decision_lineage"].pop("signal_identity")
+    entry = ArchiveAgent()._build_entry(signal)
+
+    assert entry["decision_lineage_status"] == "unavailable"
+    assert entry["decision_lineage_identity_status"] == "missing"
+    assert entry["decision_lineage_sha256"] is None
+
+
+def test_archive_agent_rejects_setup_identity_mismatch():
+    signal = _production_signal_with_lineage(bound_setup_id="b" * 64)
+    entry = ArchiveAgent()._build_entry(signal)
+
+    assert entry["decision_lineage_status"] == "unavailable"
+    assert entry["decision_lineage_identity_status"] == "mismatch"
+    assert entry["decision_lineage_sha256"] is None
+
+
+def test_archive_agent_rejects_instrument_identity_mismatch():
+    signal = _production_signal_with_lineage(manifest_symbol="GBPUSD")
+    entry = ArchiveAgent()._build_entry(signal)
+
+    assert entry["decision_lineage_status"] == "unavailable"
+    assert entry["decision_lineage_identity_status"] == "mismatch"
+    assert entry["decision_lineage_sha256"] is None
