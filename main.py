@@ -2,6 +2,8 @@
 OBI Intelligence v4.2 — Main Pipeline
 Copyright © Mazvita Sabawo. All rights reserved.
 """
+import uuid
+
 from agents.data_agent         import DataAgent
 from agents.htf_agent          import HTFAgent
 from agents.mtf_agent          import MTFAgent
@@ -19,7 +21,7 @@ from agents.edge_agent         import EdgeAgent
 from agents.score_agent        import ScoreAgent
 from agents.intelligence_agent import IntelligenceAgent
 from agents.execution_agent    import ExecutionAgent
-from core.utils                import sast_str
+from core.utils                import now_sast, sast_str
 from core.data_lineage          import build_data_lineage
 from core.decision_lineage      import build_decision_lineage
 
@@ -29,6 +31,15 @@ SYMBOLS = [
     "PAIN_999", "GAIN_999", "PAIN_1200", "GAIN_1200", "SFX_VOL_75"
 ]
 ALL_TF  = ["4h", "1h", "15m", "5m"]
+
+
+def build_signal_id(symbol: str) -> str:
+    """Create a unique, human-readable identity for one fired signal event."""
+    normalized_symbol = str(symbol).strip().upper()
+    if not normalized_symbol:
+        raise ValueError("symbol must be a non-empty string")
+    stamp = now_sast().strftime("%Y%m%d%H%M%S")
+    return normalized_symbol + "_" + stamp + "_" + uuid.uuid4().hex
 
 def run(symbol: str, news: dict = None) -> dict:
     print("=" * 45)
@@ -104,6 +115,7 @@ def run(symbol: str, news: dict = None) -> dict:
         )
 
         payload = {
+            "id":      build_signal_id(symbol),
             "symbol":  symbol,
             "htf":     htf,
             "regime":  regime,

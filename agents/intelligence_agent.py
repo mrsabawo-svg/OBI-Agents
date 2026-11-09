@@ -31,6 +31,7 @@ class IntelligenceAgent:
 
         trigger = payload["trigger"]
         result = {
+            "id":              payload.get("id"),
             "symbol":          self.symbol,
             "timestamp":       sast_str(),
             "direction":       trigger.direction,

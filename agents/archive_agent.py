@@ -10,6 +10,7 @@ from copy import deepcopy
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
+from core.signal_identity import SETUP_IDENTITY_VERSION, build_setup_identity
 from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
@@ -133,8 +134,23 @@ class ArchiveAgent:
                 "manifest_sha256": None,
             }
 
+        try:
+            setup_id = build_setup_identity(signal)
+            setup_identity_version = SETUP_IDENTITY_VERSION
+            setup_identity_status = "complete"
+        except (TypeError, ValueError) as exc:
+            # Preserve compatibility with minimal/legacy archive callers without
+            # inventing an identity from incomplete setup fields.
+            print("[ARCHIVE] Setup identity unavailable: " + str(exc))
+            setup_id = None
+            setup_identity_version = None
+            setup_identity_status = "unavailable"
+
         return {
             "id": signal_id,
+            "setup_identity_version": setup_identity_version,
+            "setup_identity_status": setup_identity_status,
+            "setup_id": setup_id,
             "symbol": signal.get("symbol"),
             "timestamp": timestamp,
             "opened": timestamp,
