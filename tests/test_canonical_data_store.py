@@ -102,6 +102,19 @@ def test_canonical_candle_persists_with_exact_raw_lineage(tmp_path):
     assert result["record_sha256"] == [saved["record_sha256"]]
 
 
+def test_canonical_store_reads_hash_verified_report_and_closed_evidence_count(tmp_path):
+    path, source_id = setup_store(tmp_path)
+    store = CanonicalCandleStore(path)
+    store.append_batch([candle(source_id)], validation_report())
+
+    saved = store.get_validation_report("quality-report-001")
+    assert saved["report"]["report_id"] == "quality-report-001"
+    assert len(saved["report_sha256"]) == 64
+    assert store.count_closed_for_report("quality-report-001") == 1
+    assert store.count_closed_for_report("missing-report") == 0
+    assert store.get_validation_report("missing-report") is None
+
+
 def test_canonical_store_rejects_missing_source_observation(tmp_path):
     path, _ = setup_store(tmp_path)
     store = CanonicalCandleStore(path)

@@ -112,6 +112,13 @@ class DataLineageManifestTest(unittest.TestCase):
             "server_name": "Weltrade-Demo",
             "account_environment": "demo",
             "account_fingerprint": "a" * 64,
+            "account_identity_pinned": True,
+            "instrument_verification_status": "verified",
+            "instrument_verification_id": "verification-001",
+            "instrument_metadata_sha256": "c" * 64,
+            "verified_timeframes": ["5m"],
+            "timeframe_verified": True,
+            "analysis_eligible": True,
             "history_status": "complete",
             "history_session_model": "unknown",
             "history_report_id": "history-report-001",
@@ -131,6 +138,7 @@ class DataLineageManifestTest(unittest.TestCase):
             max_id_window=2,
         )
 
+        self.assertEqual(manifest["schema_version"], "obi-data-lineage-v5")
         self.assertEqual(manifest["status"], "partial")
         self.assertEqual(manifest["timeframes"]["5m"]["status"], "canonical")
         self.assertEqual(

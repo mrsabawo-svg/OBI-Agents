@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 
-LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v3"
+LINEAGE_SCHEMA_VERSION = "obi-data-lineage-v5"
 DEFAULT_ID_WINDOW = 50
 QUALITY_SUMMARY_FIELDS = (
     "received_count",
@@ -31,6 +31,9 @@ REQUIRED_CANONICAL_METADATA = (
     "server_name",
     "account_environment",
     "account_fingerprint",
+    "instrument_verification_status",
+    "instrument_verification_id",
+    "instrument_metadata_sha256",
     "history_status",
     "history_report_id",
     "history_session_model",
@@ -120,16 +123,38 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         isinstance(metadata.get(key), str) and metadata.get(key).strip()
         for key in REQUIRED_CANONICAL_METADATA
     )
-    fingerprint = metadata.get("account_fingerprint", "")
-    metadata_complete = metadata_complete and (
-        len(fingerprint) == 64
-        and all(char in "0123456789abcdef" for char in fingerprint)
-        and metadata.get("history_status") == "complete"
+    verified_timeframes = metadata.get("verified_timeframes")
+    timeframe_verified = (
+        isinstance(verified_timeframes, list) and timeframe in verified_timeframes
     )
-    report_hash = metadata.get("canonical_validation_report_sha256", "")
-    metadata_complete = metadata_complete and (
-        len(report_hash) == 64
+    fingerprint = metadata.get("account_fingerprint")
+    fingerprint_valid = (
+        isinstance(fingerprint, str)
+        and len(fingerprint) == 64
+        and all(char in "0123456789abcdef" for char in fingerprint)
+    )
+    instrument_metadata_hash = metadata.get("instrument_metadata_sha256")
+    instrument_metadata_hash_valid = (
+        isinstance(instrument_metadata_hash, str)
+        and len(instrument_metadata_hash) == 64
+        and all(char in "0123456789abcdef" for char in instrument_metadata_hash)
+    )
+    report_hash = metadata.get("canonical_validation_report_sha256")
+    report_hash_valid = (
+        isinstance(report_hash, str)
+        and len(report_hash) == 64
         and all(char in "0123456789abcdef" for char in report_hash.lower())
+    )
+    metadata_complete = metadata_complete and (
+        fingerprint_valid
+        and instrument_metadata_hash_valid
+        and report_hash_valid
+        and metadata.get("account_identity_pinned") is True
+        and metadata.get("instrument_verification_status") == "verified"
+        and metadata.get("timeframe_verified") is True
+        and metadata.get("analysis_eligible") is True
+        and timeframe_verified
+        and metadata.get("history_status") == "complete"
     )
 
     if ids_complete and metadata_complete:
@@ -156,6 +181,13 @@ def _timeframe_manifest(frame: Any, timeframe: str, max_id_window: int) -> dict:
         "server_name": metadata.get("server_name"),
         "account_environment": metadata.get("account_environment"),
         "account_fingerprint": metadata.get("account_fingerprint"),
+        "account_identity_pinned": metadata.get("account_identity_pinned") is True,
+        "instrument_verification_status": metadata.get("instrument_verification_status"),
+        "instrument_verification_id": metadata.get("instrument_verification_id"),
+        "instrument_metadata_sha256": metadata.get("instrument_metadata_sha256"),
+        "verified_timeframes": verified_timeframes if isinstance(verified_timeframes, list) else [],
+        "timeframe_verified": metadata.get("timeframe_verified") is True,
+        "analysis_eligible": metadata.get("analysis_eligible") is True,
         "history_completeness": {
             "report_id": metadata.get("history_report_id"),
             "status": metadata.get("history_status"),

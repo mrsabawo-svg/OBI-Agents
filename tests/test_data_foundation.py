@@ -235,6 +235,7 @@ def test_instrument_registry_persists_account_scoped_discovery_without_auto_veri
     record = store.latest_symbol("a" * 64, "SFX Vol 75")
 
     assert result["symbol_count"] == 1
+    assert result["account_identity_pinned"] is False
     assert record["mapped_instrument_ids"] == ["SFX_VOL_75"]
     assert record["availability_status"] == "selectable"
     assert record["verification_status"] == "partially_verified"

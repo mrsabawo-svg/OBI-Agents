@@ -162,6 +162,40 @@ def test_data_agent_refuses_simulated_synthetic_fallback(monkeypatch):
     assert data == {}
 
 
+def test_data_agent_refuses_unpinned_account_identity(monkeypatch):
+    monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "ok",
+                "symbol_id": "SFX_VOL_75",
+                "timeframe": "5m",
+                "broker": "Weltrade",
+                "broker_symbol": "SFX Vol 75",
+                "server_name": "Weltrade-Demo",
+                "account_environment": "demo",
+                "source_type": "broker_bars",
+                "platform": "MT5",
+                "account_identity_pinned": False,
+                "account_identity": {
+                    "account_fingerprint": "a" * 64,
+                    "identity_pinned": False,
+                    "broker_company": "Weltrade Ltd",
+                    "server": "Weltrade-Demo",
+                    "environment": "demo",
+                    "platform": "MT5",
+                },
+                "raw_persistence": {"persisted": True},
+            }
+
+    with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
+        assert DataAgent("SFX_VOL_75").fetch(["5m"]) == {}
+
+
 def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
 
@@ -193,7 +227,11 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "instrument_verification_status": "verified",
+                "instrument_verification_id": "verification-001",
+                "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "verified_timeframes": ["5m"],
                 "timeframe_verified": True,
                 "analysis_eligible": True,
                 "account_identity": {
@@ -214,6 +252,13 @@ def test_data_agent_accepts_valid_live_bridge_candles(monkeypatch):
                 "quality_report": {
                     "report_id": "accepted-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
+                    "instrument_verification_status": "verified",
+                    "instrument_verification_id": "verification-001",
+                    "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "verified_timeframes": ["5m"],
+                    "timeframe_verified": True,
+                    "analysis_eligible": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -263,7 +308,11 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "instrument_verification_status": "verified",
+                "instrument_verification_id": "verification-001",
+                "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "verified_timeframes": ["5m"],
                 "timeframe_verified": True,
                 "analysis_eligible": True,
                 "account_identity": {
@@ -283,6 +332,13 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                 "quality_report": {
                     "report_id": "lineage-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
+                    "instrument_verification_status": "verified",
+                    "instrument_verification_id": "verification-001",
+                    "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "verified_timeframes": ["5m"],
+                    "timeframe_verified": True,
+                    "analysis_eligible": True,
                     "history_completeness": _complete_history_report(rows), "received_count": 1,
                     "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -329,7 +385,11 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "instrument_verification_status": "verified",
+                "instrument_verification_id": "verification-001",
+                "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "verified_timeframes": ["5m"],
                 "timeframe_verified": True,
                 "analysis_eligible": True,
                 "account_identity": {
@@ -349,6 +409,13 @@ def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
                 "quality_report": {
                     "report_id": "invalid-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
+                    "instrument_verification_status": "verified",
+                    "instrument_verification_id": "verification-001",
+                    "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "verified_timeframes": ["5m"],
+                    "timeframe_verified": True,
+                    "analysis_eligible": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -389,7 +456,11 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "instrument_verification_status": "verified",
+                "instrument_verification_id": "verification-001",
+                "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "verified_timeframes": ["5m"],
                 "timeframe_verified": True,
                 "analysis_eligible": True,
                 "account_identity": {
@@ -409,6 +480,13 @@ def test_data_agent_excludes_forming_bridge_bar(monkeypatch):
                 "quality_report": {
                     "report_id": "forming-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
+                    "instrument_verification_status": "verified",
+                    "instrument_verification_id": "verification-001",
+                    "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "verified_timeframes": ["5m"],
+                    "timeframe_verified": True,
+                    "analysis_eligible": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -436,12 +514,8 @@ def test_data_agent_withholds_data_without_raw_persistence(monkeypatch):
                 "broker": "Weltrade", "broker_symbol": "SFX Vol 75",
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars", "platform": "MT5",
-                "instrument_verification_status": "verified",
-                "timeframe_verified": True,
-                "analysis_eligible": True,
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
-                    "identity_pinned": True,
                     "broker_company": "Weltrade Ltd",
                     "server": "Weltrade-Demo",
                     "environment": "demo",
@@ -507,7 +581,11 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "instrument_verification_status": "verified",
+                "instrument_verification_id": "verification-001",
+                "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "verified_timeframes": ["5m"],
                 "timeframe_verified": True,
                 "analysis_eligible": True,
                 "account_identity": {
@@ -532,6 +610,13 @@ def test_data_agent_excludes_durably_quarantined_rows(monkeypatch):
                 "quality_report": {
                     "report_id": "quarantine-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
+                    "instrument_verification_status": "verified",
+                    "instrument_verification_id": "verification-001",
+                    "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "verified_timeframes": ["5m"],
+                    "timeframe_verified": True,
+                    "analysis_eligible": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": len(rows), "quarantined_observation_count": 1,
                     "quarantine_record_count": 1, "reason_counts": {"INVALID_OHLC": 1},
@@ -569,7 +654,11 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                 "server_name": "Weltrade-Demo", "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
+                "account_identity_pinned": True,
                 "instrument_verification_status": "verified",
+                "instrument_verification_id": "verification-001",
+                "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "verified_timeframes": ["5m"],
                 "timeframe_verified": True,
                 "analysis_eligible": True,
                 "account_identity": {
@@ -589,6 +678,13 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                 "quality_report": {
                     "report_id": "mismatch-report",
                     "account_fingerprint": "a" * 64,
+                    "account_identity_pinned": True,
+                    "instrument_verification_status": "verified",
+                    "instrument_verification_id": "verification-001",
+                    "instrument_metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "verified_timeframes": ["5m"],
+                    "timeframe_verified": True,
+                    "analysis_eligible": True,
                     "history_completeness": _complete_history_report(rows),
                     "received_count": 1, "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
@@ -601,7 +697,8 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
         data = DataAgent("SFX_VOL_75").fetch(["5m"])
     assert data == {}
 
-def test_data_agent_withholds_unverified_instrument_even_with_raw_evidence(monkeypatch):
+
+def test_data_agent_refuses_partially_verified_instrument_even_with_pinned_account(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
 
     class FakeResponse:
@@ -619,7 +716,7 @@ def test_data_agent_withholds_unverified_instrument_even_with_raw_evidence(monke
                 "account_environment": "demo",
                 "source_type": "broker_bars",
                 "platform": "MT5",
-                "raw_persistence": {"persisted": True},
+                "account_identity_pinned": True,
                 "account_identity": {
                     "account_fingerprint": "a" * 64,
                     "identity_pinned": True,
@@ -629,11 +726,13 @@ def test_data_agent_withholds_unverified_instrument_even_with_raw_evidence(monke
                     "platform": "MT5",
                 },
                 "instrument_verification_status": "partially_verified",
+                "instrument_verification_id": None,
+                "instrument_metadata_sha256": "c" * 64,
+                "verified_timeframes": [],
                 "timeframe_verified": False,
                 "analysis_eligible": False,
+                "raw_persistence": {"persisted": True},
             }
 
     with patch("agents.data_agent.requests.get", return_value=FakeResponse()):
-        data = DataAgent("SFX_VOL_75").fetch(["5m"])
-
-    assert data == {}
+        assert DataAgent("SFX_VOL_75").fetch(["5m"]) == {}

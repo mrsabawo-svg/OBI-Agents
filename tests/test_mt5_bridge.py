@@ -185,6 +185,14 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     assert first_payload["instrument_verification_status"] == "partially_verified"
     assert first_payload["timeframe_verified"] is False
     assert first_payload["analysis_eligible"] is False
+    invalid_verification = client.post("/instruments/verify", json={
+        "instrument_id": "SFX_VOL_75",
+        "broker_symbol": "SFX Vol 75",
+        "reviewer": "test-operator",
+        "evidence_report_ids": ["not-a-persisted-report"],
+    })
+    assert invalid_verification.status_code == 422
+
     verification_response = client.post("/instruments/verify", json={
         "instrument_id": "SFX_VOL_75",
         "broker_symbol": "SFX Vol 75",
@@ -195,7 +203,7 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     assert verification_response.status_code == 201
     assert verification_payload["instrument_verification_status"] == "verified"
     assert verification_payload["verified_timeframes"] == ["5m"]
-    # Two closed/valid candles are enough to attest the source, not enough for OBI analysis.
+    # One closed candle verifies the source path, but is insufficient for OBI analysis.
     assert verification_payload["analysis_eligible_timeframes"] == []
 
     response = client.get("/ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=2")
@@ -230,20 +238,27 @@ def test_ohlcv_endpoint_persists_raw_rows_and_quarantine_links_atomically(monkey
     from core.raw_observation_store import RawObservationStore
     store = RawObservationStore(tmp_path / "raw.sqlite3")
     quarantine = store.get_quarantine_records()
-    # The first and post-verification OHLCV requests are distinct append-only
-    # source batches; both invalid observations must remain in the evidence log.
+    # Both /ohlcv calls are distinct broker retrievals. The raw evidence store
+    # is append-only, so each malformed observation must retain its own
+    # quarantine link rather than being silently deduplicated.
     assert len(quarantine) == 2
-    assert {item["reason_code"] for item in quarantine} == {"INVALID_OHLC"}
-    assert len({item["batch_id"] for item in quarantine}) == 2
-    assert payload["data"][1]["observation_id"] in {
-        item["observation_id"] for item in quarantine
+    assert {record["observation_id"] for record in quarantine} == {
+        first_payload["data"][1]["observation_id"],
+        payload["data"][1]["observation_id"],
     }
+    assert {record["reason_code"] for record in quarantine} == {"INVALID_OHLC"}
 
     from core.canonical_data_store import CanonicalCandleStore
     canonical = CanonicalCandleStore(tmp_path / "raw.sqlite3")
+    # Both requests persist a separate canonical record because each has its
+    # own raw observation and validation report. Canonical lineage is append-only.
     assert canonical.count() == 2
+    first_saved = canonical.get(first_payload["canonical_persistence"]["candle_ids"][0])
     saved = canonical.get(payload["canonical_persistence"]["candle_ids"][0])
+    assert first_saved["source_observation_ids"] == [first_payload["data"][0]["observation_id"]]
     assert saved["source_observation_ids"] == [payload["data"][0]["observation_id"]]
+    assert first_saved["candle_id"] != saved["candle_id"]
+    assert first_saved["validation_report_id"] == first_payload["quality_report"]["report_id"]
     assert saved["validation_report_id"] == payload["quality_report"]["report_id"]
 
 
@@ -320,20 +335,6 @@ def test_ohlcv_blocks_metadata_drift_after_symbol_discovery(monkeypatch, tmp_pat
     assert "metadata changed" in response.get_json()["error"]
 
 
-def test_verified_session_model_configuration_is_explicit_and_strict():
-    assert mt5_bridge._load_verified_session_models("") == {}
-    assert mt5_bridge._load_verified_session_models(
-        '{"SFX_VOL_75":"continuous_24_7"}'
-    ) == {"SFX_VOL_75": "continuous_24_7"}
-    with pytest.raises(ValueError, match="valid JSON"):
-        mt5_bridge._load_verified_session_models("{invalid")
-    with pytest.raises(ValueError, match="continuous_24_7"):
-        mt5_bridge._load_verified_session_models(
-            '{"EURUSD":"assumed_24_5"}'
-        )
-
-# Preserved account identity and connector initialization regression tests.
-
 def test_ohlcv_refuses_unpinned_account_even_after_symbol_discovery(monkeypatch, tmp_path):
     class FakeConnector:
         def get_account_identity(self):
@@ -369,6 +370,7 @@ def test_ohlcv_refuses_unpinned_account_even_after_symbol_discovery(monkeypatch,
     assert response.status_code == 409
     assert "identity is not pinned" in response.get_json()["error"]
 
+
 def test_init_mt5_requires_stable_fingerprint_key_and_exact_server(monkeypatch):
     monkeypatch.setattr(mt5_bridge, "mt5", object())
     monkeypatch.setattr(mt5_bridge, "MT5_BROKER_NAME", "Weltrade")
@@ -385,6 +387,7 @@ def test_init_mt5_requires_stable_fingerprint_key_and_exact_server(monkeypatch):
     assert ok is False
     assert "fingerprint_key" in message.lower()
 
+
 def test_init_mt5_clears_stale_connector_before_rejecting_configuration(monkeypatch):
     stale_connector = object()
     monkeypatch.setattr(mt5_bridge, "connector", stale_connector)
@@ -395,6 +398,7 @@ def test_init_mt5_clears_stale_connector_before_rejecting_configuration(monkeypa
     assert ok is False
     assert "package not installed" in message
     assert mt5_bridge.connector is None
+
 
 def test_init_mt5_uses_prelogged_terminal_without_triggering_partial_login(monkeypatch):
     captured = {}
@@ -426,3 +430,53 @@ def test_init_mt5_uses_prelogged_terminal_without_triggering_partial_login(monke
     assert captured["kwargs"]["server"] is None
     assert captured["kwargs"]["fingerprint_key"] == "k" * 40
     assert captured["kwargs"]["expected_account_fingerprint"] is None
+
+
+def test_verified_session_model_configuration_is_explicit_and_strict():
+    assert mt5_bridge._load_verified_session_models("") == {}
+    assert mt5_bridge._load_verified_session_models(
+        '{"SFX_VOL_75":"continuous_24_7"}'
+    ) == {"SFX_VOL_75": "continuous_24_7"}
+    with pytest.raises(ValueError, match="valid JSON"):
+        mt5_bridge._load_verified_session_models("{invalid")
+    with pytest.raises(ValueError, match="continuous_24_7"):
+        mt5_bridge._load_verified_session_models(
+            '{"EURUSD":"assumed_24_5"}'
+        )
+
+def test_analysis_eligibility_requires_at_least_sixty_closed_candles():
+    class FakeRegistry:
+        def __init__(self, closed_count):
+            self.closed_count = closed_count
+
+        def latest_verification(self, *args):
+            return {
+                "metadata_sha256": "a" * 64,
+                "verification_status": "verified",
+                "verified_timeframes": ["5m"],
+                "verification_id": "verification-001",
+                "verified_at": "2026-11-09T00:00:00+00:00",
+                "reviewer": "test-operator",
+                "evidence_refs": [{
+                    "report_id": "report-001",
+                    "report_sha256": "b" * 64,
+                    "timeframe": "5m",
+                    "closed_candle_count": self.closed_count,
+                }],
+            }
+
+    def state(closed_count):
+        return mt5_bridge._instrument_verification_state(
+            FakeRegistry(closed_count),
+            "c" * 64,
+            "SFX_VOL_75",
+            "SFX Vol 75",
+            "5m",
+            "a" * 64,
+        )
+
+    assert state(59)["timeframe_verified"] is True
+    assert state(59)["analysis_eligible"] is False
+    assert state(60)["timeframe_verified"] is True
+    assert state(60)["analysis_eligible"] is True
+    assert state(60)["analysis_eligible_timeframes"] == ["5m"]

@@ -19,7 +19,10 @@ python -m pip install Flask MetaTrader5 waitress
 Set these on the Windows machine or VPS that runs the MT5 terminal:
 
 - `MT5_BROKER_NAME`: broker name, e.g. `Weltrade`.
+- `MT5_SERVER`: exact expected MT5 server name. Required even when the terminal is already logged in.
 - `MT5_ACCOUNT_ENVIRONMENT`: `demo`, `live`, or `contest`. The connector verifies this against the actual MT5 `account_info().trade_mode` value using the MetaTrader5 package constants; a mismatch or unavailable trade mode fails closed.
+- `MT5_ACCOUNT_FINGERPRINT_KEY`: stable secret of at least 32 characters used to HMAC-pseudonymize the account login. Keep it private and back it up with the SQLite database; losing or rotating it changes the fingerprint.
+- `MT5_EXPECTED_ACCOUNT_FINGERPRINT`: leave unset only for initial discovery. After reviewing `/symbols`, set it to the returned 64-character fingerprint and restart the bridge. Market-data requests are blocked until this pin matches.
 - `MT5_SYMBOL_MAP_JSON`: JSON mapping from OBI's internal instrument IDs to exact symbols visible in this account.
 - `MT5_RAW_DB_PATH`: durable SQLite file path shared by raw observations, canonical candles, and the append-only account/instrument registry. Default: `data/raw_observations.sqlite3`.
 - `MT5_BRIDGE_HOST`: defaults to `127.0.0.1`.
@@ -29,26 +32,28 @@ Example only — replace the broker symbol with the exact string shown in your o
 
 ```powershell
 $env:MT5_BROKER_NAME = "Weltrade"
+$env:MT5_SERVER = "EXACT SERVER NAME FROM MT5"
 $env:MT5_ACCOUNT_ENVIRONMENT = "demo"
+$env:MT5_ACCOUNT_FINGERPRINT_KEY = "REPLACE_WITH_A_STABLE_RANDOM_SECRET_AT_LEAST_32_CHARS"
 $env:MT5_SYMBOL_MAP_JSON = '{"SFX_VOL_75":"EXACT SYMBOL FROM MARKET WATCH"}'
 $env:MT5_RAW_DB_PATH = "D:\OBI\data\raw_observations.sqlite3"
 $env:MT5_BRIDGE_HOST = "127.0.0.1"
-$env:MT5_ACCOUNT_FINGERPRINT_KEY = "<store a random secret of at least 32 bytes>"
-# Leave MT5_EXPECTED_ACCOUNT_FINGERPRINT unset for initial discovery only.
 python mt5_bridge.py
 ```
 
-Do not copy the example placeholder as a real symbol. Confirm it in the connected account first.
+Do not copy the example placeholders as real values. Confirm the exact server and symbol in the connected MT5 terminal first. Generate a fingerprint key with `python -c "import secrets; print(secrets.token_urlsafe(48))"`; store it as a host secret, not in Git.
 
-If the terminal is already logged in, the bridge can use that session. Alternatively set all three variables `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER`; never commit them to Git or place them in source code.
-First-run identity pinning:
+If the terminal is already logged in, the bridge can use that session while still checking the exact configured `MT5_SERVER`. Alternatively set both `MT5_LOGIN` and `MT5_PASSWORD` to authenticate explicitly; the server remains required. Never commit credentials or fingerprint keys to Git.
 
-1. Start the bridge with the fingerprint key set and `MT5_EXPECTED_ACCOUNT_FINGERPRINT` unset.
-2. Call the authenticated `/symbols` endpoint and inspect the returned account fingerprint, broker company, exact server, and environment.
-3. Independently confirm that this is the intended account. Only then set `MT5_EXPECTED_ACCOUNT_FINGERPRINT` to the exact 64-character fingerprint returned by `/symbols` and restart the bridge.
-4. Until the fingerprint is pinned, `/ohlcv` deliberately returns HTTP 409. Discovery does not authorize candle retrieval.
+### First-run account pinning
 
-Never commit either secret or the expected fingerprint to Git.
+1. Start the bridge with the fingerprint key and exact server configured, but leave `MT5_EXPECTED_ACCOUNT_FINGERPRINT` unset. Leave `MT5_SYMBOL_MAP_JSON` empty (`{}`) during this discovery pass.
+2. Call authenticated `GET /symbols`. Confirm its broker, exact server, environment, and masked account-login suffix match the account visible in MT5. The response will say `account_identity_pinned=false`.
+3. Copy the returned `account_fingerprint` into `MT5_EXPECTED_ACCOUNT_FINGERPRINT`, configure `MT5_SYMBOL_MAP_JSON` with only the exact reviewed symbol mappings, and restart the bridge.
+4. Confirm `/health` reports `account_identity_pinned=true`, then repeat `/symbols` and check the same fingerprint.
+5. Only then can `/ohlcv` return data. Until the pin is set, it returns HTTP 409. DataAgent independently rejects any response without pin evidence.
+
+The fingerprint is an HMAC-SHA256 pseudonymous account identifier, not a password or access token. The full MT5 login is not returned or stored; only its last four digits are exposed for first-run operator confirmation. Keep the HMAC key stable across restarts and backups. Do not reuse `MT5_BRIDGE_TOKEN`: the fingerprint key and HTTP bearer token serve different purposes.
 
 ## Remote access
 
@@ -61,29 +66,6 @@ The default loopback binding is intended for OBI and MT5 to run on the same mach
 
 A GitHub-hosted Actions runner cannot reach a bridge at your computer's `localhost`. Either run OBI beside the bridge or provide a private, authenticated route from the runner. Do not solve this by exposing an unauthenticated public endpoint.
 
-## Instrument and timeframe verification
-
-A symbol appearing in MT5 Market Watch is discovery evidence only. After account identity is pinned and a successful `/ohlcv` request has persisted its validation report, an operator can attest the exact instrument/timeframe using the report ID returned as `quality_report.report_id`.
-
-Example request from the trusted bridge host:
-
-```powershell
-$body = @{
-  instrument_id = "SFX_VOL_75"
-  broker_symbol = "EXACT SYMBOL FROM MARKET WATCH"
-  reviewer = "operator identifier"
-  evidence_report_ids = @("<quality_report.report_id>")
-} | ConvertTo-Json
-
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:5000/instruments/verify" -ContentType "application/json" -Body $body
-```
-
-The bridge accepts only persisted reports matching the pinned account, exact server, instrument, broker symbol, timeframe, complete requested-window history, and at least one valid closed canonical candle. Verification is append-only and tied to the discovered symbol metadata fingerprint; a metadata change invalidates the prior verification for that symbol.
-
-**Verification is not analysis eligibility.** A timeframe is only marked analysis-eligible when its latest operator verification is backed by at least 60 valid closed canonical candles. OBI's DataAgent applies its own response, lineage, and history checks before admitting the data. Neither status grants execution permission.
-
-The `reviewer` value is an operator attestation label, not a digital signature. Invoke this endpoint only from a trusted local session or a separately reviewed private authenticated route.
-
 ## Data persistence and eligibility
 
 The bridge writes original MT5 rate fields to SQLite before returning data. If persistence fails, the request fails and OBI withholds the data. SQLite update/delete triggers prevent application-level mutation; the database file itself still requires normal filesystem access controls and backups.
@@ -93,13 +75,36 @@ The response labels tick volume explicitly. A request from MT5 position zero mar
 A successful HTTP response does not by itself promote an instrument to verified. Exact symbol, broker/server, account environment, timeframe, data quality, and persisted evidence must still be reviewed.
 
 
+## Instrument verification and OBI analysis eligibility
+
+Account pinning is necessary but not sufficient for signal analysis. A discovered symbol remains `partially_verified` until an operator approves exact instrument/timeframe evidence.
+
+1. After account pinning and exact `MT5_SYMBOL_MAP_JSON` configuration, call authenticated `GET /symbols`.
+2. Request the required timeframes through `GET /ohlcv?symbol=SFX_VOL_75&timeframe=5m&count=300` (repeat for each timeframe). The bridge persists raw observations, canonical candles, and an immutable validation report. Before approval the response is still useful as evidence, but reports `analysis_eligible=false`; DataAgent will not consume it.
+3. Review the broker symbol, contract metadata, account fingerprint, history-completeness report, quarantine counts, and closed canonical candles.
+4. Submit an authenticated `POST /instruments/verify` request with the exact instrument/symbol and the validation report IDs to approve:
+
+   ```json
+   {
+     "instrument_id": "SFX_VOL_75",
+     "broker_symbol": "SFX Vol 75",
+     "reviewer": "operator-review",
+     "evidence_report_ids": ["REPORT_ID_5M", "REPORT_ID_15M"]
+   }
+   ```
+
+5. The bridge verifies each report's immutable hash, account pin, exact account/instrument/symbol identity, complete history status, and at least one valid closed canonical candle. It records an append-only verification event and returns the approved timeframes.
+6. Only approved timeframes return `analysis_eligible=true` and pass DataAgent's independent gate. A timeframe not included in the approval cannot feed OBI analysis.
+
+A new account fingerprint, changed broker contract metadata, changed exact symbol mapping, or unapproved timeframe automatically removes analysis eligibility. Rediscover and explicitly re-verify after such changes. Repeated discovery with unchanged metadata does not erase an existing approval.
+
 ## Connector capabilities and API
 
 The reusable connector has explicit lifecycle states: DISCONNECTED, INITIALIZING, CONNECTED, AUTHENTICATED, and ERROR. A session is trusted only after terminal connectivity, configured broker/server identity checks, and actual MT5 account trade-mode verification pass. Access to the process-wide MT5 API is serialized across HTTP worker threads so concurrent requests cannot interleave terminal operations. If the session drops, the connector performs one bounded reconnect attempt when a data request arrives; it does not retry indefinitely.
 
-- GET /health reports connection state only.
+- GET /health reports connection state and whether the expected account fingerprint is pinned.
 - GET /symbols returns account-scoped symbol discovery and contract metadata (digits, point, tick size/value, contract size, currencies, volume limits, path, and availability flags). Every call appends the account observation and symbol snapshot to the SQLite registry. Discovery does not classify a symbol as SyntX or mark it analysis-eligible.
-- GET /ohlcv requires a prior /symbols discovery for the same account fingerprint and exact broker symbol. A changed contract-metadata fingerprint or ambiguous OBI mapping blocks the request until reviewed and rediscovered.
+- GET /ohlcv requires an explicit expected-account fingerprint pin, a prior /symbols discovery for the same account fingerprint, and an exact broker symbol mapping. A changed contract-metadata fingerprint or ambiguous OBI mapping blocks the request.
 - GET /ohlcv?symbol=OBI_ID&timeframe=5m|15m|1h|4h&count=1..20000&start_pos=0..1000000 returns mapped broker rates after persistence. Requests up to 20,000 bars are fetched in 2,000-bar pages. The bridge reassembles pages chronologically and checks that the newest bar open-time anchor did not change during multi-page retrieval. This detects a new bar opening and shifting position-based pages; it does not claim that the broker never revises historical OHLC values. Position zero may include the current bar; forming/closed status is determined from the UTC timeframe boundary, not array position.
 
 Only exact symbols configured in MT5_SYMBOL_MAP_JSON can be requested through the OBI instrument ID. Symbol discovery is evidence for account-specific mapping, not automatic authorization. Timeframes are explicit; unsupported values fail rather than falling back.
@@ -153,7 +158,7 @@ This is the first direct lineage integration. Derived indicator/feature dependen
 
 ## Signal archive lineage manifest
 
-Each scan builds a bounded `obi-data-lineage-v3` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
+Each scan builds a bounded `obi-data-lineage-v5` manifest from the market-data frames supplied to the analysis pipeline. The archive records, per timeframe, the source batch ID, validation report ID and hash, broker/account/symbol identity, bar count, first/last bar times, a compact row-quality summary, and the last 50 canonical/raw IDs. The batch and report references allow the complete evidence set to be resolved from SQLite without copying hundreds of candle IDs into every signal record.
 
 Manifest status is explicit. These labels describe provenance coverage for the data frames used by the scan, not broker-history completeness, data quality approval, or trading eligibility:
 - `complete`: every expected timeframe has canonical IDs and a complete immutable source/report reference.
@@ -196,7 +201,7 @@ Account fingerprints are also included in each immutable validation report and r
 
 Each OHLCV response now includes an immutable history-completeness subreport. The report is scoped to the exact requested window (count and start position); it does not claim that all older broker history exists. It records requested/returned counts, page boundaries, latest-bar anchor stability, timestamp ordering/alignment, duplicates, gaps, forming/closed bars, freshness, and a status of complete, incomplete, or unverifiable. A complete status certifies only the requested window, not the broker's entire historical archive.
 
-Unexplained gaps or stale latest data remain unverifiable when no verified broker session calendar is available. They are not silently treated as missing bars or as valid continuous-market history. A verified continuous 24/7 session model can classify those gaps as incomplete. DataAgent accepts only complete history windows; incomplete or unverifiable windows are persisted as evidence but withheld from signal generation. The archived per-timeframe data lineage now uses schema v3 and carries the history report summary alongside the account fingerprint.
+Unexplained gaps or stale latest data remain unverifiable when no verified broker session calendar is available. They are not silently treated as missing bars or as valid continuous-market history. A verified continuous 24/7 session model can classify those gaps as incomplete. DataAgent accepts only complete history windows; incomplete or unverifiable windows are persisted as evidence but withheld from signal generation. The archived per-timeframe data lineage now uses schema v5 and carries the history report summary alongside the account fingerprint.
 
 ### Explicit session-calendar declaration
 
@@ -207,3 +212,12 @@ MT5_VERIFIED_SESSION_MODEL_JSON='{"SFX_VOL_75":"continuous_24_7"}'
 ```
 
 Do not set this merely because an instrument is labelled synthetic or because SessionAgent permits trading. Without this declaration, unexplained gaps and stale latest windows remain unverifiable and DataAgent withholds signals.
+
+## Instrument/timeframe verification and analysis eligibility
+
+After account pinning, exact symbol discovery, and an `/ohlcv` request that persists a validation report, an operator can approve an instrument/timeframe through `POST /instruments/verify`. Supply the exact `instrument_id`, exact `broker_symbol`, a reviewer label, and the persisted `quality_report.report_id` in `evidence_report_ids`. The endpoint verifies the stored report hash, account fingerprint, exact server, metadata fingerprint, instrument mapping, timeframe, history report, and canonical closed-candle evidence before appending an immutable verification record.
+
+A timeframe can be **verified** with at least one valid closed canonical candle. It is not marked **analysis-eligible** until the latest verification contains at least 60 valid closed canonical candles for that timeframe. This is a minimum warm-up floor; OBI's DataAgent still applies its own history and lineage checks. Verification and analysis eligibility never grant trade-execution permission.
+
+The `reviewer` field is an operator attestation label, not a digital signature. Use the endpoint only from a trusted local session or a separately reviewed private authenticated route.
+

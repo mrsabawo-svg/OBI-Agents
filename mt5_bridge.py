@@ -17,11 +17,7 @@ from flask import Flask, jsonify, request
 from core.mt5_connector import ConnectionIdentity, MT5Connector
 from core.raw_observation_store import RawObservationStore
 from core.canonical_data_store import CanonicalCandleStore
-from core.instrument_registry_store import (
-    InstrumentRegistryStore,
-    metadata_fingerprint,
-    MIN_ANALYSIS_CLOSED_CANDLES,
-)
+from core.instrument_registry_store import InstrumentRegistryStore, metadata_fingerprint
 from core.history_completeness import assess_history_completeness, TIMEFRAME_SECONDS
 
 try:
@@ -39,9 +35,11 @@ MT5_BRIDGE_TOKEN = os.environ.get("MT5_BRIDGE_TOKEN", "")
 MT5_BRIDGE_HOST = os.environ.get("MT5_BRIDGE_HOST", "127.0.0.1")
 MT5_BROKER_NAME = os.environ.get("MT5_BROKER_NAME", "unknown")
 MT5_ACCOUNT_ENVIRONMENT = os.environ.get("MT5_ACCOUNT_ENVIRONMENT", "unknown")
-MT5_ACCOUNT_FINGERPRINT_KEY = os.environ.get("MT5_ACCOUNT_FINGERPRINT_KEY", "")
-MT5_EXPECTED_ACCOUNT_FINGERPRINT = os.environ.get("MT5_EXPECTED_ACCOUNT_FINGERPRINT", "")
 MT5_RAW_DB_PATH = os.environ.get("MT5_RAW_DB_PATH", "data/raw_observations.sqlite3")
+MT5_ACCOUNT_FINGERPRINT_KEY = os.environ.get("MT5_ACCOUNT_FINGERPRINT_KEY", "")
+MT5_EXPECTED_ACCOUNT_FINGERPRINT = (
+    os.environ.get("MT5_EXPECTED_ACCOUNT_FINGERPRINT", "").strip() or None
+)
 
 
 def _load_verified_session_models(raw_value):
@@ -71,6 +69,7 @@ MT5_VERIFIED_SESSION_MODELS = _load_verified_session_models(
     os.environ.get("MT5_VERIFIED_SESSION_MODEL_JSON", "")
 )
 MAX_COUNT = 20000
+MIN_ANALYSIS_CLOSED_CANDLES = 60
 CANONICAL_TRANSFORMATION_VERSION = "mt5-broker-bars-v1"
 connector = None
 
@@ -82,7 +81,8 @@ def _symbol_map():
     except json.JSONDecodeError as exc:
         raise RuntimeError("MT5_SYMBOL_MAP_JSON must be valid JSON") from exc
     if not isinstance(parsed, dict) or any(
-        not isinstance(k, str) or not isinstance(v, str) or not v.strip()
+        not isinstance(k, str) or not k.strip() or k.strip() != k
+        or not isinstance(v, str) or not v.strip() or v.strip() != v
         for k, v in parsed.items()
     ):
         raise RuntimeError("MT5_SYMBOL_MAP_JSON must map internal IDs to exact broker symbols")
@@ -242,8 +242,6 @@ def require_bridge_authentication():
 
 def init_mt5():
     global connector
-    # Never leave a stale authenticated connector reachable after a failed
-    # reconfiguration attempt.
     connector = None
     if mt5 is None:
         return False, "MetaTrader5 package not installed"
@@ -251,20 +249,18 @@ def init_mt5():
         return False, "MT5_BROKER_NAME must identify the configured broker"
     if MT5_ACCOUNT_ENVIRONMENT not in {"demo", "live", "contest"}:
         return False, "MT5_ACCOUNT_ENVIRONMENT must be demo, live, or contest"
-    if not MT5_SERVER.strip():
-        return False, "MT5_SERVER must specify the exact expected broker server"
-    if len(MT5_ACCOUNT_FINGERPRINT_KEY.encode("utf-8")) < 32:
-        return False, "MT5_ACCOUNT_FINGERPRINT_KEY must be at least 32 bytes"
-    if MT5_EXPECTED_ACCOUNT_FINGERPRINT and (
+    if not MT5_SERVER or not MT5_SERVER.strip():
+        return False, "MT5_SERVER must identify the exact expected broker server"
+    if len(MT5_ACCOUNT_FINGERPRINT_KEY) < 32:
+        return False, "MT5_ACCOUNT_FINGERPRINT_KEY must contain at least 32 characters"
+    if MT5_EXPECTED_ACCOUNT_FINGERPRINT is not None and (
         len(MT5_EXPECTED_ACCOUNT_FINGERPRINT) != 64
         or any(char not in "0123456789abcdef" for char in MT5_EXPECTED_ACCOUNT_FINGERPRINT)
     ):
         return False, "MT5_EXPECTED_ACCOUNT_FINGERPRINT must be a lowercase SHA-256 hex digest"
     if bool(MT5_LOGIN) != bool(MT5_PASSWORD):
         return False, "MT5_LOGIN and MT5_PASSWORD must be configured together"
-
-    explicit_login = bool(MT5_LOGIN and MT5_PASSWORD)
-    candidate = MT5Connector(
+    connector = MT5Connector(
         mt5,
         ConnectionIdentity(
             broker=MT5_BROKER_NAME,
@@ -273,19 +269,78 @@ def init_mt5():
         ),
         login=MT5_LOGIN or None,
         password=MT5_PASSWORD or None,
-        # A pre-authenticated terminal must not receive a partial login call.
-        server=MT5_SERVER if explicit_login else None,
+        server=MT5_SERVER if MT5_LOGIN and MT5_PASSWORD else None,
         terminal_path=MT5_PATH or None,
         reconnect_attempts=1,
         fingerprint_key=MT5_ACCOUNT_FINGERPRINT_KEY,
-        expected_account_fingerprint=MT5_EXPECTED_ACCOUNT_FINGERPRINT or None,
+        expected_account_fingerprint=MT5_EXPECTED_ACCOUNT_FINGERPRINT,
     )
-    connector = candidate
     if not connector.connect():
-        message = connector.last_error or "MT5 connection failed"
-        connector = None
-        return False, message
+        return False, connector.last_error or "MT5 connection failed"
     return True, "connected"
+
+
+
+def _instrument_verification_state(
+    registry: InstrumentRegistryStore,
+    account_fingerprint: str,
+    instrument_id: str,
+    broker_symbol: str,
+    timeframe: str,
+    current_metadata_sha256: str,
+) -> dict:
+    verification = registry.latest_verification(
+        account_fingerprint, instrument_id, broker_symbol
+    )
+    if verification is None:
+        status = "partially_verified"
+        verified_timeframes = []
+        evidence_refs = []
+        verification_id = None
+        verified_at = None
+        reviewer = None
+    elif verification.get("metadata_sha256") != current_metadata_sha256:
+        status = "stale"
+        verified_timeframes = verification.get("verified_timeframes", [])
+        evidence_refs = verification.get("evidence_refs", [])
+        verification_id = verification.get("verification_id")
+        verified_at = verification.get("verified_at")
+        reviewer = verification.get("reviewer")
+    else:
+        status = verification.get("verification_status", "unverified")
+        verified_timeframes = verification.get("verified_timeframes", [])
+        evidence_refs = verification.get("evidence_refs", [])
+        verification_id = verification.get("verification_id")
+        verified_at = verification.get("verified_at")
+        reviewer = verification.get("reviewer")
+
+    analysis_eligible_timeframes = sorted({
+        item["timeframe"]
+        for item in evidence_refs
+        if (
+            isinstance(item, dict)
+            and item.get("timeframe") in {"5m", "15m", "1h", "4h"}
+            and isinstance(item.get("closed_candle_count"), int)
+            and not isinstance(item.get("closed_candle_count"), bool)
+            and item["closed_candle_count"] >= MIN_ANALYSIS_CLOSED_CANDLES
+        )
+    })
+    timeframe_verified = status == "verified" and timeframe in verified_timeframes
+    analysis_eligible = (
+        timeframe_verified and timeframe in analysis_eligible_timeframes
+    )
+    return {
+        "status": status,
+        "verification_id": verification_id,
+        "metadata_sha256": current_metadata_sha256,
+        "verified_timeframes": verified_timeframes,
+        "analysis_eligible_timeframes": analysis_eligible_timeframes,
+        "timeframe_verified": timeframe_verified,
+        "analysis_eligible": analysis_eligible,
+        "reviewer": reviewer,
+        "verified_at": verified_at,
+    }
+
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -296,6 +351,9 @@ def health():
         "status": "connected" if connected else "disconnected",
         "connected": connected,
         "state": connector.state.value,
+        "account_identity_pinned": bool(
+            connector.expected_account_fingerprint
+        ),
     }), (200 if connected else 503)
 
 
@@ -309,7 +367,6 @@ def get_symbols():
         discovery = InstrumentRegistryStore(MT5_RAW_DB_PATH).record_discovery(
             account_identity, symbols, SYMBOL_MAP
         )
-        account_identity_pinned = bool(account_identity.get("identity_pinned"))
     except Exception:
         app.logger.exception("MT5 symbol discovery or registry persistence failed")
         return jsonify({
@@ -320,14 +377,16 @@ def get_symbols():
         "status": "ok",
         "count": len(symbols),
         "account_identity": account_identity,
-        "account_identity_pinned": account_identity_pinned,
+        "account_identity_pinned": account_identity.get("identity_pinned") is True,
         "discovery": discovery,
         "symbols": symbols,
     })
 
 
+
 @app.route("/instruments/verify", methods=["POST"])
 def verify_instrument():
+    """Record explicit operator approval backed by immutable canonical evidence."""
     if connector is None:
         return jsonify({"status": "error", "error": "MT5 connector is not initialized"}), 503
     payload = request.get_json(silent=True)
@@ -337,58 +396,128 @@ def verify_instrument():
     instrument_id = payload.get("instrument_id")
     broker_symbol = payload.get("broker_symbol")
     reviewer = payload.get("reviewer")
-    evidence_ids = payload.get("evidence_report_ids")
+    evidence_report_ids = payload.get("evidence_report_ids")
+    if not isinstance(instrument_id, str) or not instrument_id.strip():
+        return jsonify({"status": "error", "error": "instrument_id is required"}), 400
+    if not isinstance(broker_symbol, str) or not broker_symbol.strip():
+        return jsonify({"status": "error", "error": "broker_symbol is required"}), 400
+    if not isinstance(reviewer, str) or not reviewer.strip():
+        return jsonify({"status": "error", "error": "reviewer is required"}), 400
     if (
-        not isinstance(instrument_id, str) or not instrument_id.strip()
-        or not isinstance(broker_symbol, str) or not broker_symbol.strip()
-        or not isinstance(reviewer, str) or not reviewer.strip()
-        or not isinstance(evidence_ids, list) or not evidence_ids
-        or any(not isinstance(item, str) or not item for item in evidence_ids)
+        not isinstance(evidence_report_ids, list)
+        or not evidence_report_ids
+        or any(not isinstance(value, str) or not value.strip() for value in evidence_report_ids)
+        or len(set(evidence_report_ids)) != len(evidence_report_ids)
     ):
         return jsonify({
             "status": "error",
-            "error": "instrument_id, exact broker_symbol, reviewer, and evidence_report_ids are required",
+            "error": "evidence_report_ids must be a non-empty list of unique report IDs",
         }), 400
 
     try:
         account_identity = connector.get_account_identity()
-        if not account_identity.get("identity_pinned", False):
+        if account_identity.get("identity_pinned") is not True:
+            return jsonify({"status": "error", "error": "account identity must be pinned first"}), 409
+        account_fingerprint = account_identity["account_fingerprint"]
+        if SYMBOL_MAP.get(instrument_id) != broker_symbol:
             return jsonify({
                 "status": "error",
-                "error": "MT5 account identity is not pinned; instrument verification is unavailable",
+                "error": "requested instrument and broker symbol do not match the configured exact mapping",
             }), 409
+
+        registry = InstrumentRegistryStore(MT5_RAW_DB_PATH)
+        discovery = registry.latest_symbol(account_fingerprint, broker_symbol)
+        if discovery is None:
+            return jsonify({"status": "error", "error": "call /symbols before instrument verification"}), 409
+        if discovery["mapping_conflict"] or instrument_id not in discovery["mapped_instrument_ids"]:
+            return jsonify({"status": "error", "error": "instrument mapping is missing or ambiguous"}), 409
+
+        selected_symbol = connector.select_symbol(broker_symbol)
+        current_metadata_sha256 = metadata_fingerprint(
+            selected_symbol.get("metadata", {})
+        )
+        if current_metadata_sha256 != discovery["metadata_sha256"]:
+            return jsonify({
+                "status": "error",
+                "error": "broker contract metadata changed; rediscover and review the symbol before verification",
+            }), 409
+
         canonical_store = CanonicalCandleStore(MT5_RAW_DB_PATH)
-        evidence_reports = []
-        for report_id in evidence_ids:
-            report = canonical_store.get_validation_report(report_id)
-            if report is None:
+        evidence_refs = []
+        seen_timeframes = set()
+        for report_id in evidence_report_ids:
+            saved = canonical_store.get_validation_report(report_id)
+            if saved is None:
                 return jsonify({
                     "status": "error",
-                    "error": f"persisted validation report not found: {report_id}",
-                }), 409
-            evidence_reports.append(report)
-        verification = InstrumentRegistryStore(
-            MT5_RAW_DB_PATH
-        ).record_verification(
-            account_identity,
-            instrument_id.strip(),
-            broker_symbol.strip(),
-            reviewer.strip(),
-            evidence_reports,
+                    "error": f"canonical validation report not found: {report_id}",
+                }), 422
+            report = saved["report"]
+            quality = report.get("report") if isinstance(report, dict) else None
+            history = quality.get("history_completeness") if isinstance(quality, dict) else None
+            timeframe = report.get("timeframe") if isinstance(report, dict) else None
+            if (
+                report.get("report_id") != report_id
+                or report.get("instrument_id") != instrument_id
+                or report.get("broker_symbol") != broker_symbol
+                or report.get("broker") != MT5_BROKER_NAME
+                or report.get("server_name") != account_identity.get("server")
+                or report.get("account_environment") != account_identity.get("environment")
+                or timeframe not in {"5m", "15m", "1h", "4h"}
+                or timeframe in seen_timeframes
+                or not isinstance(quality, dict)
+                or quality.get("account_fingerprint") != account_fingerprint
+                or quality.get("account_identity_pinned") is not True
+                or quality.get("instrument_metadata_sha256") != current_metadata_sha256
+                or not isinstance(history, dict)
+                or history.get("status") != "complete"
+                or history.get("account_fingerprint") != account_fingerprint
+                or history.get("instrument_id") != instrument_id
+                or history.get("broker_symbol") != broker_symbol
+                or history.get("timeframe") != timeframe
+            ):
+                return jsonify({
+                    "status": "error",
+                    "error": f"validation report does not prove complete pinned evidence for this instrument: {report_id}",
+                }), 422
+            closed_candle_count = canonical_store.count_closed_for_report(report_id)
+            if closed_candle_count < 1:
+                return jsonify({
+                    "status": "error",
+                    "error": f"validation report has no valid closed canonical candles: {report_id}",
+                }), 422
+            seen_timeframes.add(timeframe)
+            evidence_refs.append({
+                "report_id": report_id,
+                "report_sha256": saved["report_sha256"],
+                "timeframe": timeframe,
+                "closed_candle_count": closed_candle_count,
+            })
+
+        verification = registry.record_verification(
+            account_identity=account_identity,
+            instrument_id=instrument_id,
+            broker_symbol=broker_symbol,
+            metadata_sha256=current_metadata_sha256,
+            evidence_refs=evidence_refs,
+            reviewer=reviewer,
         )
-    except ValueError as exc:
-        return jsonify({"status": "error", "error": str(exc)}), 409
+    except (ValueError, KeyError) as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 400
     except Exception:
         app.logger.exception("Instrument verification failed")
-        return jsonify({
-            "status": "error",
-            "error": "instrument verification failed; no approval was recorded",
-        }), 503
+        return jsonify({"status": "error", "error": "instrument verification failed"}), 503
 
     return jsonify({
         "status": "ok",
         "instrument_verification_status": "verified",
-        **verification,
+        "verified_timeframes": verification["verified_timeframes"],
+        "analysis_eligible_timeframes": sorted({
+            item["timeframe"]
+            for item in verification["evidence_refs"]
+            if item["closed_candle_count"] >= MIN_ANALYSIS_CLOSED_CANDLES
+        }),
+        "verification": verification,
     }), 201
 
 
@@ -421,10 +550,10 @@ def get_ohlcv():
 
     try:
         account_identity = connector.get_account_identity()
-        if not account_identity.get("identity_pinned", False):
+        if account_identity.get("identity_pinned") is not True:
             return jsonify({
                 "status": "error",
-                "error": "MT5 account identity is not pinned; configure MT5_EXPECTED_ACCOUNT_FINGERPRINT before requesting candles",
+                "error": "account identity is not pinned; review /symbols and configure MT5_EXPECTED_ACCOUNT_FINGERPRINT before requesting market data",
             }), 409
         registry = InstrumentRegistryStore(MT5_RAW_DB_PATH)
         latest_discovery = registry.latest_symbol(
@@ -447,11 +576,20 @@ def get_ohlcv():
             }), 409
         selected_symbol = connector.select_symbol(broker_symbol)
         current_metadata = selected_symbol.get("metadata", {})
-        if metadata_fingerprint(current_metadata) != latest_discovery["metadata_sha256"]:
+        current_metadata_sha256 = metadata_fingerprint(current_metadata)
+        if current_metadata_sha256 != latest_discovery["metadata_sha256"]:
             return jsonify({
                 "status": "error",
                 "error": "broker symbol contract metadata changed; rediscover symbols before requesting data",
             }), 409
+        instrument_verification = _instrument_verification_state(
+            registry,
+            account_identity["account_fingerprint"],
+            symbol_id,
+            broker_symbol,
+            timeframe,
+            current_metadata_sha256,
+        )
         rates, fetch_metadata = connector.fetch_rates_detailed(
             broker_symbol, timeframe, count, start_pos
         )
@@ -564,6 +702,13 @@ def get_ohlcv():
     quality_report = {
         "report_id": validation_report_id,
         "account_fingerprint": account_identity["account_fingerprint"],
+        "account_identity_pinned": True,
+        "instrument_verification_status": instrument_verification["status"],
+        "instrument_verification_id": instrument_verification["verification_id"],
+        "instrument_metadata_sha256": instrument_verification["metadata_sha256"],
+        "verified_timeframes": instrument_verification["verified_timeframes"],
+        "timeframe_verified": instrument_verification["timeframe_verified"],
+        "analysis_eligible": instrument_verification["analysis_eligible"],
         "received_count": len(raw_rows),
         "quarantined_observation_count": len({
             record["observation_index"] for record in quarantine_records
@@ -581,6 +726,12 @@ def get_ohlcv():
         "server_name": server_name,
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
         "account_fingerprint": account_identity["account_fingerprint"],
+        "account_identity_pinned": True,
+        "instrument_verification_status": instrument_verification["status"],
+        "instrument_verification_id": instrument_verification["verification_id"],
+        "instrument_metadata_sha256": instrument_verification["metadata_sha256"],
+        "timeframe_verified": instrument_verification["timeframe_verified"],
+        "analysis_eligible": instrument_verification["analysis_eligible"],
         "broker_symbol": broker_symbol,
         "timeframe": timeframe,
         "validator_version": quality_report["validator_version"],
@@ -643,37 +794,6 @@ def get_ohlcv():
             "error": "canonical candle persistence failed; data withheld",
         }), 503
 
-    canonical_evidence = CanonicalCandleStore(
-        MT5_RAW_DB_PATH
-    ).get_validation_report(validation_report_id)
-    closed_canonical_count = (
-        int(canonical_evidence.get("closed_candle_count", 0))
-        if canonical_evidence else 0
-    )
-    instrument_verification = registry.latest_verification(
-        account_identity["account_fingerprint"],
-        symbol_id,
-        timeframe,
-        latest_discovery["metadata_sha256"],
-    )
-    verified_timeframes = registry.verified_timeframes(
-        account_identity["account_fingerprint"],
-        symbol_id,
-        latest_discovery["metadata_sha256"],
-    )
-    analysis_eligible_timeframes = registry.analysis_eligible_timeframes(
-        account_identity["account_fingerprint"],
-        symbol_id,
-        latest_discovery["metadata_sha256"],
-    )
-    timeframe_verified = instrument_verification is not None
-    analysis_eligible = bool(
-        timeframe_verified
-        and history_completeness.get("status") == "complete"
-        and closed_canonical_count >= MIN_ANALYSIS_CLOSED_CANDLES
-        and bool(instrument_verification.get("analysis_eligible"))
-    )
-
     return jsonify({
         "status": "ok",
         "symbol_id": symbol_id,
@@ -683,18 +803,15 @@ def get_ohlcv():
         "server_name": server_name,
         "account_environment": MT5_ACCOUNT_ENVIRONMENT,
         "account_identity": account_identity,
+        "account_identity_pinned": True,
+        "instrument_verification_status": instrument_verification["status"],
+        "instrument_verification_id": instrument_verification["verification_id"],
+        "instrument_metadata_sha256": instrument_verification["metadata_sha256"],
+        "verified_timeframes": instrument_verification["verified_timeframes"],
+        "timeframe_verified": instrument_verification["timeframe_verified"],
+        "analysis_eligible": instrument_verification["analysis_eligible"],
+        "analysis_eligible_timeframes": instrument_verification["analysis_eligible_timeframes"],
         "platform": "MT5",
-        "instrument_verification_status": (
-            "verified" if timeframe_verified else "partially_verified"
-        ),
-        "instrument_verification_id": (
-            instrument_verification["verification_id"]
-            if instrument_verification else None
-        ),
-        "timeframe_verified": timeframe_verified,
-        "analysis_eligible": analysis_eligible,
-        "verified_timeframes": verified_timeframes,
-        "analysis_eligible_timeframes": analysis_eligible_timeframes,
         "timeframe": timeframe,
         "start_pos": start_pos,
         "source_type": "broker_bars",
