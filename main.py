@@ -142,6 +142,7 @@ def run(symbol: str, news: dict = None) -> dict:
             "score":   score,
             "data_lineage": data_lineage,
             "decision_lineage": decision_lineage,
+            "decision_lineage_identity_required": True,
         }
 
         intelligence_result = IntelligenceAgent(symbol).verdict(payload)
