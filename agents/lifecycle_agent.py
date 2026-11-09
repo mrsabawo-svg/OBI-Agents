@@ -57,7 +57,9 @@ class LifecycleAgent:
                     changed = True
 
             if changed:
-                save_memory(memory)
+                if save_memory(memory) is not True:
+                    print("[LIFECYCLE] Archive update was not persisted; leaving durable state unchanged")
+                    return
                 self._print_streak(archive)
 
         except Exception as e:

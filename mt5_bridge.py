@@ -69,6 +69,7 @@ MT5_VERIFIED_SESSION_MODELS = _load_verified_session_models(
     os.environ.get("MT5_VERIFIED_SESSION_MODEL_JSON", "")
 )
 MAX_COUNT = 20000
+MIN_ANALYSIS_CLOSED_CANDLES = 60
 CANONICAL_TRANSFORMATION_VERSION = "mt5-broker-bars-v1"
 connector = None
 
@@ -294,30 +295,48 @@ def _instrument_verification_state(
     if verification is None:
         status = "partially_verified"
         verified_timeframes = []
+        evidence_refs = []
         verification_id = None
         verified_at = None
         reviewer = None
     elif verification.get("metadata_sha256") != current_metadata_sha256:
         status = "stale"
         verified_timeframes = verification.get("verified_timeframes", [])
+        evidence_refs = verification.get("evidence_refs", [])
         verification_id = verification.get("verification_id")
         verified_at = verification.get("verified_at")
         reviewer = verification.get("reviewer")
     else:
         status = verification.get("verification_status", "unverified")
         verified_timeframes = verification.get("verified_timeframes", [])
+        evidence_refs = verification.get("evidence_refs", [])
         verification_id = verification.get("verification_id")
         verified_at = verification.get("verified_at")
         reviewer = verification.get("reviewer")
 
+    analysis_eligible_timeframes = sorted({
+        item["timeframe"]
+        for item in evidence_refs
+        if (
+            isinstance(item, dict)
+            and item.get("timeframe") in {"5m", "15m", "1h", "4h"}
+            and isinstance(item.get("closed_candle_count"), int)
+            and not isinstance(item.get("closed_candle_count"), bool)
+            and item["closed_candle_count"] >= MIN_ANALYSIS_CLOSED_CANDLES
+        )
+    })
     timeframe_verified = status == "verified" and timeframe in verified_timeframes
+    analysis_eligible = (
+        timeframe_verified and timeframe in analysis_eligible_timeframes
+    )
     return {
         "status": status,
         "verification_id": verification_id,
         "metadata_sha256": current_metadata_sha256,
         "verified_timeframes": verified_timeframes,
+        "analysis_eligible_timeframes": analysis_eligible_timeframes,
         "timeframe_verified": timeframe_verified,
-        "analysis_eligible": timeframe_verified,
+        "analysis_eligible": analysis_eligible,
         "reviewer": reviewer,
         "verified_at": verified_at,
     }
@@ -492,7 +511,12 @@ def verify_instrument():
     return jsonify({
         "status": "ok",
         "instrument_verification_status": "verified",
-        "analysis_eligible_timeframes": verification["verified_timeframes"],
+        "verified_timeframes": verification["verified_timeframes"],
+        "analysis_eligible_timeframes": sorted({
+            item["timeframe"]
+            for item in verification["evidence_refs"]
+            if item["closed_candle_count"] >= MIN_ANALYSIS_CLOSED_CANDLES
+        }),
         "verification": verification,
     }), 201
 
@@ -786,6 +810,7 @@ def get_ohlcv():
         "verified_timeframes": instrument_verification["verified_timeframes"],
         "timeframe_verified": instrument_verification["timeframe_verified"],
         "analysis_eligible": instrument_verification["analysis_eligible"],
+        "analysis_eligible_timeframes": instrument_verification["analysis_eligible_timeframes"],
         "platform": "MT5",
         "timeframe": timeframe,
         "start_pos": start_pos,

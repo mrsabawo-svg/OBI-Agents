@@ -3,6 +3,8 @@ OBI Agents — Edge Agent
 Historical win rate analytics.
 """
 from core.memory import load as load_memory
+import hashlib
+import json
 from core.models import EdgeResult, TriggerResult
 
 MIN_SAMPLE = 20
@@ -10,6 +12,7 @@ MIN_SAMPLE = 20
 class EdgeAgent:
     def __init__(self, symbol: str):
         self.symbol = symbol
+        self.archive_snapshot_sha256 = None
 
     def analyse(self, trigger: TriggerResult, bias, regime: dict) -> EdgeResult:
         print("[EDGE] Analysing edge for " + self.symbol)
@@ -17,6 +20,22 @@ class EdgeAgent:
             memory  = load_memory()
             archive = memory.get("_archive", [])
             closed  = [t for t in archive if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"]
+            edge_inputs = [
+                {
+                    "status": record.get("status"),
+                    "symbol": record.get("symbol"),
+                    "regime": record.get("regime"),
+                    "tags": record.get("tags", []),
+                    "outcome": record.get("outcome"),
+                }
+                for record in closed
+            ]
+            archive_payload = json.dumps(
+                edge_inputs, sort_keys=True, separators=(",", ":"), default=str
+            )
+            self.archive_snapshot_sha256 = hashlib.sha256(
+                archive_payload.encode("utf-8")
+            ).hexdigest()
 
             if len(closed) < MIN_SAMPLE:
                 print("[EDGE] Low sample: " + str(len(closed)) + "/" + str(MIN_SAMPLE))

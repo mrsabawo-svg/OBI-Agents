@@ -212,3 +212,12 @@ MT5_VERIFIED_SESSION_MODEL_JSON='{"SFX_VOL_75":"continuous_24_7"}'
 ```
 
 Do not set this merely because an instrument is labelled synthetic or because SessionAgent permits trading. Without this declaration, unexplained gaps and stale latest windows remain unverifiable and DataAgent withholds signals.
+
+## Instrument/timeframe verification and analysis eligibility
+
+After account pinning, exact symbol discovery, and an `/ohlcv` request that persists a validation report, an operator can approve an instrument/timeframe through `POST /instruments/verify`. Supply the exact `instrument_id`, exact `broker_symbol`, a reviewer label, and the persisted `quality_report.report_id` in `evidence_report_ids`. The endpoint verifies the stored report hash, account fingerprint, exact server, metadata fingerprint, instrument mapping, timeframe, history report, and canonical closed-candle evidence before appending an immutable verification record.
+
+A timeframe can be **verified** with at least one valid closed canonical candle. It is not marked **analysis-eligible** until the latest verification contains at least 60 valid closed canonical candles for that timeframe. This is a minimum warm-up floor; OBI's DataAgent still applies its own history and lineage checks. Verification and analysis eligibility never grant trade-execution permission.
+
+The `reviewer` field is an operator attestation label, not a digital signature. Use the endpoint only from a trusted local session or a separately reviewed private authenticated route.
+
