@@ -10,7 +10,6 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime
 import core.memory as memory_store
-from core.memory import load as load_memory
 from core.models import _payload_to_dict
 from core.signal_identity import SETUP_IDENTITY_VERSION, resolve_setup_identity
 import pytz
@@ -58,10 +57,10 @@ class SignalReviewer:
                 raise DuplicateReviewUnavailable("candidate event identity is missing")
             setup_id = self.setup_identity(payload)
 
-            memory = load_memory()
+            memory, is_stale = memory_store.load_with_status()
             if not isinstance(memory, dict):
                 raise DuplicateReviewUnavailable("canonical memory root is not an object")
-            if memory_store.is_read_stale():
+            if is_stale:
                 raise DuplicateReviewUnavailable("canonical memory is stale/read-only")
             archive = memory.get("_archive", [])
             if not isinstance(archive, list):
