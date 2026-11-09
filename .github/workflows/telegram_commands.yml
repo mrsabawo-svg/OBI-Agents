@@ -7,6 +7,9 @@ jobs:
   poll:
     runs-on: ubuntu-latest
     timeout-minutes: 4
+    concurrency:
+      group: obi-gist-writer-${{ github.repository }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -30,7 +33,6 @@ jobs:
           JSONBIN_KEY: ${{ secrets.JSONBIN_KEY }}
           JSONBIN_BIN_ID: ${{ secrets.JSONBIN_BIN_ID }}
           TELEGRAM_OPERATOR_ID: ${{ secrets.TELEGRAM_OPERATOR_ID }}
-
           TWELVEDATA_KEY: ${{ secrets.TWELVEDATA_KEY }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

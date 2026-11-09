@@ -80,6 +80,27 @@ def _complete_history_report(rows, timeframe="5m", start_pos=0):
     }
 
 
+def _closed_rows(count=60, invalid_ohlc_index=None, quarantined_index=None):
+    timestamps = pd.date_range("2026-11-08T00:00:00Z", periods=count, freq="5min")
+    rows = []
+    for index, timestamp in enumerate(timestamps):
+        price = 5000 + index
+        invalid_ohlc = index == invalid_ohlc_index
+        rows.append({
+            "observation_id": f"obs-{index}",
+            "timestamp": timestamp.isoformat(),
+            "Open": price,
+            "High": price - 10 if invalid_ohlc else price + 2,
+            "Low": price + 10 if invalid_ohlc else price - 2,
+            "Close": price + 1,
+            "Volume": 100,
+            "volume_type": "tick_volume",
+            "bar_status": "closed",
+            "quarantine_reasons": ["INVALID_OHLC"] if index == quarantined_index else [],
+        })
+    return rows
+
+
 def test_synthetic_symbols_registered():
     assert EXPECTED_SYNTHETICS == SYNTHETIC_SYMBOLS
     assert EXPECTED_SYNTHETICS == SYNTHETICS
@@ -294,13 +315,7 @@ def test_data_agent_enforces_reported_closed_candle_floor(monkeypatch, candle_co
 
 def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
-    rows = [{
-        "observation_id": "obs-1",
-        "timestamp": "2026-11-08T00:00:00Z",
-        "Open": 5000, "High": 5002, "Low": 4998, "Close": 5001,
-        "Volume": 100, "volume_type": "tick_volume",
-        "bar_status": "closed", "quarantine_reasons": [],
-    }]
+    rows = _closed_rows()
 
     class FakeResponse:
         def raise_for_status(self):
@@ -330,8 +345,8 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                 },
                 "raw_persistence": {
                     "persisted": True, "account_fingerprint": "a" * 64, "batch_id": "lineage-test",
-                    "inserted_count": 1, "quarantine_count": 0,
-                    "observation_ids": ["obs-1"], "quarantine_ids": [],
+                    "inserted_count": len(rows), "quarantine_count": 0,
+                    "observation_ids": [row["observation_id"] for row in rows], "quarantine_ids": [],
                     "quarantine_records": [],
                 },
                 "quality_report": {
@@ -344,7 +359,7 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
                     "verified_timeframes": ["5m"],
                     "timeframe_verified": True,
                     "analysis_eligible": True,
-                    "history_completeness": _complete_history_report(rows), "received_count": 1,
+                    "history_completeness": _complete_history_report(rows), "received_count": len(rows),
                     "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
@@ -366,18 +381,7 @@ def test_data_agent_rejects_missing_canonical_lineage(monkeypatch):
 def test_data_agent_rejects_invalid_bridge_ohlc(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
 
-    rows = [{
-        "observation_id": "obs-0",
-        "timestamp": "2026-11-08T00:00:00Z",
-        "Open": 5000,
-        "High": 4990,
-        "Low": 5010,
-        "Close": 5005,
-        "Volume": 100,
-        "volume_type": "tick_volume",
-        "bar_status": "closed",
-        "quarantine_reasons": [],
-    }]
+    rows = _closed_rows(invalid_ohlc_index=0)
 
     class FakeResponse:
         def raise_for_status(self):
@@ -645,13 +649,7 @@ def test_data_agent_enforces_post_quarantine_closed_candle_floor(monkeypatch, ca
 
 def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
     monkeypatch.setenv("MT5_BRIDGE_URL", "http://mt5-bridge.test")
-    rows = [{
-        "observation_id": "obs-0",
-        "timestamp": "2026-11-08T00:00:00Z", "Open": 5000,
-        "High": 5002, "Low": 4998, "Close": 5001, "Volume": 100,
-        "volume_type": "tick_volume", "bar_status": "closed",
-        "quarantine_reasons": ["INVALID_OHLC"],
-    }]
+    rows = _closed_rows(quarantined_index=0)
 
     class FakeResponse:
         def raise_for_status(self):
@@ -681,8 +679,8 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                 },
                 "raw_persistence": {
                     "persisted": True, "account_fingerprint": "a" * 64, "batch_id": "mismatch-test",
-                    "inserted_count": 1, "quarantine_count": 0,
-                    "observation_ids": ["obs-0"], "quarantine_ids": [],
+                    "inserted_count": len(rows), "quarantine_count": 0,
+                    "observation_ids": [row["observation_id"] for row in rows], "quarantine_ids": [],
                     "quarantine_records": [],
                 },
                 "quality_report": {
@@ -696,7 +694,7 @@ def test_data_agent_withholds_data_when_quarantine_counts_disagree(monkeypatch):
                     "timeframe_verified": True,
                     "analysis_eligible": True,
                     "history_completeness": _complete_history_report(rows),
-                    "received_count": 1, "quarantined_observation_count": 0,
+                    "received_count": len(rows), "quarantined_observation_count": 0,
                     "quarantine_record_count": 0, "reason_counts": {},
                 },
                 "canonical_persistence": canonical_receipt(rows, "mismatch-report"),

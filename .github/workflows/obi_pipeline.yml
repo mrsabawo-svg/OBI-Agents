@@ -32,6 +32,9 @@ jobs:
     name: Manual live scan
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    concurrency:
+      group: obi-gist-writer-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
