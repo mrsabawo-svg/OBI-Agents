@@ -57,7 +57,8 @@ def _save_offset(offset: int, last_processed: int, retries: int = 2) -> bool:
             mem = load_memory() or {}
             mem["_telegram_offset"] = offset
             mem["_last_processed_update"] = last_processed
-            save_memory(mem)
+            if save_memory(mem) is not True:
+                raise RuntimeError("memory save was not confirmed")
             return True
         except Exception as e:
             print(f"[CMD] offset save error (attempt {attempt}/{retries}): {e}")

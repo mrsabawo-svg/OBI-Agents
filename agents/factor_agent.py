@@ -42,7 +42,8 @@ class FactorAgent:
 
             # Store in memory for other agents to read
             memory["_factor_analytics"] = report
-            save_memory(memory)
+            if save_memory(memory) is not True:
+                print("[FACTOR] Analytics report computed but not persisted")
 
             self._print_report(report)
             return report
