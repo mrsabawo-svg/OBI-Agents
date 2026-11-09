@@ -302,8 +302,8 @@ class InstrumentRegistryStore:
             completeness = report.get("history_completeness")
             if not isinstance(completeness, dict) or completeness.get("status") != "complete":
                 raise ValueError("instrument verification requires complete history evidence")
-            if int(evidence.get("canonical_candle_count", 0)) < 1:
-                raise ValueError("instrument verification requires at least one persisted canonical candle")
+            if int(evidence.get("closed_candle_count", 0)) < 1:
+                raise ValueError("instrument verification requires at least one persisted closed canonical candle")
             report_id = evidence.get("report_id")
             if not isinstance(report_id, str) or not report_id:
                 raise ValueError("evidence report ID is required")

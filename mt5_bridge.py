@@ -639,6 +639,13 @@ def get_ohlcv():
             "error": "canonical candle persistence failed; data withheld",
         }), 503
 
+    canonical_evidence = CanonicalCandleStore(
+        MT5_RAW_DB_PATH
+    ).get_validation_report(validation_report_id)
+    closed_canonical_count = (
+        int(canonical_evidence.get("closed_candle_count", 0))
+        if canonical_evidence else 0
+    )
     instrument_verification = registry.latest_verification(
         account_identity["account_fingerprint"],
         symbol_id,
@@ -654,7 +661,7 @@ def get_ohlcv():
     analysis_eligible = bool(
         timeframe_verified
         and history_completeness.get("status") == "complete"
-        and canonical_persistence.get("inserted_count", 0) > 0
+        and closed_canonical_count > 0
     )
 
     return jsonify({
