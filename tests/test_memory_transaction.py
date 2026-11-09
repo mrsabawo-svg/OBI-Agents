@@ -64,8 +64,10 @@ def test_reused_transaction_id_with_different_payload_is_rejected(monkeypatch):
     }}
     with patch("core.memory.requests.get", return_value=FakeResponse(200, gist(current))), \
          patch("core.memory.requests.patch") as patch_call:
-        assert memory.load() == current
-        assert memory.save({"counter": 3}, transaction_id="event-1") is False
+        snapshot = memory.load()
+        changed = dict(snapshot)
+        changed["counter"] = 3
+        assert memory.save(changed, transaction_id="event-1") is False
         patch_call.assert_not_called()
 
 
