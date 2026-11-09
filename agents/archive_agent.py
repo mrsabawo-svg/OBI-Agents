@@ -10,6 +10,7 @@ from copy import deepcopy
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
+from core.signal_identity import SETUP_IDENTITY_VERSION
 from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
@@ -27,6 +28,9 @@ class ArchiveAgent:
             archive = memory.setdefault("_archive", [])
 
             entry = self._build_entry(signal)
+            if not isinstance(entry.get("id"), str) or not entry.get("id").strip():
+                print("[ARCHIVE] Signal rejected: issued event identity is missing")
+                return False
 
             # Prevent duplicate writes for the same signal id.
             if any(item.get("id") == entry.get("id") for item in archive):
@@ -118,7 +122,7 @@ class ArchiveAgent:
             and isinstance(signal_identity.get("signal_id"), str)
             and bool(signal_identity.get("signal_id").strip())
             and signal_identity.get("signal_id") == signal_id
-            and signal_identity.get("setup_identity_version") == "obi-setup-identity-v1"
+            and signal_identity.get("setup_identity_version") == SETUP_IDENTITY_VERSION
             and isinstance(signal_identity.get("setup_id"), str)
             and len(signal_identity.get("setup_id")) == 64
             and all(character in "0123456789abcdef" for character in signal_identity.get("setup_id"))
