@@ -111,14 +111,17 @@ def resolve_setup_identity(payload: dict) -> str:
     if not isinstance(payload, dict):
         raise TypeError("signal payload must be a dictionary")
     identity = payload.get("signal_identity")
-    if isinstance(identity, dict):
+    if identity is not None:
+        if not isinstance(identity, dict):
+            raise ValueError("signal_identity must be a dictionary")
         setup_id = identity.get("setup_id")
         version = identity.get("setup_identity_version")
         if (
-            version == SETUP_IDENTITY_VERSION
-            and isinstance(setup_id, str)
-            and len(setup_id) == 64
-            and all(character in "0123456789abcdef" for character in setup_id)
+            version != SETUP_IDENTITY_VERSION
+            or not isinstance(setup_id, str)
+            or len(setup_id) != 64
+            or not all(character in "0123456789abcdef" for character in setup_id)
         ):
-            return setup_id
+            raise ValueError("signal_identity is invalid or uses an unsupported version")
+        return setup_id
     return build_setup_identity(payload)
