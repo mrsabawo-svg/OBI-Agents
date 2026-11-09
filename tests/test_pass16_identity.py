@@ -36,7 +36,7 @@ def test_signal_event_id_is_unique_even_inside_the_same_second():
     second = build_signal_id("XAUUSD")
     assert first != second
     assert first.startswith("XAUUSD_")
-    assert len(first.rsplit("_", 1)[-1]) == 16
+    assert len(first.rsplit("_", 1)[-1]) == 32
 
 
 def test_signal_identity_and_setup_identity_are_distinct():
@@ -76,6 +76,20 @@ def test_exact_signal_id_is_duplicate_even_if_open_timestamp_is_unavailable(monk
         "symbol": "XAUUSD",
         "status": "OPEN",
         "setup_id": "different-setup",
+    }]
+    monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
+    assert SignalReviewer("XAUUSD").is_duplicate(candidate)
+
+
+
+def test_exact_signal_id_remains_duplicate_after_archive_closure(monkeypatch):
+    candidate = payload("SIGNAL_001")
+    archive = [{
+        "id": "SIGNAL_001",
+        "symbol": "XAUUSD",
+        "status": "CLOSED",
+        "setup_identity_version": SETUP_IDENTITY_VERSION,
+        "setup_id": build_setup_identity(candidate),
     }]
     monkeypatch.setattr("agents.signal_reviewer.load_memory", lambda: {"_archive": archive})
     assert SignalReviewer("XAUUSD").is_duplicate(candidate)

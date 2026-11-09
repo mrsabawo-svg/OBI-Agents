@@ -34,14 +34,16 @@ class SignalReviewer:
             now = datetime.now(SAST)
 
             for archived in archive:
-                if not isinstance(archived, dict):
-                    continue
-                if archived.get("status") != "OPEN" or archived.get("symbol") != self.symbol:
+                if not isinstance(archived, dict) or archived.get("symbol") != self.symbol:
                     continue
 
-                # Exact signal identity is distinct from material setup identity.
+                # Exact event identity is permanent, including after closure.
                 if signal_id and archived.get("id") == signal_id:
                     return True
+
+                # Setup-level suppression applies only to currently OPEN records.
+                if archived.get("status") != "OPEN":
+                    continue
 
                 opened_value = archived.get("opened") or archived.get("timestamp")
                 opened = self._parse_opened_at(opened_value)

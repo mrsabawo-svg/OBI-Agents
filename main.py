@@ -39,7 +39,7 @@ def build_signal_id(symbol: str) -> str:
     if not normalized_symbol:
         raise ValueError("symbol must be a non-empty string")
     stamp = now_sast().strftime("%Y%m%d%H%M%S")
-    return normalized_symbol + "_" + stamp + "_" + uuid.uuid4().hex[:16]
+    return normalized_symbol + "_" + stamp + "_" + uuid.uuid4().hex
 
 def run(symbol: str, news: dict = None) -> dict:
     print("=" * 45)
