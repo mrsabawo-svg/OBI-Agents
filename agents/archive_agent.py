@@ -130,8 +130,9 @@ class ArchiveAgent:
             setup_identity_status = "unavailable"
 
         decision_lineage = signal.get("decision_lineage")
+        identity_required = signal.get("decision_lineage_identity_required") is True
         lineage_identity_status = "unbound"
-        identity_matches = True
+        identity_matches = not identity_required
         if isinstance(decision_lineage, dict) and decision_lineage.get("signal_identity") is not None:
             bound_identity = decision_lineage.get("signal_identity")
             identity_matches = (
@@ -142,6 +143,9 @@ class ArchiveAgent:
                 and decision_lineage.get("instrument_id") == signal.get("symbol")
             )
             lineage_identity_status = "bound" if identity_matches else "mismatch"
+        elif identity_required:
+            lineage_identity_status = "missing"
+            identity_matches = False
 
         if (
             isinstance(decision_lineage, dict)
@@ -161,9 +165,7 @@ class ArchiveAgent:
                 "agent_traces": {},
                 "manifest_sha256": None,
             }
-            if lineage_identity_status == "mismatch":
-                lineage_identity_status = "mismatch"
-            else:
+            if lineage_identity_status not in {"mismatch", "missing"}:
                 lineage_identity_status = "unavailable"
 
         return {
