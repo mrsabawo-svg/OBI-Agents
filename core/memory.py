@@ -99,6 +99,12 @@ def load() -> dict:
             raise MemoryReadError("memory unavailable; refusing an empty fallback: " + str(exc)) from exc
 
 
+def is_read_stale() -> bool:
+    """Return whether the latest load returned a stale read-only fallback."""
+    with _LOCK:
+        return _READ_IS_STALE
+
+
 def save(data: dict, transaction_id: Optional[str] = None) -> bool:
     """Revision-check, write, then read back exact content before success."""
     global _LAST_KNOWN_GOOD, _READ_IS_STALE, _BASE_REVISION
