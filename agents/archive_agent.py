@@ -10,7 +10,7 @@ from copy import deepcopy
 import pytz
 
 from core.memory import load as load_memory, save as save_memory
-from core.signal_identity import SETUP_IDENTITY_VERSION
+from core.signal_identity import SETUP_IDENTITY_VERSION, validate_signal_identity
 from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
@@ -117,16 +117,7 @@ class ArchiveAgent:
         setup_id = None
         setup_identity_version = None
         setup_identity_status = "unavailable"
-        identity_valid = (
-            isinstance(signal_identity, dict)
-            and isinstance(signal_identity.get("signal_id"), str)
-            and bool(signal_identity.get("signal_id").strip())
-            and signal_identity.get("signal_id") == signal_id
-            and signal_identity.get("setup_identity_version") == SETUP_IDENTITY_VERSION
-            and isinstance(signal_identity.get("setup_id"), str)
-            and len(signal_identity.get("setup_id")) == 64
-            and all(character in "0123456789abcdef" for character in signal_identity.get("setup_id"))
-        )
+        identity_valid = validate_signal_identity(signal, signal_identity)
         if identity_valid:
             setup_id = signal_identity["setup_id"]
             setup_identity_version = signal_identity["setup_identity_version"]
