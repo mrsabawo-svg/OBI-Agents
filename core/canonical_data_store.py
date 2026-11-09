@@ -419,8 +419,8 @@ class CanonicalCandleStore:
                   AND bar_status = 'closed'
                   AND validation_status = 'valid'
             """, (report_id,)).fetchone()[0])
-        result = json.loads(row["report_json"])
-        result["report_sha256"] = row["report_sha256"]
+        result = json.loads(row[0])
+        result["report_sha256"] = row[1]
         result["canonical_candle_count"] = canonical_count
         result["closed_candle_count"] = closed_candle_count
         return result
