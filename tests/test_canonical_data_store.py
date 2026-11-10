@@ -15,6 +15,7 @@ def envelope():
         "instrument_id": "synthetic.sfx_vol_75",
         "broker": "Weltrade",
         "server_name": "Weltrade-Demo",
+        "account_fingerprint": "a" * 64,
         "account_environment": "demo",
         "platform": "MT5",
         "broker_symbol": "SFX Vol 75",
@@ -32,6 +33,7 @@ def validation_report(timeframe="5m", report_id="quality-report-001", batch_id="
         "instrument_id": "synthetic.sfx_vol_75",
         "broker": "Weltrade",
         "server_name": "Weltrade-Demo",
+        "account_fingerprint": "a" * 64,
         "account_environment": "demo",
         "broker_symbol": "SFX Vol 75",
         "timeframe": timeframe,
@@ -205,6 +207,33 @@ def test_canonical_batch_is_atomic_when_later_record_is_invalid(tmp_path):
 
     with pytest.raises(CanonicalDataError, match="do not exist"):
         store.append_batch([valid, invalid_source], validation_report())
+
+    assert store.count() == 0
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM canonical_validation_reports"
+        ).fetchone()[0] == 0
+
+
+def test_canonical_store_rejects_cross_account_source_lineage(tmp_path):
+    path = tmp_path / "market.sqlite3"
+    raw = RawObservationStore(path)
+    source = envelope()
+    source["account_fingerprint"] = "a" * 64
+    result = raw.append_batch(source, [{
+        "time": 1794132000,
+        "open": 100.0,
+        "high": 103.0,
+        "low": 99.0,
+        "close": 102.0,
+        "tick_volume": 25,
+    }])
+    store = CanonicalCandleStore(path)
+    report = validation_report()
+    report["account_fingerprint"] = "b" * 64
+
+    with pytest.raises(CanonicalDataError, match="identity"):
+        store.append_batch([candle(result["observation_ids"][0])], report)
 
     assert store.count() == 0
     with sqlite3.connect(path) as connection:

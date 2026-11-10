@@ -235,7 +235,7 @@ class CanonicalCandleStore:
         validated = [validate_canonical_candle(candle) for candle in candles]
         report_required = (
             "report_id", "batch_id", "instrument_id", "broker", "server_name",
-            "account_environment", "broker_symbol", "timeframe",
+            "account_fingerprint", "account_environment", "broker_symbol", "timeframe",
             "validator_version", "report",
         )
         missing_report = [key for key in report_required if not validation_report.get(key)]
@@ -247,6 +247,7 @@ class CanonicalCandleStore:
             "instrument_id": validation_report["instrument_id"],
             "broker": validation_report["broker"],
             "server_name": validation_report["server_name"],
+            "account_fingerprint": validation_report["account_fingerprint"],
             "account_environment": validation_report["account_environment"],
             "broker_symbol": validation_report["broker_symbol"],
             "timeframe": validation_report["timeframe"],
@@ -298,7 +299,8 @@ class CanonicalCandleStore:
                 placeholders = ",".join("?" for _ in source_ids)
                 source_rows = connection.execute(
                     f"""SELECT observation_id, batch_id, instrument_id, broker, server_name,
-                               account_environment, broker_symbol, timeframe, source_type
+                               account_fingerprint, account_environment, broker_symbol,
+                               timeframe, source_type
                         FROM raw_observations
                         WHERE observation_id IN ({placeholders})""",
                     tuple(source_ids),
@@ -311,20 +313,20 @@ class CanonicalCandleStore:
                     source = source_by_id[source_id]
                     expected = (
                         report_payload["instrument_id"], report_payload["broker"],
-                        report_payload["server_name"], report_payload["account_environment"],
-                        report_payload["broker_symbol"],
+                        report_payload["server_name"], report_payload["account_fingerprint"],
+                        report_payload["account_environment"], report_payload["broker_symbol"],
                     )
                     if source[1] != report_payload["batch_id"]:
                         raise CanonicalDataError("source observation batch does not match validation report")
-                    actual = tuple(source[2:7])
+                    actual = tuple(source[2:8])
                     if actual != expected:
                         raise CanonicalDataError(
                             "source observation identity does not match canonical candle"
                         )
                     expected_source_type = {"broker_bar": "broker_bars", "tick_derived": "broker_ticks", "resampled_bar": "broker_bars"}[candle["source_class"]]
-                    if source[8] != expected_source_type:
+                    if source[9] != expected_source_type:
                         raise CanonicalDataError("raw observation source type does not match canonical source class")
-                    if candle["source_class"] == "broker_bar" and source[7] != candle["timeframe"]:
+                    if candle["source_class"] == "broker_bar" and source[8] != candle["timeframe"]:
                         raise CanonicalDataError(
                             "broker_bar source timeframe does not match canonical timeframe"
                         )
