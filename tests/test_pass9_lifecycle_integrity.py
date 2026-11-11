@@ -92,15 +92,16 @@ def test_pass9_open_to_closed_uses_same_canonical_memory():
         assert final_state[0]["tp3_hit"] is True
         assert final_state[0]["closed"] is not None
 
-        # EdgeAgent reads the same _archive and reconstructs the one closed sample.
-        # At sample size 1, the production contract intentionally returns the
-        # conservative default result rather than claiming a historical win rate.
+        # The event has a terminal lifecycle result, but no complete market-data
+        # lineage or verified decision provenance. It must not enter trusted
+        # historical analytics.
         edge = EdgeAgent("EURUSD")
         trigger = SimpleNamespace(grade="A", tags=["TEST"])
         result = edge.analyse(trigger, {}, {"label": "TEST"})
-        assert result.sample_size == 1
+        assert result.sample_size == 0
         assert result.low_sample is True
         assert result.overall_wr == 50.0
+        assert edge.archive_eligibility_summary["excluded_count"] == 1
 
         # Explicitly verify the persisted archive itself contains the terminal record.
         reloaded = fake_load()

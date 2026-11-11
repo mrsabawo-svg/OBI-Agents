@@ -129,6 +129,10 @@ def test_decision_lineage_versions_every_decision_agent_and_is_self_verifying():
         "archive_snapshot_sha256"
     ] == "a" * 64
     assert manifest["market_data"]["1h"]["row_count"] == 4
+    assert manifest["agent_specs"]["Edge"]["formula_version"] == "1.1.0"
+    assert "core/archive_analytics_eligibility.py" in manifest["agent_specs"]["Edge"]["source_files"]
+    assert "agents/archive_agent.py" in manifest["agent_specs"]["Edge"]["source_files"]
+    assert "agents/lifecycle_agent.py" in manifest["agent_specs"]["Edge"]["source_files"]
 
 
 def test_decision_lineage_verification_detects_tampering():
@@ -239,7 +243,7 @@ def test_archive_agent_marks_missing_or_tampered_decision_lineage_unavailable():
     assert tampered_entry["decision_lineage_status"] == "unavailable"
 
 
-def test_edge_agent_hashes_the_exact_archive_fields_it_uses(monkeypatch):
+def test_edge_agent_excludes_legacy_rows_without_verified_analytics_lineage(monkeypatch):
     archive = [
         {
             "status": "CLOSED",
@@ -247,7 +251,6 @@ def test_edge_agent_hashes_the_exact_archive_fields_it_uses(monkeypatch):
             "regime": "TRENDING",
             "tags": ["FVG", "OB"],
             "outcome": "TP1",
-            "unused_display_field": "not consumed by EdgeAgent",
         },
         {
             "status": "CLOSED",
@@ -272,25 +275,11 @@ def test_edge_agent_hashes_the_exact_archive_fields_it_uses(monkeypatch):
         {"label": "TRENDING"},
     )
 
-    projected = [
-        {
-            "status": row.get("status"),
-            "symbol": row.get("symbol"),
-            "regime": row.get("regime"),
-            "tags": row.get("tags", []),
-            "outcome": row.get("outcome"),
-        }
-        for row in archive
-        if row.get("status") == "CLOSED" and row.get("outcome") != "EXPIRED"
-    ]
-    expected = hashlib.sha256(
-        json.dumps(
-            projected, sort_keys=True, separators=(",", ":"), default=str
-        ).encode("utf-8")
-    ).hexdigest()
     assert result.low_sample is True
-    assert result.sample_size == 2
-    assert agent.archive_snapshot_sha256 == expected
+    assert result.sample_size == 0
+    assert agent.archive_eligibility_summary["eligible_count"] == 0
+    assert agent.archive_eligibility_summary["excluded_count"] == 3
+    assert len(agent.archive_snapshot_sha256) == 64
 
 
 def _intelligence_payload():

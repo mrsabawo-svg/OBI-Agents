@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 from agents.lifecycle_agent import LifecycleAgent, SAST
 
 
@@ -46,6 +47,7 @@ class Pass14OutcomeStateMachineTest(unittest.TestCase):
         self.assertTrue(trade["tp3_hit"])
         self.assertEqual(trade["status"], "CLOSED")
         self.assertEqual(trade["outcome"], "TP3")
+        self.assertEqual(trade["lifecycle_schema_version"], "obi-lifecycle-v1")
 
     def test_sell_progresses_tp1_tp2_then_closes_at_tp3(self):
         trade = self.trade("SELL")
@@ -107,6 +109,30 @@ class Pass14OutcomeStateMachineTest(unittest.TestCase):
         snapshot = dict(trade)
         self.assertFalse(self.lifecycle._apply_candle(trade, 4011, 4001, self.now))
         self.assertEqual(trade, snapshot)
+
+    def test_streak_summary_ignores_legacy_tp1_milestones(self):
+        archive = [
+            {
+                "status": "CLOSED", "outcome": "TP1", "terminal_outcome": None,
+                "lifecycle_schema_version": None, "closed": "2026-09-24 08:00 SAST",
+            },
+            {
+                "status": "CLOSED", "outcome": "TP3", "terminal_outcome": "TP3",
+                "lifecycle_schema_version": "obi-lifecycle-v1", "closed": "2026-09-24 09:00 SAST",
+            },
+            {
+                "status": "CLOSED", "outcome": "SL", "terminal_outcome": "SL",
+                "lifecycle_schema_version": "obi-lifecycle-v1", "closed": "2026-09-24 07:00 SAST",
+            },
+            {
+                "status": "CLOSED", "outcome": "EXPIRED", "terminal_outcome": "EXPIRED",
+                "lifecycle_schema_version": "obi-lifecycle-v1", "closed": "2026-09-24 06:00 SAST",
+            },
+        ]
+        with patch("builtins.print") as output:
+            self.lifecycle._print_streak(archive)
+        rendered = " ".join(str(call.args[0]) for call in output.call_args_list)
+        self.assertIn("1W-1L", rendered)
 
     def test_expiry_does_not_fabricate_stop_loss_pnl(self):
         trade = self.trade("BUY")
