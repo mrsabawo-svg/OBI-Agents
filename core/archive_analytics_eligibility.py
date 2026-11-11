@@ -157,7 +157,7 @@ def eligibility_reasons(record: dict) -> list[str]:
     if record.get("status") != "CLOSED":
         reasons.append("not_closed")
     terminal = record.get("terminal_outcome")
-    if terminal not in TERMINAL_OUTCOMES:
+    if not isinstance(terminal, str) or terminal not in TERMINAL_OUTCOMES:
         reasons.append("non_terminal_or_unsupported_outcome")
     if record.get("outcome") != terminal:
         reasons.append("outcome_terminal_mismatch")
