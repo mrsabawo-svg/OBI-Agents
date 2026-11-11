@@ -11,13 +11,15 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from core.decision_lineage import verify_decision_lineage
+from core.decision_lineage import _sha256, verify_decision_lineage
 
 ANALYTICS_ELIGIBILITY_SCHEMA_VERSION = "obi-archive-analytics-eligibility-v1"
 LIFECYCLE_SCHEMA_VERSION = "obi-lifecycle-v1"
 GRADE_SCHEMA_VERSION = "obi-composite-grade-v1"
 TRIGGER_GRADE_SCHEMA_VERSION = "obi-trigger-grade-v1"
 TERMINAL_OUTCOMES = {"TP3", "SL"}
+
+
 def _canonical_hash(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -109,7 +111,7 @@ def _verified_decision_lineage(record: dict) -> bool:
         return False
     if lineage.get("data_lineage_status") != "complete":
         return False
-    if lineage.get("data_lineage_sha256") != _canonical_hash(record.get("data_lineage")):
+    if lineage.get("data_lineage_sha256") != _sha256(record.get("data_lineage")):
         return False
     if record.get("decision_lineage_sha256") != lineage.get("manifest_sha256"):
         return False
