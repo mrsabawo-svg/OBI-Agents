@@ -216,7 +216,7 @@ class ArchiveAgent:
             "realized_pnl_pips": None,
             "pnl_basis": None,
             "milestones": [],
-            "lifecycle_schema_version": LIFECYCLE_SCHEMA_VERSION,
+            "lifecycle_schema_version": None,
             "lifecycle_last_candle": None,
             "lifecycle_events": [],
             "status": "OPEN",
