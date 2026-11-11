@@ -342,27 +342,40 @@ AGENT_SPECS = {
         ],
     },
     "Edge": {
-        "agent_version": "1.0.0",
-        "formula_id": "closed-archive-historical-edge",
-        "formula_version": "1.0.0",
+        "agent_version": "1.1.0",
+        "formula_id": "eligible-terminal-archive-historical-edge",
+        "formula_version": "1.1.0",
         "formula": (
-            "Read closed archive records excluding EXPIRED. Below 20 records, "
-            "return neutral 50% metrics and low_sample=True. Otherwise calculate "
-            "symbol, regime, tag and overall win rates; win outcomes are TP1/TP2/TP3. "
-            "grade_wr is assigned overall_wr to avoid circular grade dependence."
+            "Read the shared archive eligibility snapshot. Deduplicate by event "
+            "identity; require a CLOSED record with matching terminal_outcome TP3 "
+            "or SL, current lifecycle semantics, a versioned grade, complete verified "
+            "data lineage, and complete identity-bound decision provenance. Quarantine "
+            "conflicting duplicates and any event with ambiguous lifecycle history. "
+            "Below 20 eligible events, return neutral 50% metrics and low_sample=True. "
+            "Otherwise calculate symbol, regime, tag and overall win rates; only TP3 "
+            "is a win. grade_wr is assigned overall_wr to avoid circular dependence."
         ),
         "parameters": {
             "minimum_sample": 20,
+            "eligibility_schema_version": "obi-archive-analytics-eligibility-v1",
             "eligible_status": "CLOSED",
-            "excluded_outcome": "EXPIRED",
-            "winning_outcomes": ["TP1", "TP2", "TP3"],
+            "eligible_terminal_outcomes": ["TP3", "SL"],
+            "winning_outcomes": ["TP3"],
+            "excluded_outcomes": ["TP1", "TP2", "EXPIRED", "AMBIGUOUS"],
+            "required_lifecycle_schema_version": "obi-lifecycle-v1",
+            "required_data_lineage_status": "complete",
+            "required_decision_provenance_status": "complete",
+            "deduplicate_by": "issued_event_id_with_structural_legacy_fallback",
+            "conflicting_duplicates": "quarantine",
             "grade_wr_source": "overall_wr",
             "tag_win_rate_used_by_score": False,
-            "minimum_sample_scope": "global closed archive, not per subgroup",
+            "minimum_sample_scope": "global eligible archive, not per subgroup",
             "low_sample_defaults_pct": 50.0,
         },
         "inputs": [
-            "symbol", "closed archive status/symbol/regime/tags/outcome",
+            "eligible archive event identity/status/terminal outcome",
+            "verified data lineage and identity-bound decision provenance",
+            "symbol/regime/tags/grade schema version",
             "Trigger.tags", "Regime.label",
         ],
         "outputs": [
@@ -371,11 +384,15 @@ AGENT_SPECS = {
         ],
         "market_data_timeframes": [],
         "upstream_agents": ["Trigger", "Bias", "Regime"],
-        "source_files": ["agents/edge_agent.py", "core/memory.py", "core/models.py"],
+        "source_files": [
+            "agents/edge_agent.py",
+            "core/archive_analytics_eligibility.py",
+            "core/memory.py",
+            "core/models.py",
+        ],
         "known_limitations": [
             "tag_wr is calculated but is not used in ScoreAgent's edge formula.",
-            "The minimum sample applies to the global archive, not each symbol/regime/tag subgroup; empty subgroups return 50%.",
-            "The archive snapshot must be captured separately to identify the exact historical input set.",
+            "The minimum sample applies to the global eligible archive, not each symbol/regime/tag subgroup; empty subgroups return 50%.",
         ],
     },
     "Score": {
