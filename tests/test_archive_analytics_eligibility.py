@@ -201,6 +201,14 @@ class ArchiveAnalyticsEligibilityTest(unittest.TestCase):
         self.assertEqual(selection["events"], [])
         self.assertEqual(len(selection["quarantined"]), 1)
 
+    def test_conflicting_duplicate_analytics_payload_is_quarantined(self):
+        first = eligible_event()
+        second = eligible_event()
+        second["grade"] = "C"
+        selection = select_eligible_events([first, second])
+        self.assertEqual(selection["events"], [])
+        self.assertEqual(len(selection["quarantined"]), 1)
+
     def test_conflicting_terminal_outcomes_are_quarantined(self):
         first = eligible_event(outcome="TP3")
         second = eligible_event(outcome="SL")
