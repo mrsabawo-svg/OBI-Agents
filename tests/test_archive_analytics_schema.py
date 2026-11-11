@@ -54,6 +54,11 @@ class ArchiveAnalyticsSchemaTest(unittest.TestCase):
         self.assertEqual(entry["obi_score"], 73)
         self.assertEqual(entry["grade"], "A")
 
+    def test_archive_marks_trigger_grade_fallback_with_its_own_schema(self):
+        entry = ArchiveAgent()._build_entry(self._signal(None))
+        self.assertEqual(entry["grade"], "C")
+        self.assertEqual(entry["grade_schema_version"], "obi-trigger-grade-v1")
+
     def test_archive_preserves_data_lineage_manifest(self):
         signal = self._signal(FakeScore())
         lineage = {
