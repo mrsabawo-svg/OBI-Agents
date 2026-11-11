@@ -134,6 +134,18 @@ def _verified_decision_lineage(record: dict) -> bool:
         return False
 
 
+def _has_ambiguous_lifecycle(record: dict) -> bool:
+    if record.get("lifecycle_event") == "AMBIGUOUS":
+        return True
+    if record.get("resolution_note") == "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP":
+        return True
+    events = record.get("lifecycle_events")
+    return isinstance(events, list) and any(
+        isinstance(event, dict) and event.get("event") == "AMBIGUOUS"
+        for event in events
+    )
+
+
 def eligibility_reasons(record: dict) -> list[str]:
     """Return all reasons a record cannot enter trusted terminal analytics."""
     reasons = []
@@ -151,7 +163,7 @@ def eligibility_reasons(record: dict) -> list[str]:
         reasons.append("outcome_terminal_mismatch")
     if record.get("lifecycle_schema_version") != LIFECYCLE_SCHEMA_VERSION:
         reasons.append("unversioned_lifecycle_semantics")
-    if record.get("lifecycle_event") == "AMBIGUOUS" or record.get("resolution_note") == "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP":
+    if _has_ambiguous_lifecycle(record):
         reasons.append("ambiguous_lifecycle")
     if not isinstance(record.get("grade_schema_version"), str) or not record.get("grade_schema_version").strip():
         reasons.append("unversioned_grade_semantics")
@@ -165,6 +177,8 @@ def eligibility_reasons(record: dict) -> list[str]:
 
 
 def _terminal_conflict(records: list[dict]) -> bool:
+    if any(_has_ambiguous_lifecycle(record) for record in records):
+        return True
     terminal_values = {
         record.get("terminal_outcome")
         for record in records
