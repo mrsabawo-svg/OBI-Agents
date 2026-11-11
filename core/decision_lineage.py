@@ -385,7 +385,9 @@ AGENT_SPECS = {
         "market_data_timeframes": [],
         "upstream_agents": ["Trigger", "Bias", "Regime"],
         "source_files": [
+            "agents/archive_agent.py",
             "agents/edge_agent.py",
+            "agents/lifecycle_agent.py",
             "core/archive_analytics_eligibility.py",
             "core/memory.py",
             "core/models.py",
