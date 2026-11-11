@@ -148,7 +148,7 @@ def eligibility_reasons(record: dict) -> list[str]:
         reasons.append("unversioned_lifecycle_semantics")
     if record.get("lifecycle_event") == "AMBIGUOUS" or record.get("resolution_note") == "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP":
         reasons.append("ambiguous_lifecycle")
-    if record.get("grade_schema_version") != GRADE_SCHEMA_VERSION:
+    if not isinstance(record.get("grade_schema_version"), str) or not record.get("grade_schema_version").strip():
         reasons.append("unversioned_grade_semantics")
     if not _verified_data_lineage(record):
         reasons.append("incomplete_or_unverified_data_lineage")
