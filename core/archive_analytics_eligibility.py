@@ -16,12 +16,8 @@ from core.decision_lineage import verify_decision_lineage
 ANALYTICS_ELIGIBILITY_SCHEMA_VERSION = "obi-archive-analytics-eligibility-v1"
 LIFECYCLE_SCHEMA_VERSION = "obi-lifecycle-v1"
 GRADE_SCHEMA_VERSION = "obi-composite-grade-v1"
+TRIGGER_GRADE_SCHEMA_VERSION = "obi-trigger-grade-v1"
 TERMINAL_OUTCOMES = {"TP3", "SL"}
-STRUCTURAL_FIELDS = (
-    "symbol", "opened", "timestamp", "direction", "entry", "sl", "tp1", "tp2", "tp3"
-)
-
-
 def _canonical_hash(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -126,7 +122,10 @@ def _verified_decision_lineage(record: dict) -> bool:
         return False
     if identity.get("setup_identity_version") != record.get("setup_identity_version"):
         return False
-    return verify_decision_lineage(lineage)
+    try:
+        return verify_decision_lineage(lineage)
+    except Exception:
+        return False
 
 
 def eligibility_reasons(record: dict) -> list[str]:
