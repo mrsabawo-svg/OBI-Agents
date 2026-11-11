@@ -232,6 +232,15 @@ class ArchiveAnalyticsEligibilityTest(unittest.TestCase):
         reverse = select_eligible_events([second, first])
         self.assertEqual(forward["snapshot_sha256"], reverse["snapshot_sha256"])
 
+    def test_snapshot_hash_changes_when_decision_evidence_changes(self):
+        first = eligible_event()
+        second = eligible_event()
+        second["decision_lineage"]["manifest_sha256"] = "f" * 64
+        second["decision_lineage_sha256"] = "f" * 64
+        first_hash = select_eligible_events([first])["snapshot_sha256"]
+        second_hash = select_eligible_events([second])["snapshot_sha256"]
+        self.assertNotEqual(first_hash, second_hash)
+
     def test_grade_versions_remain_separate(self):
         first = eligible_event("GRADE-V1", "TP3", "grade-v1")
         second = eligible_event("GRADE-V2", "SL", "grade-v2")
