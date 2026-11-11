@@ -30,6 +30,9 @@ class FactorAgent:
             }
 
             if len(closed) < MIN_SAMPLE:
+                # Never leave a previous report visible after the trusted
+                # eligible sample falls below the reporting threshold.
+                memory["_factor_analytics"] = {}
                 print(
                     "[FACTOR] Insufficient eligible terminal data: "
                     + str(len(closed)) + " / " + str(MIN_SAMPLE)
