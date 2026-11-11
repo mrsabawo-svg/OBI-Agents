@@ -60,7 +60,8 @@ class LifecycleAgent:
             closed = [
                 trade for trade in archive
                 if trade.get("status") == "CLOSED"
-                and trade.get("outcome") not in ("EXPIRED", "AMBIGUOUS")
+                and trade.get("terminal_outcome") in ("TP3", "SL")
+                and trade.get("lifecycle_schema_version") == LIFECYCLE_SCHEMA_VERSION
             ]
             print("[LIFECYCLE] Closed trades: " + str(len(closed)))
 
@@ -381,7 +382,8 @@ class LifecycleAgent:
         closed = [
             trade for trade in archive
             if trade.get("status") == "CLOSED"
-            and trade.get("outcome") not in ("EXPIRED", "AMBIGUOUS")
+            and trade.get("terminal_outcome") in ("TP3", "SL")
+            and trade.get("lifecycle_schema_version") == LIFECYCLE_SCHEMA_VERSION
         ]
         if not closed:
             return
@@ -393,7 +395,7 @@ class LifecycleAgent:
         for trade in closed_sorted:
             result = (
                 "WIN"
-                if trade.get("outcome") in ("TP1", "TP2", "TP3")
+                if trade.get("terminal_outcome") == "TP3"
                 else "LOSS"
             )
             if streak_type is None:
@@ -403,8 +405,8 @@ class LifecycleAgent:
                 streak_count += 1
             else:
                 break
-        wins = sum(1 for trade in closed if trade.get("outcome") in ("TP1", "TP2", "TP3"))
-        losses = sum(1 for trade in closed if trade.get("outcome") == "SL")
+        wins = sum(1 for trade in closed if trade.get("terminal_outcome") == "TP3")
+        losses = sum(1 for trade in closed if trade.get("terminal_outcome") == "SL")
         print(
             "[LIFECYCLE] Record: " + str(wins) + "W-"
             + str(losses) + "L | Current streak: "
