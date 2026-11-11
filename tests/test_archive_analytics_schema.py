@@ -44,7 +44,7 @@ class ArchiveAnalyticsSchemaTest(unittest.TestCase):
         self.assertEqual(entry["grade"], "A+")
         self.assertEqual(entry["trigger_grade"], "C")
         self.assertEqual(entry["grade_schema_version"], "obi-composite-grade-v1")
-        self.assertEqual(entry["lifecycle_schema_version"], "obi-lifecycle-v1")
+        self.assertIsNone(entry["lifecycle_schema_version"])
 
     def test_archive_preserves_factor_agent_schema_for_score_dict(self):
         entry = ArchiveAgent()._build_entry(
