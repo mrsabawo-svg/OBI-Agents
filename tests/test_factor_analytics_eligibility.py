@@ -109,6 +109,24 @@ class FactorAnalyticsEligibilityTest(unittest.TestCase):
         self.assertEqual(memory["_factor_analytics_eligibility"]["eligible_count"], 5)
         self.assertEqual(memory["_factor_analytics_eligibility"]["excluded_count"], 1)
 
+    def test_factor_agent_clears_stale_report_when_eligible_sample_is_too_small(self):
+        memory = {
+            "_archive": [{
+                "id": "LEGACY-ROW",
+                "status": "CLOSED",
+                "outcome": "TP1",
+                "symbol": "XAUUSD",
+            }],
+            "_factor_analytics": {"sample_size": 100, "overall_wr": 99.0},
+        }
+        with patch("agents.factor_agent.load_memory", return_value=memory), patch(
+            "agents.factor_agent.save_memory", return_value=True
+        ):
+            report = FactorAgent().analyse()
+        self.assertEqual(report, {})
+        self.assertEqual(memory["_factor_analytics"], {})
+        self.assertEqual(memory["_factor_analytics_eligibility"]["eligible_count"], 0)
+
     def test_factor_grade_buckets_keep_schema_versions_separate(self):
         agent = FactorAgent()
         records = []
