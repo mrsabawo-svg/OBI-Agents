@@ -15,10 +15,7 @@ from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
 )
-from core.archive_analytics_eligibility import (
-    GRADE_SCHEMA_VERSION,
-    LIFECYCLE_SCHEMA_VERSION,
-)
+from core.archive_analytics_eligibility import GRADE_SCHEMA_VERSION
 
 SAST = pytz.timezone("Africa/Johannesburg")
 
