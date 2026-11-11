@@ -15,7 +15,10 @@ from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
 )
-from core.archive_analytics_eligibility import GRADE_SCHEMA_VERSION
+from core.archive_analytics_eligibility import (
+    GRADE_SCHEMA_VERSION,
+    TRIGGER_GRADE_SCHEMA_VERSION,
+)
 
 SAST = pytz.timezone("Africa/Johannesburg")
 
@@ -79,6 +82,9 @@ class ArchiveAgent:
             score.confidence if hasattr(score, "confidence")
             else score.get("confidence") if isinstance(score, dict)
             else None
+        )
+        grade_schema_version = (
+            GRADE_SCHEMA_VERSION if final_grade else TRIGGER_GRADE_SCHEMA_VERSION
         )
 
         if hasattr(trigger, "direction"):
@@ -181,7 +187,7 @@ class ArchiveAgent:
             "opened": timestamp,
             "direction": direction,
             "grade": grade,
-            "grade_schema_version": GRADE_SCHEMA_VERSION,
+            "grade_schema_version": grade_schema_version,
             "trigger_grade": trigger_grade,
             "entry": entry,
             "sl": sl,
