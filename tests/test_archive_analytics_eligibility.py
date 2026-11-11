@@ -6,8 +6,8 @@ from core.archive_analytics_eligibility import (
     LIFECYCLE_SCHEMA_VERSION,
     eligibility_reasons,
     select_eligible_events,
-    _canonical_hash,
 )
+from core.decision_lineage import _sha256
 
 
 def eligible_event(event_id="EVENT-001", outcome="TP3", grade_version=GRADE_SCHEMA_VERSION):
