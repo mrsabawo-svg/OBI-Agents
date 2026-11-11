@@ -46,6 +46,7 @@ class Pass14OutcomeStateMachineTest(unittest.TestCase):
         self.assertTrue(trade["tp3_hit"])
         self.assertEqual(trade["status"], "CLOSED")
         self.assertEqual(trade["outcome"], "TP3")
+        self.assertEqual(trade["lifecycle_schema_version"], "obi-lifecycle-v1")
 
     def test_sell_progresses_tp1_tp2_then_closes_at_tp3(self):
         trade = self.trade("SELL")
