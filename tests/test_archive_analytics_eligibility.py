@@ -70,7 +70,7 @@ def eligible_event(event_id="EVENT-001", outcome="TP3", grade_version=GRADE_SCHE
             },
         },
     }
-    record["decision_lineage"]["data_lineage_sha256"] = _canonical_hash(record["data_lineage"])
+    record["decision_lineage"]["data_lineage_sha256"] = _sha256(record["data_lineage"])
     record["decision_lineage"]["manifest_sha256"] = "e" * 64
     record["decision_lineage_sha256"] = "e" * 64
     return record
