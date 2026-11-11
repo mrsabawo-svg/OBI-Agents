@@ -66,8 +66,8 @@ def eligible_edge_record(index, outcome):
             },
         },
     }
-    from core.archive_analytics_eligibility import _canonical_hash
-    record["decision_lineage"]["data_lineage_sha256"] = _canonical_hash(record["data_lineage"])
+    from core.decision_lineage import _sha256
+    record["decision_lineage"]["data_lineage_sha256"] = _sha256(record["data_lineage"])
     record["decision_lineage"]["manifest_sha256"] = "e" * 64
     record["decision_lineage_sha256"] = "e" * 64
     return record
