@@ -15,6 +15,10 @@ from core.decision_lineage import (
     DECISION_LINEAGE_SCHEMA_VERSION,
     verify_decision_lineage,
 )
+from core.archive_analytics_eligibility import (
+    GRADE_SCHEMA_VERSION,
+    LIFECYCLE_SCHEMA_VERSION,
+)
 
 SAST = pytz.timezone("Africa/Johannesburg")
 
@@ -180,6 +184,7 @@ class ArchiveAgent:
             "opened": timestamp,
             "direction": direction,
             "grade": grade,
+            "grade_schema_version": GRADE_SCHEMA_VERSION,
             "trigger_grade": trigger_grade,
             "entry": entry,
             "sl": sl,
@@ -211,6 +216,7 @@ class ArchiveAgent:
             "realized_pnl_pips": None,
             "pnl_basis": None,
             "milestones": [],
+            "lifecycle_schema_version": LIFECYCLE_SCHEMA_VERSION,
             "lifecycle_last_candle": None,
             "lifecycle_events": [],
             "status": "OPEN",
