@@ -6,12 +6,13 @@ from core.archive_analytics_eligibility import (
     LIFECYCLE_SCHEMA_VERSION,
     eligibility_reasons,
     select_eligible_events,
+    _canonical_hash,
 )
 
 
 def eligible_event(event_id="EVENT-001", outcome="TP3", grade_version=GRADE_SCHEMA_VERSION):
     setup_id = "c" * 64
-    return {
+    record = {
         "id": event_id,
         "symbol": "EURUSD",
         "opened": "2026-11-01 10:00 SAST",
@@ -69,6 +70,10 @@ def eligible_event(event_id="EVENT-001", outcome="TP3", grade_version=GRADE_SCHE
             },
         },
     }
+    record["decision_lineage"]["data_lineage_sha256"] = _canonical_hash(record["data_lineage"])
+    record["decision_lineage"]["manifest_sha256"] = "e" * 64
+    record["decision_lineage_sha256"] = "e" * 64
+    return record
 
 
 class ArchiveAnalyticsEligibilityTest(unittest.TestCase):
@@ -135,6 +140,16 @@ class ArchiveAnalyticsEligibilityTest(unittest.TestCase):
         record = eligible_event()
         record["decision_lineage_provenance_status"] = "partial"
         self.assertIn("incomplete_or_unverified_decision_provenance", eligibility_reasons(record))
+        self.assertEqual(select_eligible_events([record])["events"], [])
+
+    def test_tampered_archived_data_lineage_is_excluded(self):
+        record = eligible_event()
+        record["data_lineage"]["timeframes"]["1h"]["broker_symbol"] = "OTHER"
+        self.assertEqual(select_eligible_events([record])["events"], [])
+
+    def test_decision_manifest_digest_mismatch_is_excluded(self):
+        record = eligible_event()
+        record["decision_lineage_sha256"] = "f" * 64
         self.assertEqual(select_eligible_events([record])["events"], [])
 
     def test_decision_identity_mismatch_is_excluded(self):
