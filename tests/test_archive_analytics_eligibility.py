@@ -119,6 +119,16 @@ class ArchiveAnalyticsEligibilityTest(unittest.TestCase):
         self.assertIn("ambiguous_lifecycle", eligibility_reasons(record))
         self.assertEqual(select_eligible_events([record])["events"], [])
 
+    def test_prior_ambiguous_lifecycle_event_remains_quarantined(self):
+        record = eligible_event()
+        record["resolution_note"] = None
+        record["lifecycle_events"] = [
+            {"event": "AMBIGUOUS", "note": "AMBIGUOUS_SAME_CANDLE_TARGET_AND_STOP"}
+        ]
+        selection = select_eligible_events([record])
+        self.assertEqual(selection["events"], [])
+        self.assertEqual(len(selection["quarantined"]), 1)
+
     def test_partial_lineage_is_excluded(self):
         record = eligible_event()
         record["data_lineage_status"] = "partial"
