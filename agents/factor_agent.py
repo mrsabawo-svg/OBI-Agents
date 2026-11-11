@@ -1,11 +1,10 @@
 """
 OBI Agents - Factor Analytics Agent v4.3
-Mines closed trade archive to compute win rates per factor, tag,
-symbol, regime, grade and score bucket.
-Stores results in memory so ChiefAgent and ScoreAgent can read them.
-Run automatically after every lifecycle check.
+Mines eligible terminal archive events to compute win rates by factor, tag,
+symbol, regime, versioned grade and score bucket.
 """
 from core.memory import load as load_memory, save as save_memory
+from core.archive_analytics_eligibility import select_eligible_events
 
 MIN_SAMPLE = 5  # minimum trades to report a meaningful win rate
 
@@ -17,30 +16,42 @@ class FactorAgent:
     def analyse(self) -> dict:
         print("[FACTOR] Running Factor Analytics")
         try:
-            memory  = load_memory() or {}
+            memory = load_memory() or {}
             archive = memory.get("_archive", [])
-            closed  = [
-                t for t in archive
-                if t.get("status") == "CLOSED" and t.get("outcome") != "EXPIRED"
-            ]
+            selection = select_eligible_events(archive)
+            closed = selection["events"]
+            memory["_factor_analytics_eligibility"] = {
+                "schema_version": "obi-archive-analytics-eligibility-v1",
+                "eligible_count": len(closed),
+                "duplicate_count": selection["duplicate_count"],
+                "excluded_count": len(selection["excluded"]),
+                "quarantined_count": len(selection["quarantined"]),
+                "snapshot_sha256": selection["snapshot_sha256"],
+            }
 
             if len(closed) < MIN_SAMPLE:
-                print("[FACTOR] Insufficient data: " + str(len(closed)) + " closed trades")
+                print(
+                    "[FACTOR] Insufficient eligible terminal data: "
+                    + str(len(closed)) + " / " + str(MIN_SAMPLE)
+                )
+                if save_memory(memory) is not True:
+                    print("[FACTOR] Eligibility diagnostics were not persisted")
                 return {}
 
             report = {
-                "sample_size":   len(closed),
-                "overall_wr":    self._wr(closed),
-                "by_factor":     self._by_factor(closed),
-                "by_tag":        self._by_tag(closed),
-                "by_symbol":     self._by_symbol(closed),
-                "by_regime":     self._by_regime(closed),
-                "by_grade":      self._by_grade(closed),
-                "by_score":      self._by_score_bucket(closed),
-                "top_factors":   self._top_factors(closed),
+                "eligibility_schema_version": "obi-archive-analytics-eligibility-v1",
+                "archive_snapshot_sha256": selection["snapshot_sha256"],
+                "sample_size": len(closed),
+                "overall_wr": self._wr(closed),
+                "by_factor": self._by_factor(closed),
+                "by_tag": self._by_tag(closed),
+                "by_symbol": self._by_symbol(closed),
+                "by_regime": self._by_regime(closed),
+                "by_grade": self._by_grade(closed),
+                "by_score": self._by_score_bucket(closed),
+                "top_factors": self._top_factors(closed),
             }
 
-            # Store in memory for other agents to read
             memory["_factor_analytics"] = report
             if save_memory(memory) is not True:
                 print("[FACTOR] Analytics report computed but not persisted")
@@ -52,116 +63,106 @@ class FactorAgent:
             print("[FACTOR] Error: " + str(e))
             return {}
 
-    # ── Win rate helpers ───────────────────────────────────────────────────────
+    # Win-rate helpers
 
     def _wr(self, trades: list) -> float:
         if not trades:
             return 0.0
-        wins = len([t for t in trades if t.get("outcome") in ["TP1", "TP2", "TP3"]])
+        wins = sum(1 for trade in trades if trade.get("terminal_outcome") == "TP3")
         return round(wins / len(trades) * 100, 1)
 
     def _bucket(self, trades: list, key_fn) -> dict:
         groups = {}
-        for t in trades:
-            k = key_fn(t)
-            if k not in groups:
-                groups[k] = []
-            groups[k].append(t)
+        for trade in trades:
+            key = key_fn(trade)
+            groups.setdefault(key, []).append(trade)
         return {
-            k: {"wr": self._wr(v), "n": len(v)}
-            for k, v in groups.items()
-            if len(v) >= MIN_SAMPLE
+            key: {"wr": self._wr(values), "n": len(values)}
+            for key, values in groups.items()
+            if len(values) >= MIN_SAMPLE
         }
-
-    # ── Analysis methods ───────────────────────────────────────────────────────
 
     def _by_factor(self, closed: list) -> dict:
         all_factors = set()
-        for t in closed:
-            all_factors.update(t.get("factors", []))
-
+        for trade in closed:
+            all_factors.update(trade.get("factors", []))
         result = {}
         for factor in sorted(all_factors):
-            subset = [t for t in closed if factor in t.get("factors", [])]
+            subset = [trade for trade in closed if factor in trade.get("factors", [])]
             if len(subset) >= MIN_SAMPLE:
                 result[factor] = {"wr": self._wr(subset), "n": len(subset)}
         return result
 
     def _by_tag(self, closed: list) -> dict:
         all_tags = set()
-        for t in closed:
-            all_tags.update(t.get("tags", []))
-
+        for trade in closed:
+            all_tags.update(trade.get("tags", []))
         result = {}
         for tag in sorted(all_tags):
-            subset = [t for t in closed if tag in t.get("tags", [])]
+            subset = [trade for trade in closed if tag in trade.get("tags", [])]
             if len(subset) >= MIN_SAMPLE:
                 result[tag] = {"wr": self._wr(subset), "n": len(subset)}
         return result
 
     def _by_symbol(self, closed: list) -> dict:
-        return self._bucket(closed, lambda t: t.get("symbol", "UNKNOWN"))
+        return self._bucket(closed, lambda trade: trade.get("symbol", "UNKNOWN"))
 
     def _by_regime(self, closed: list) -> dict:
-        return self._bucket(closed, lambda t: t.get("regime", "UNKNOWN"))
+        return self._bucket(closed, lambda trade: trade.get("regime", "UNKNOWN"))
 
     def _by_grade(self, closed: list) -> dict:
-        return self._bucket(closed, lambda t: t.get("grade", "UNKNOWN"))
+        # Version is part of the bucket key: unlike grade labels across
+        # different semantics, these values must never be combined.
+        return self._bucket(
+            closed,
+            lambda trade: str(trade.get("grade_schema_version")) + ":" + str(trade.get("grade", "UNKNOWN")),
+        )
 
     def _by_score_bucket(self, closed: list) -> dict:
-        def bucket_label(t):
-            score = t.get("obi_score") or 0
-            if score < 40:  return "0-39"
-            if score < 55:  return "40-54"
-            if score < 70:  return "55-69"
+        def bucket_label(trade):
+            score = trade.get("obi_score") or 0
+            if score < 40:
+                return "0-39"
+            if score < 55:
+                return "40-54"
+            if score < 70:
+                return "55-69"
             return "70+"
         return self._bucket(closed, bucket_label)
 
     def _top_factors(self, closed: list) -> list:
-        """Returns top 3 factors by win rate with MIN_SAMPLE trades."""
         all_factors = set()
-        for t in closed:
-            all_factors.update(t.get("factors", []))
-
+        for trade in closed:
+            all_factors.update(trade.get("factors", []))
         ranked = []
         for factor in all_factors:
-            subset = [t for t in closed if factor in t.get("factors", [])]
+            subset = [trade for trade in closed if factor in trade.get("factors", [])]
             if len(subset) >= MIN_SAMPLE:
                 ranked.append((factor, self._wr(subset), len(subset)))
-
-        ranked.sort(key=lambda x: x[1], reverse=True)
-        return [{"factor": f, "wr": w, "n": n} for f, w, n in ranked[:3]]
-
-    # ── Reporting ──────────────────────────────────────────────────────────────
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        return [{"factor": factor, "wr": win_rate, "n": count} for factor, win_rate, count in ranked[:3]]
 
     def _print_report(self, report: dict) -> None:
         print("[FACTOR] ── Factor Analytics Report ──────────────────")
-        print("[FACTOR] Sample: " + str(report["sample_size"]) + " trades | Overall WR: " + str(report["overall_wr"]) + "%")
-
+        print("[FACTOR] Sample: " + str(report["sample_size"]) + " terminal events | WR: " + str(report["overall_wr"]) + "%")
         print("[FACTOR] By Factor:")
-        for f, d in sorted(report["by_factor"].items(), key=lambda x: x[1]["wr"], reverse=True):
-            print("[FACTOR]   " + f + ": " + str(d["wr"]) + "% (" + str(d["n"]) + " trades)")
-
+        for factor, data in sorted(report["by_factor"].items(), key=lambda item: item[1]["wr"], reverse=True):
+            print("[FACTOR]   " + factor + ": " + str(data["wr"]) + "% (" + str(data["n"]) + " trades)")
         print("[FACTOR] By Tag:")
-        for t, d in sorted(report["by_tag"].items(), key=lambda x: x[1]["wr"], reverse=True):
-            print("[FACTOR]   " + t + ": " + str(d["wr"]) + "% (" + str(d["n"]) + " trades)")
-
+        for tag, data in sorted(report["by_tag"].items(), key=lambda item: item[1]["wr"], reverse=True):
+            print("[FACTOR]   " + tag + ": " + str(data["wr"]) + "% (" + str(data["n"]) + " trades)")
         print("[FACTOR] By Symbol:")
-        for s, d in sorted(report["by_symbol"].items(), key=lambda x: x[1]["wr"], reverse=True):
-            print("[FACTOR]   " + s + ": " + str(d["wr"]) + "% (" + str(d["n"]) + " trades)")
-
+        for symbol, data in sorted(report["by_symbol"].items(), key=lambda item: item[1]["wr"], reverse=True):
+            print("[FACTOR]   " + symbol + ": " + str(data["wr"]) + "% (" + str(data["n"]) + " trades)")
         print("[FACTOR] By Regime:")
-        for r, d in report["by_regime"].items():
-            print("[FACTOR]   " + r + ": " + str(d["wr"]) + "% (" + str(d["n"]) + " trades)")
-
+        for regime, data in report["by_regime"].items():
+            print("[FACTOR]   " + regime + ": " + str(data["wr"]) + "% (" + str(data["n"]) + " trades)")
         print("[FACTOR] By Grade:")
-        for g, d in sorted(report["by_grade"].items(), key=lambda x: x[1]["wr"], reverse=True):
-            print("[FACTOR]   Grade " + g + ": " + str(d["wr"]) + "% (" + str(d["n"]) + " trades)")
-
+        for grade, data in sorted(report["by_grade"].items(), key=lambda item: item[1]["wr"], reverse=True):
+            print("[FACTOR]   " + grade + ": " + str(data["wr"]) + "% (" + str(data["n"]) + " trades)")
         print("[FACTOR] By Score Bucket:")
-        for b, d in sorted(report["by_score"].items()):
-            print("[FACTOR]   Score " + b + ": " + str(d["wr"]) + "% (" + str(d["n"]) + " trades)")
-
+        for bucket, data in sorted(report["by_score"].items()):
+            print("[FACTOR]   Score " + bucket + ": " + str(data["wr"]) + "% (" + str(data["n"]) + " trades)")
         print("[FACTOR] Top 3 Factors:")
         for item in report["top_factors"]:
             print("[FACTOR]   " + item["factor"] + ": " + str(item["wr"]) + "% (" + str(item["n"]) + " trades)")
