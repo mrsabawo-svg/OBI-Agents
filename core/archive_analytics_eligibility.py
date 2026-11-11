@@ -109,6 +109,10 @@ def _verified_decision_lineage(record: dict) -> bool:
         return False
     if lineage.get("data_lineage_status") != "complete":
         return False
+    if lineage.get("data_lineage_sha256") != _canonical_hash(record.get("data_lineage")):
+        return False
+    if record.get("decision_lineage_sha256") != lineage.get("manifest_sha256"):
+        return False
     identity = lineage.get("signal_identity")
     if not isinstance(identity, dict):
         return False
