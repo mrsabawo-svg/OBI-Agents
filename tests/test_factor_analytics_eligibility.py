@@ -9,7 +9,7 @@ def eligible_factor_event(index, outcome):
     event_id = "FACTOR-" + str(index)
     setup_id = "d" * 64
     opened = "2026-11-02 11:" + str(index).zfill(2) + " SAST"
-    return {
+    record = {
         "id": event_id,
         "symbol": "XAUUSD",
         "opened": opened,
@@ -66,6 +66,11 @@ def eligible_factor_event(index, outcome):
             },
         },
     }
+    from core.archive_analytics_eligibility import _canonical_hash
+    record["decision_lineage"]["data_lineage_sha256"] = _canonical_hash(record["data_lineage"])
+    record["decision_lineage"]["manifest_sha256"] = "e" * 64
+    record["decision_lineage_sha256"] = "e" * 64
+    return record
 
 
 class FactorAnalyticsEligibilityTest(unittest.TestCase):
