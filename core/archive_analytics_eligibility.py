@@ -246,6 +246,10 @@ def select_eligible_events(archive: list[dict]) -> dict:
         {
             "identity": event_identity(item),
             "terminal_outcome": item.get("terminal_outcome"),
+            "lifecycle_schema_version": item.get("lifecycle_schema_version"),
+            "data_lineage_sha256": item.get("decision_lineage", {}).get("data_lineage_sha256"),
+            "decision_lineage_sha256": item.get("decision_lineage_sha256"),
+            "setup_id": item.get("setup_id"),
             "symbol": item.get("symbol"),
             "regime": item.get("regime"),
             "tags": sorted(item.get("tags", [])) if isinstance(item.get("tags", []), list) else [],
