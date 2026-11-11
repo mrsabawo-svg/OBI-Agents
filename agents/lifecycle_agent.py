@@ -14,6 +14,7 @@ import yfinance as yf
 
 from agents.data_agent import DataAgent, SYNTHETIC_SYMBOLS
 from core.memory import load as load_memory, save as save_memory
+from core.archive_analytics_eligibility import LIFECYCLE_SCHEMA_VERSION
 
 SAST = pytz.timezone("Africa/Johannesburg")
 EXPIRY_HOURS = 48
@@ -143,6 +144,7 @@ class LifecycleAgent:
         trade["status"] = "CLOSED"
         trade["outcome"] = outcome
         trade["terminal_outcome"] = outcome
+        trade["lifecycle_schema_version"] = LIFECYCLE_SCHEMA_VERSION
         trade["milestones"] = [
             name
             for name, hit in (
