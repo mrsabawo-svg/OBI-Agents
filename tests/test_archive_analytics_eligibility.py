@@ -108,6 +108,12 @@ class ArchiveAnalyticsEligibilityTest(unittest.TestCase):
             record["terminal_outcome"] = None
             self.assertEqual(select_eligible_events([record])["events"], [])
 
+    def test_malformed_terminal_outcome_is_rejected_without_error(self):
+        record = eligible_event()
+        record["terminal_outcome"] = {"value": "TP3"}
+        self.assertIn("non_terminal_or_unsupported_outcome", eligibility_reasons(record))
+        self.assertEqual(select_eligible_events([record])["events"], [])
+
     def test_expired_event_is_excluded(self):
         record = eligible_event(outcome="EXPIRED")
         self.assertEqual(select_eligible_events([record])["events"], [])
