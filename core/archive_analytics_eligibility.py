@@ -188,7 +188,8 @@ def _terminal_conflict(records: list[dict]) -> bool:
     if len(terminal_values) > 1:
         return True
     return any(
-        record.get("terminal_outcome") in TERMINAL_OUTCOMES
+        isinstance(record.get("terminal_outcome"), str)
+        and record.get("terminal_outcome") in TERMINAL_OUTCOMES
         and record.get("outcome") not in (None, record.get("terminal_outcome"))
         for record in records
     )
