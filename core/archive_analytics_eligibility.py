@@ -209,7 +209,7 @@ def _duplicate_analytics_conflict(records: list[dict]) -> bool:
             if value is None or value == "":
                 continue
             if field in {"tags", "factors"} and isinstance(value, list):
-                value = sorted(value)
+                value = sorted(value, key=lambda item: str(item))
             values.append(_canonical_hash(value))
         if len(set(values)) > 1:
             return True
@@ -217,6 +217,7 @@ def _duplicate_analytics_conflict(records: list[dict]) -> bool:
         record.get("decision_lineage", {}).get("data_lineage_sha256")
         for record in records
         if isinstance(record.get("decision_lineage"), dict)
+        and isinstance(record.get("decision_lineage", {}).get("data_lineage_sha256"), str)
         and record.get("decision_lineage", {}).get("data_lineage_sha256")
     ]
     return len(set(data_lineage_digests)) > 1
