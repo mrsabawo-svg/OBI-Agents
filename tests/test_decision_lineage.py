@@ -129,6 +129,8 @@ def test_decision_lineage_versions_every_decision_agent_and_is_self_verifying():
         "archive_snapshot_sha256"
     ] == "a" * 64
     assert manifest["market_data"]["1h"]["row_count"] == 4
+    assert manifest["agent_specs"]["Edge"]["formula_version"] == "1.1.0"
+    assert "core/archive_analytics_eligibility.py" in manifest["agent_specs"]["Edge"]["source_files"]
 
 
 def test_decision_lineage_verification_detects_tampering():
