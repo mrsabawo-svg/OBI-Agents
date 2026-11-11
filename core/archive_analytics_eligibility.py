@@ -195,6 +195,33 @@ def _terminal_conflict(records: list[dict]) -> bool:
     )
 
 
+def _duplicate_analytics_conflict(records: list[dict]) -> bool:
+    """Detect same-ID snapshots that disagree on analytics or provenance inputs."""
+    fields = (
+        "regime", "tags", "factors", "grade", "grade_schema_version",
+        "obi_score", "setup_id", "setup_identity_version",
+        "decision_lineage_sha256",
+    )
+    for field in fields:
+        values = []
+        for record in records:
+            value = record.get(field)
+            if value is None or value == "":
+                continue
+            if field in {"tags", "factors"} and isinstance(value, list):
+                value = sorted(value)
+            values.append(_canonical_hash(value))
+        if len(set(values)) > 1:
+            return True
+    data_lineage_digests = [
+        record.get("decision_lineage", {}).get("data_lineage_sha256")
+        for record in records
+        if isinstance(record.get("decision_lineage"), dict)
+        and record.get("decision_lineage", {}).get("data_lineage_sha256")
+    ]
+    return len(set(data_lineage_digests)) > 1
+
+
 def select_eligible_events(archive: list[dict]) -> dict:
     """Deduplicate first, quarantine conflicts, then apply the shared gate.
 
@@ -219,7 +246,12 @@ def select_eligible_events(archive: list[dict]) -> dict:
         records = groups[identity]
         duplicate_count += max(0, len(records) - 1)
         structural = {_structural_identity(record) for record in records}
-        if None in structural or len(structural) > 1 or _terminal_conflict(records):
+        if (
+            None in structural
+            or len(structural) > 1
+            or _terminal_conflict(records)
+            or _duplicate_analytics_conflict(records)
+        ):
             quarantined.append({"identity": identity, "reason": "conflicting_duplicate_identity_or_terminal_outcome"})
             continue
         # Prefer a record that passes the complete gate; otherwise retain the
