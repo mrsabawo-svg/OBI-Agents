@@ -163,9 +163,16 @@ def _terminal_conflict(records: list[dict]) -> bool:
     terminal_values = {
         record.get("terminal_outcome")
         for record in records
-        if record.get("terminal_outcome") in TERMINAL_OUTCOMES
+        if isinstance(record.get("terminal_outcome"), str)
+        and record.get("terminal_outcome").strip()
     }
-    return len(terminal_values) > 1
+    if len(terminal_values) > 1:
+        return True
+    return any(
+        record.get("terminal_outcome") in TERMINAL_OUTCOMES
+        and record.get("outcome") not in (None, record.get("terminal_outcome"))
+        for record in records
+    )
 
 
 def select_eligible_events(archive: list[dict]) -> dict:
